@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Yeni Malzeme Ekle{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">📦 Yeni Malzeme Kaydı</div>
+        <div class="page-meta">Envantere operasyonel ekipman tanımlayın.</div>
+    </div>
+</div>
+
+<div class="panel" style="max-width: 800px;">
+    <div class="panel-body">
+        <form method="POST" action="{{ url_for('inventory.malzeme_ekle') }}" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Malzeme Adı</label>
+                <input type="text" name="ad" required placeholder="Örn: Yangın Söndürme Cihazı">
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Seri No / Barkod</label>
+                <input type="text" name="seri_no" placeholder="Örn: SAR-9921">
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Kutu Kodu (Lokasyon)</label>
+                <input type="text" name="kutu_kodu" required placeholder="Örn: KUTU-01">
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Stok Miktarı</label>
+                <input type="number" name="stok" value="1" min="1">
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Mevcut Durum</label>
+                <select name="durum">
+                    <option value="Aktif">✅ Aktif</option>
+                    <option value="Bakımda">🔧 Bakımda</option>
+                    <option value="Arızalı">⚠️ Arızalı</option>
+                    <option value="Hurda">❌ Hurda</option>
+                </select>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 0; display: flex; align-items: center; gap: 10px; background: var(--red-light); padding: 12px 16px; border-radius: var(--r); border: 1px solid var(--red-border);">
+                <input type="checkbox" name="kritik" id="kritik" style="width: 20px; height: 20px; cursor: pointer; margin: 0;">
+                <label for="kritik" style="color: var(--red); font-weight: 800; cursor: pointer; margin: 0;">Bu Kritik Bir Malzeme mi?</label>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Son Bakım Tarihi</label>
+                <input type="date" name="bakim">
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Gelecek Bakım Tarihi</label>
+                <input type="date" name="gelecek_bakim">
+            </div>
+            
+            <div class="form-group" style="grid-column: span 2; margin-bottom: 0;">
+                <label>Teknik Özellikler / Notlar</label>
+                <textarea name="teknik" style="height: 100px; resize: vertical;" placeholder="Malzeme ile ilgili detaylı bilgi..."></textarea>
+            </div>
+            
+            <div style="grid-column: span 2; margin-top: 10px;">
+                <button type="submit" class="btn btn-primary" style="width: 100%; padding: 16px; font-size: 15px;">Sisteme Kaydet</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

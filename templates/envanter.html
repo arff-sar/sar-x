@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Envanter Yönetimi{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">📦 {{ havalimani_ad }}</div>
+        <div class="page-meta">
+            <span>Operasyonel ekipman ve malzeme listesi</span>
+            <div class="meta-dot" style="width: 3px; height: 3px; background: var(--text4); border-radius: 50%;"></div>
+            <span>{{ malzemeler|length }} Kalem Ürün</span>
+        </div>
+    </div>
+    
+    <div style="display: flex; gap: 10px; align-items: center;">
+        {% if current_user.rol != 'personel' %}
+        <a href="{{ url_for('inventory.envanter_excel') }}" class="btn btn-secondary" style="color: #1d6f42;">
+            📊 Excel
+        </a>
+        <a href="{{ url_for('inventory.envanter_pdf') }}" class="btn btn-secondary" style="color: #c62828;">
+            📄 PDF
+        </a>
+        {% endif %}
+
+        {% if current_user.rol in ['sahip', 'yetkili'] %}
+        <a href="{{ url_for('inventory.malzeme_ekle') }}" class="btn btn-primary">
+            ➕ Yeni Malzeme Ekle
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <div class="panel-title">
+            <div class="panel-title-icon pi-navy" style="background: var(--blue-light); color: var(--blue); padding: 5px; border-radius: 8px;">📋</div>
+            Malzeme Listesi
+        </div>
+        <div class="search-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="inventorySearch" class="search-input" placeholder="İsim, SN veya Kutu ara..." onkeyup="filterInventory()">
+        </div>
+    </div>
+    
+    <div class="table-container">
+        <table class="data-table" id="inventoryTable">
+            <thead>
+                <tr>
+                    <th>MALZEME / SERİ NO</th>
+                    {% if current_user.rol in ['sahip', 'genel_mudurluk'] %}
+                    <th>BİRİM</th>
+                    {% endif %}
+                    <th style="text-align: center;">ÜNİTE / QR</th>
+                    <th style="text-align: center;">MİKTAR</th>
+                    <th style="text-align: center;">DURUM</th>
+                    <th style="text-align: center;">BAKIM DURUMU</th>
+                    <th style="text-align: right;">İŞLEM</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in malzemeler %}
+                <tr class="{% if m.kritik_mi %}table-row-critical{% endif %}">
+                    <td>
+                        <div style="font-weight: 700; color: var(--navy); font-size: 14px;">
+                            {{ m.ad }}
+                            {% if m.kritik_mi %}
+                            <span class="status-pill status-ariza" style="font-size: 9px; padding: 2px 6px; margin-left: 6px;">KRİTİK</span>
+                            {% endif %}
+                        </div>
+                        <div style="font-size: 12px; color: var(--text3); margin-top: 4px; font-family: var(--mono);">
+                            SN: {{ m.seri_no if m.seri_no else 'Girilmedi' }}
+                        </div>
+                    </td>
+                    
+                    {% if current_user.rol in ['sahip', 'genel_mudurluk'] %}
+                    <td>
+                        <span class="tag-navy" style="font-size: 10px; padding: 4px 8px;">{{ m.havalimani.kodu }}</span>
+                    </td>
+                    {% endif %}
+
+                    <td style="text-align: center;">
+                        <div style="font-size: 13px; font-weight: 700; margin-bottom: 4px;">{{ m.kutu.kodu }}</div>
+                        <a href="{{ url_for('inventory.qr_uret', kodu=m.kutu.kodu) }}" target="_blank" title="QR Kodunu Görüntüle" style="text-decoration: none; font-size: 18px; filter: grayscale(100%); opacity: 0.7; transition: 0.2s;">🖼️</a>
+                    </td>
+
+                    <td style="text-align: center;">
+                        <span style="font-size: 15px; font-weight: 800; color: var(--navy);">{{ m.stok_miktari }}</span> 
+                        <span style="font-size: 11px; color: var(--text4); font-weight: 600;">ADET</span>
+                    </td>
+
+                    <td style="text-align: center;">
+                        <span class="status-pill 
+                            {% if m.durum == 'Aktif' %}status-aktif
+                            {% elif m.durum == 'Bakımda' %}status-bakim
+                            {% elif m.durum == 'Arızalı' %}status-ariza
+                            {% else %}status-pasif{% endif %}">
+                            {{ m.durum }}
+                        </span>
+                    </td>
+
+                    <td style="text-align: center;">
+                        <div style="font-size: 12px; font-weight: 700;">{{ m.son_bakim_tarihi.strftime('%d.%m.%Y') if m.son_bakim_tarihi else '-' }}</div>
+                        {% if m.gelecek_bakim_tarihi %}
+                        <div style="font-size: 11px; color: var(--amber); margin-top: 4px; font-weight: 600;">
+                            ⏳ Sırada: {{ m.gelecek_bakim_tarihi.strftime('%d.%m.%Y') }}
+                        </div>
+                        {% endif %}
+                    </td>
+
+                    <td style="text-align: right;">
+                        <div class="row-actions">
+                            <a href="{{ url_for('inventory.kutu_detay', kodu=m.kutu.kodu) }}" class="row-btn">🔍 Detay</a>
+                            {% if current_user.rol != 'genel_mudurluk' %}
+                            <button class="row-btn" onclick="openBakimModal('{{ m.id }}', '{{ m.ad }}')" style="background: var(--navy); color: white; border: none;">🛠️ Bakım</button>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" style="padding: 60px; text-align: center; color: var(--text4);">
+                        <div style="font-size: 40px; margin-bottom: 15px; opacity: 0.5;">📦</div>
+                        <div style="font-weight: 600; font-size: 16px; color: var(--navy);">Henüz envanter kaydı bulunmuyor.</div>
+                        <div style="font-size: 13px; margin-top: 5px;">Yeni bir malzeme ekleyerek sistemi başlatın.</div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+function filterInventory() {
+    const input = document.getElementById("inventorySearch");
+    const filter = input.value.toUpperCase();
+    const table = document.getElementById("inventoryTable");
+    const tr = table.getElementsByTagName("tr");
+
+    for (let i = 1; i < tr.length; i++) {
+        let textContent = tr[i].textContent || tr[i].innerText;
+        if (textContent.toUpperCase().indexOf(filter) > -1) {
+            tr[i].style.display = "";
+        } else {
+            tr[i].style.display = "none";
+        }
+    }
+}
+</script>
+{% endblock %}

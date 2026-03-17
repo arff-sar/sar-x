@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}Site Yönetimi{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Slider önizleme kartları için ek stil */
+    .slider-card {
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        overflow: hidden;
+        background: var(--surface);
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .slider-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+    }
+    .slider-img {
+        width: 100%;
+        height: 140px;
+        object-fit: cover;
+        border-bottom: 1px solid var(--border);
+    }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Sistem & İçerik Yönetimi (CMS)</div>
+        <div class="page-meta">
+            <span>Anasayfa başlıkları, duyurular ve görselleri yönetin</span>
+        </div>
+    </div>
+</div>
+
+<div class="two-col">
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+        
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <div class="panel-title-icon pi-navy">⚙️</div>
+                    Genel Site Ayarları
+                </div>
+            </div>
+            <div style="padding: 24px;">
+                <form method="POST" action="{{ url_for('admin.site_ayarlarini_guncelle') }}">
+                    <div class="mb-16">
+                        <label class="fw-700 text-small" style="display: block; margin-bottom: 8px;">ANASAYFA ANA BAŞLIK</label>
+                        <input type="text" name="baslik" value="{{ ayarlar.baslik if ayarlar else '' }}" 
+                               class="search-input" style="width: 100%; padding-left: 12px;" placeholder="Örn: AIRPORT SAR YÖNETİM SİSTEMİ">
+                    </div>
+                    <div class="mb-20">
+                        <label class="fw-700 text-small" style="display: block; margin-bottom: 8px;">ALT AÇIKLAMA METNİ</label>
+                        <textarea name="alt_metin" class="search-input" 
+                                  style="width: 100%; padding: 12px; height: 80px; resize: none;">{{ ayarlar.alt_metin if ayarlar else '' }}</textarea>
+                    </div>
+                    <button type="submit" class="btn-primary" style="width: 100%; justify-content: center;">
+                        💾 Genel Ayarları Güncelle
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <div class="panel-title-icon pi-orange">📰</div>
+                    Haber ve Duyuru Yayınla
+                </div>
+            </div>
+            <div style="padding: 24px;">
+                <form method="POST" action="{{ url_for('admin.haber_ekle') }}">
+                    <div class="mb-16">
+                        <label class="fw-700 text-small" style="display: block; margin-bottom: 8px;">HABER BAŞLIĞI</label>
+                        <input type="text" name="haber_baslik" required class="search-input" style="width: 100%; padding-left: 12px;" placeholder="Duyuru başlığını girin...">
+                    </div>
+                    <div class="mb-20">
+                        <label class="fw-700 text-small" style="display: block; margin-bottom: 8px;">DETAYLI İÇERİK</label>
+                        <textarea name="haber_icerik" required class="search-input" 
+                                  style="width: 100%; padding: 12px; height: 100px; resize: none;" placeholder="Personelin göreceği duyuru metni..."></textarea>
+                    </div>
+                    <button type="submit" class="btn-primary" style="width: 100%; justify-content: center; background: var(--navy);">
+                        📣 Haberi Hemen Yayınla
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+        
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <div class="panel-title-icon pi-green">🔗</div>
+                    Üst Menü Linkleri
+                </div>
+            </div>
+            <div style="padding: 20px;">
+                <form method="POST" action="{{ url_for('admin.menu_ekle') }}" style="display: flex; gap: 8px; margin-bottom: 15px;">
+                    <input type="text" name="menu_ad" placeholder="Menü Adı" required class="search-input" style="flex: 1; padding-left: 10px;">
+                    <input type="text" name="menu_link" placeholder="Link" class="search-input" style="flex: 1; padding-left: 10px;">
+                    <button type="submit" class="btn-primary" style="padding: 10px;">➕</button>
+                </form>
+                
+                <table class="data-table" style="font-size: 13px;">
+                    <thead>
+                        <tr>
+                            <th>MENÜ ADI</th>
+                            <th>LİNK</th>
+                            <th style="text-align: right;">İŞLEM</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for menu in menuler %}
+                        <tr>
+                            <td class="fw-700">{{ menu.ad }}</td>
+                            <td class="mono text-muted" style="font-size: 11px;">{{ menu.link }}</td>
+                            <td style="text-align: right;">
+                                <a href="{{ url_for('admin.menu_sil', id=menu.id) }}" style="color: var(--red); text-decoration: none; font-weight: bold;">❌</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="panel" id="sliderPanel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <div class="panel-title-icon pi-amber">🖼️</div>
+                    Slider (Görsel) Yönetimi
+                </div>
+            </div>
+            <div style="padding: 20px;">
+                <div id="sliderFormAlani" style="background: var(--surface2); padding: 16px; border-radius: var(--r); margin-bottom: 20px; border: 1px dashed var(--border-dark);">
+                    <h4 id="formBaslik" style="font-size: 13px; margin-bottom: 12px; color: var(--navy);">Yeni Slider Ekle</h4>
+                    <form id="sliderForm" method="POST" action="{{ url_for('admin.slider_ekle') }}">
+                        <input type="text" id="inputUrl" name="resim_url" placeholder="Görsel URL Linki" required class="search-input" style="width: 100%; padding-left: 10px; margin-bottom: 10px;">
+                        <input type="text" id="inputBaslik" name="slider_baslik" placeholder="Görsel Üzeri Yazı" class="search-input" style="width: 100%; padding-left: 10px; margin-bottom: 12px;">
+                        <div style="display: flex; gap: 8px;">
+                            <button type="submit" id="submitBtn" class="btn-primary" style="flex: 2; justify-content: center;">💾 Kaydet</button>
+                            <button type="button" onclick="formuSifirla()" id="vazgecBtn" style="display:none;" class="btn-secondary">İptal</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px;">
+                    {% for slider in sliderlar %}
+                    <div class="slider-card">
+                        <img src="{{ slider.resim_url }}" class="slider-img" alt="Slider">
+                        <div style="padding: 8px;">
+                            <div class="text-small fw-700" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px;">{{ slider.baslik }}</div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <button onclick="duzenle('{{ slider.id }}', '{{ slider.resim_url }}', '{{ slider.baslik }}')" 
+                                        style="background:none; border:none; color:var(--blue); cursor:pointer; font-size: 11px; font-weight: 700;">✏️ DÜZENLE</button>
+                                <a href="{{ url_for('admin.slider_sil', id=slider.id) }}" 
+                                   style="color: var(--red); text-decoration: none; font-size: 11px; font-weight: 700;">❌ SİL</a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+/**
+ * Slider düzenleme modunu başlatır
+ */
+function duzenle(id, url, baslik) {
+    document.getElementById('formBaslik').innerText = "📝 Slider Güncelleniyor...";
+    document.getElementById('formBaslik').style.color = "var(--orange)";
+    document.getElementById('inputUrl').value = url;
+    document.getElementById('inputBaslik').value = baslik;
+    
+    // Blueprint rotasına uygun dinamik URL güncellemesi
+    document.getElementById('sliderForm').action = "/slider-guncelle/" + id;
+    
+    document.getElementById('submitBtn').innerText = "Değişiklikleri Uygula";
+    document.getElementById('vazgecBtn').style.display = "inline-flex";
+    document.getElementById('sliderFormAlani').style.borderColor = "var(--orange)";
+    
+    document.getElementById('sliderPanel').scrollIntoView({ behavior: 'smooth' });
+}
+
+/**
+ * Slider formunu temizler
+ */
+function formuSifirla() {
+    document.getElementById('formBaslik').innerText = "Yeni Slider Ekle";
+    document.getElementById('formBaslik').style.color = "var(--navy)";
+    document.getElementById('sliderForm').reset();
+    document.getElementById('sliderForm').action = "{{ url_for('admin.slider_ekle') }}";
+    document.getElementById('submitBtn').innerText = "💾 Kaydet";
+    document.getElementById('vazgecBtn').style.display = "none";
+    document.getElementById('sliderFormAlani').style.borderColor = "var(--border-dark)";
+}
+</script>
+{% endblock %}

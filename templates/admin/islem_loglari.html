@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}İşlem Logları{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Log kategorileri için özel renk paleti */
+    .tip-giris    { background: var(--blue-light);  color: var(--blue);   border: 1px solid #bfdbfe; }
+    .tip-envanter { background: var(--green-light); color: var(--green);  border: 1px solid var(--green-border); }
+    .tip-guvenlik { background: var(--amber-light); color: var(--amber);  border: 1px solid var(--amber-border); }
+    .tip-hata     { background: var(--red-light);   color: var(--red);    border: 1px solid var(--red-border); }
+    
+    @media print {
+        .sidebar, .topbar, .search-wrap, .btn-secondary { display: none !important; }
+        .main-content { padding: 0 !important; background: white !important; }
+        .panel { border: none !important; box-shadow: none !important; }
+    }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Sistem İşlem Logları (Kara Kutu)</div>
+        <div class="page-meta">
+            <span>Tüm kullanıcı hareketleri ve denetim kayıtları</span>
+            <div class="meta-dot" style="width: 3px; height: 3px; background: var(--text4); border-radius: 50%;"></div>
+            <span>Toplam: {{ loglar|length }} Kayıt</span>
+        </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+        <button class="btn-secondary" onclick="window.print()">🖨️ Rapor Yazdır</button>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <div class="panel-title">
+            <div class="panel-title-icon pi-navy">📜</div>
+            Denetim Kayıtları
+        </div>
+        <div class="search-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="logSearch" class="search-input" placeholder="Personel veya işlem ara..." onkeyup="filterLogs()">
+        </div>
+    </div>
+    
+    <div class="table-container" style="overflow-x: auto;">
+        <table class="data-table" id="logTable">
+            <thead>
+                <tr>
+                    <th>ZAMAN</th>
+                    <th>PERSONEL</th>
+                    <th>İŞLEM TİPİ</th>
+                    <th>AYRINTILI DETAY</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in loglar %}
+                <tr class="log-row">
+                    <td class="date-cell" style="white-space: nowrap;">
+                        {{ log.zaman.strftime('%d.%m.%Y') }}
+                        <div style="font-size: 10px; color: var(--text4);">{{ log.zaman.strftime('%H:%M:%S') }}</div>
+                    </td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <div class="user-avatar" style="width: 28px; height: 28px; font-size: 10px; background: var(--navy2);">
+                                {{ log.yapan_kullanici.tam_ad[0] if log.yapan_kullanici else '?' }}
+                            </div>
+                            <div>
+                                <div class="item-name-cell" style="font-size: 13.5px;">{{ log.yapan_kullanici.tam_ad if log.yapan_kullanici else 'Sistem / Silinmiş' }}</div>
+                                <div class="item-serial" style="font-size: 10px;">@{{ log.yapan_kullanici.kullanici_adi if log.yapan_kullanici else 'system' }}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="status-pill 
+                            {% if log.islem_tipi == 'Giriş' %}tip-giris
+                            {% elif log.islem_tipi == 'Envanter' %}tip-envanter
+                            {% elif log.islem_tipi == 'Güvenlik' %}tip-guvenlik
+                            {% else %}tip-hata{% endif %}" 
+                            style="font-size: 10px; font-weight: 800;">
+                            {{ log.islem_tipi | upper }}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="log-action" style="font-size: 13px; color: var(--text2); line-height: 1.5;">
+                            {{ log.detay }}
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="4" style="padding: 50px; text-align: center; color: var(--text4);">
+                        <div style="font-size: 30px; margin-bottom: 10px;">📂</div>
+                        Henüz kayıtlı bir işlem logu bulunmuyor.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+/**
+ * Tablo içinde anlık filtreleme yapar
+ */
+function filterLogs() {
+    const input = document.getElementById("logSearch");
+    const filter = input.value.toUpperCase();
+    const table = document.getElementById("logTable");
+    const tr = table.getElementsByTagName("tr");
+
+    for (let i = 1; i < tr.length; i++) {
+        let textContent = tr[i].textContent || tr[i].innerText;
+        if (textContent.toUpperCase().indexOf(filter) > -1) {
+            tr[i].style.display = "";
+        } else {
+            tr[i].style.display = "none";
+        }
+    }
+}
+</script>
+{% endblock %}

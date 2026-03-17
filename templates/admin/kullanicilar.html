@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Kullanıcı Yönetimi{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Kullanıcı & Personel Yönetimi</div>
+        <div class="page-meta">
+            <span>Saha personeli ve yöneticilerin yetkilerini düzenleyin</span>
+            <div class="meta-dot" style="width: 3px; height: 3px; background: var(--text4); border-radius: 50%;"></div>
+            <span>Toplam: {{ kullanicilar|length }} Kayıt</span>
+        </div>
+    </div>
+</div>
+
+<div class="two-col">
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">
+                <div class="panel-title-icon pi-navy">👥</div>
+                Kayıtlı Kullanıcılar
+            </div>
+        </div>
+        
+        <div class="table-container" style="overflow-x: auto;">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>AD SOYAD</th>
+                        <th>ROL</th>
+                        <th>BİRİM / LİMAN</th>
+                        <th>İŞLEMLER</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in kullanicilar %}
+                    <tr>
+                        <td>
+                            <div class="item-name-cell">{{ user.tam_ad }}</div>
+                            <div class="item-serial">{{ user.kullanici_adi }}</div>
+                        </td>
+                        <td>
+                            <span class="status-pill {% if user.rol == 'sahip' %}status-ariza{% elif user.rol == 'genel_mudurluk' %}status-bakim{% else %}status-aktif{% endif %}">
+                                {{ user.rol | replace('_', ' ') | upper }}
+                            </span>
+                        </td>
+                        <td>
+                            {% if user.rol == 'sahip' or user.rol == 'genel_mudurluk' %}
+                                <span class="tag-navy" style="padding: 4px 8px; border-radius: 6px; font-family: var(--mono); font-size: 11px; background: var(--blue-light); color: var(--blue); font-weight: 700;">
+                                    🌐 GLOBAL / MERKEZ
+                                </span>
+                            {% elif user.havalimani %}
+                                <span class="tag-navy" style="padding: 4px 8px; border-radius: 6px; font-family: var(--mono); font-size: 11px; background: #f1f5f9; color: var(--text2);">
+                                    ✈️ {{ user.havalimani.kodu }}
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="row-actions">
+                                {% if user.kullanici_adi != 'mehmet' %}
+                                <a href="{{ url_for('admin.kullanici_sil', id=user.id) }}" 
+                                   class="row-btn" 
+                                   style="color: var(--red); border-color: var(--red-border);"
+                                   onclick="return confirm('Bu kullanıcıyı silmek istediğinize emin misiniz?')">
+                                    🗑️ Sil
+                                </a>
+                                {% else %}
+                                <span class="text-muted" style="font-size: 10px; font-weight: 700;">🔒 SİSTEM SAHİBİ</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">
+                <div class="panel-title-icon pi-orange">➕</div>
+                Yeni Personel Ekle
+            </div>
+        </div>
+        <div style="padding: 24px;">
+            <form action="{{ url_for('admin.kullanici_ekle') }}" method="POST">
+                <div class="mb-16">
+                    <label class="fw-700 text-small" style="display: block; margin-bottom: 8px;">TAM AD SOYAD</label>
+                    <input type="text" name="tam_ad" required class="search-input" style="width: 100%; padding-left: 12px;" placeholder="Örn: Ahmet Yılmaz">
+                </div>
+
+                <div class="mb-16">
+                    <label class="fw-700 text-small" style="display: block; margin-bottom: 8px;">KULLANICI ADI (Giriş İçin)</label>
+                    <input type="text" name="k_adi" required class="search-input" style="width: 100%; padding-left: 12px;" placeholder="ahmet_y">
+                </div>
+
+                <div class="mb-16">
+                    <label class="fw-700 text-small" style="display: block; margin-bottom: 8px;">ŞİFRE</label>
+                    <input type="password" name="sifre" required class="search-input" style="width: 100%; padding-left: 12px;" placeholder="••••••">
+                </div>
+
+                <div class="mb-16">
+                    <label class="fw-700 text-small" style="display: block; margin-bottom: 8px;">YETKİ ROLÜ</label>
+                    <select name="rol" id="rol-select" class="search-input" style="width: 100%; padding-left: 12px; appearance: auto;" onchange="toggleAirportSelect()">
+                        <option value="personel">Personel (Saha Ekibi)</option>
+                        <option value="yetkili">Yetkili (Birim Sorumlusu)</option>
+                        <option value="genel_mudurluk">Genel Müdürlük (Sadece İzleyici)</option>
+                        <option value="sahip">Ekstra Sistem Sahibi (Tam Yetki)</option>
+                    </select>
+                </div>
+
+                <div id="gm-info-box" style="display: none; padding: 12px; background: var(--blue-light); border-radius: var(--r); border: 1px solid #bfdbfe; margin-bottom: 16px;">
+                    <div style="font-size: 12px; color: #1d4ed8; line-height: 1.4;">
+                        <strong>ℹ️ Genel Müdürlük Yetkisi:</strong><br>
+                        Bu kullanıcı tüm havalimanlarını görebilir ve rapor alabilir ancak <u>hiçbir veri girişi veya silme işlemi yapamaz.</u>
+                    </div>
+                </div>
+
+                <div class="mb-20" id="airport-select-container">
+                    <label class="fw-700 text-small" style="display: block; margin-bottom: 8px;">BAĞLI HAVALİMANI</label>
+                    <select name="h_id" id="h_id_select" class="search-input" style="width: 100%; padding-left: 12px; appearance: auto;">
+                        <option value="">Havalimanı Seçin...</option>
+                        {% for h in havalimanlari %}
+                        <option value="{{ h.id }}">{{ h.kodu }} - {{ h.ad }}</option>
+                        {% endfor %}
+                    </select>
+                    <small style="display: block; margin-top: 6px; color: var(--text4); font-size: 11px;">
+                        * Personel ve Yetkili rolleri için birim seçimi zorunludur.
+                    </small>
+                </div>
+
+                <button type="submit" class="btn-primary" style="width: 100%; justify-content: center; padding: 12px;">
+                    👤 Kullanıcıyı Sisteme Tanımla
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleAirportSelect() {
+    const rol = document.getElementById('rol-select').value;
+    const container = document.getElementById('airport-select-container');
+    const infoBox = document.getElementById('gm-info-box');
+    const select = document.getElementById('h_id_select');
+    
+    // Eğer Sahip veya Genel Müdürlük ise havalimanı seçimini kapat
+    if (rol === 'sahip' || rol === 'genel_mudurluk') {
+        container.style.display = 'none';
+        select.required = false;
+        select.value = "";
+        
+        // Sadece Genel Müdürlük seçildiğinde bilgi kutusunu göster
+        infoBox.style.display = (rol === 'genel_mudurluk') ? 'block' : 'none';
+    } else {
+        container.style.display = 'block';
+        infoBox.style.display = 'none';
+        select.required = true;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', toggleAirportSelect);
+</script>
+{% endblock %}

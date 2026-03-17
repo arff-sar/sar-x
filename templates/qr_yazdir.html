@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ kutu.kodu }} - QR Etiketi</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800&family=JetBrains+Mono:wght@800&display=swap" rel="stylesheet"/>
+    <style>
+        body { 
+            font-family: 'Plus Jakarta Sans', sans-serif; 
+            background: #f0f4f8; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            min-height: 100vh; margin: 0; padding: 20px;
+        }
+        .print-card {
+            background: white; width: 100%; max-width: 380px; 
+            padding: 40px; border-radius: 20px; text-align: center;
+            box-shadow: 0 10px 40px rgba(15,45,74,0.1);
+        }
+        .logo { font-size: 28px; font-weight: 800; color: #0f2d4a; margin-bottom: 5px; }
+        .logo span { color: #f97316; }
+        .subtitle { font-size: 13px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 30px; font-weight: 700; }
+        
+        .qr-image { width: 100%; max-width: 250px; height: auto; margin: 0 auto 20px; display: block; }
+        
+        .code-box {
+            background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 12px; padding: 15px;
+        }
+        .code-label { font-size: 11px; color: #dc2626; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
+        .code-text { font-family: 'JetBrains Mono', monospace; font-size: 32px; font-weight: 800; color: #0f2d4a; letter-spacing: 2px; margin: 0; }
+        
+        .print-btn {
+            background: #f97316; color: white; border: none; padding: 14px 30px; border-radius: 10px;
+            font-size: 16px; font-weight: 800; font-family: inherit; cursor: pointer; margin-top: 30px;
+            transition: 0.2s; box-shadow: 0 4px 15px rgba(249,115,22,0.3);
+        }
+        .print-btn:hover { transform: translateY(-2px); }
+        
+        @media print {
+            body { background: white; }
+            .print-card { box-shadow: none; padding: 0; }
+            .print-btn { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="print-card">
+        <div class="logo">SAR-X <span>ARFF</span></div>
+        <div class="subtitle">Ekipman Kontrol Noktası</div>
+        
+        <img src="{{ url_for('inventory.qr_img', kodu=kutu.kodu) }}" alt="QR Kod" class="qr-image">
+        
+        <div class="code-box">
+            <div class="code-label">KAMERA ÇALIŞMIYORSA BU KODU GİRİN</div>
+            <div class="code-text">{{ kutu.kodu }}</div>
+        </div>
+    </div>
+
+    <button class="print-btn" onclick="window.print()">🖨️ Etiketi Yazdır</button>
+
+</body>
+</html>

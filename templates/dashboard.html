@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block title %}Panel{% endblock %}
+
+{% block extra_css %}
+<style>
+/* Dashboard Özel Bileşenleri (CSS Variables Base'den gelir) */
+.page-header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 20px; }
+.page-title { font-size: 22px; font-weight: 800; color: var(--navy); letter-spacing: -.02em; }
+.page-meta { font-size: 12.5px; color: var(--text3); margin-top: 4px; display: flex; align-items: center; gap: 6px; }
+
+/* Butonlar */
+.btn-primary { background: var(--orange); color: #fff; border: none; padding: 10px 20px; border-radius: var(--r); font-family: var(--sans); font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 10px rgba(249,115,22,.28); text-decoration: none; transition: transform .1s, box-shadow .1s; }
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(249,115,22,.38); }
+
+/* Alarm Şeridi */
+.alarm-strip { background: var(--red-light); border: 1.5px solid var(--red-border); border-radius: var(--r-lg); padding: 14px 18px; display: flex; align-items: center; gap: 14px; margin-bottom: 20px; cursor: pointer; transition: background .15s; text-decoration: none; }
+.alarm-strip:hover { background: #fee2e2; }
+.alarm-strip-icon { width: 40px; height: 40px; border-radius: 10px; background: var(--red); display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; animation: shake 4s ease-in-out infinite; }
+@keyframes shake { 0%, 88%, 100% { transform: translateX(0); } 91% { transform: translateX(-3px); } 94% { transform: translateX(3px); } 97% { transform: translateX(-2px); } }
+.alarm-strip-body { flex: 1; }
+.alarm-strip-title { font-size: 14px; font-weight: 700; color: var(--red); }
+.alarm-strip-desc { font-size: 12px; color: #991b1b; margin-top: 2px; }
+.warn-strip { background: var(--amber-light); border-color: var(--amber-border); }
+.warn-strip .alarm-strip-icon { background: var(--amber); }
+.warn-strip .alarm-strip-title { color: var(--amber); }
+
+/* Stats Grid */
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px; transition: transform .15s, box-shadow .15s; }
+.stat-card:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.07); }
+.stat-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.stat-icon { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+.stat-trend { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px; }
+.stat-value { font-size: 32px; font-weight: 800; color: var(--navy); line-height: 1; letter-spacing: -.03em; }
+.stat-label { font-size: 13px; font-weight: 600; color: var(--text2); margin-top: 5px; }
+
+/* Panels & Rows */
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; margin-bottom: 20px; }
+.panel-header { padding: 15px 18px 13px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.panel-title { font-size: 14px; font-weight: 700; color: var(--navy); display: flex; align-items: center; gap: 8px; }
+.panel-title-icon { width: 28px; height: 28px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.alarm-row { padding: 12px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; transition: background .12s; text-decoration: none; color: inherit; }
+.alarm-row:hover { background: var(--surface2); }
+.alarm-row-info { flex: 1; }
+.alarm-row-name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.alarm-row-meta { font-size: 11px; color: var(--text3); margin-top: 2px; font-family: var(--mono); }
+
+/* Status Tags */
+.status-tag { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 5px; white-space: nowrap; flex-shrink: 0; }
+.tag-red { background: var(--red-light); color: var(--red); }
+.tag-amber { background: var(--amber-light); color: var(--amber); }
+
+/* Quick Actions */
+.quick-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 16px; }
+.quick-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r); padding: 16px 10px; text-align: center; cursor: pointer; text-decoration: none; transition: transform .12s; }
+.quick-btn:hover { background: var(--surface); border-color: var(--orange); transform: translateY(-2px); box-shadow: 0 4px 14px rgba(249,115,22,.12); }
+.quick-label { font-size: 12px; font-weight: 700; color: var(--navy); margin-top: 7px; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Operasyonel Durum</div>
+        <div class="page-meta">
+            <span>{{ bugun.strftime('%d.%m.%Y') }}</span>
+            <div class="meta-dot" style="width: 3px; height: 3px; background: var(--text4); border-radius: 50%;"></div>
+            <span>{{ havalimani_ad }}</span>
+        </div>
+    </div>
+    {% if rol in ['sahip', 'yetkili'] %}
+    <a href="{{ url_for('inventory.malzeme_ekle') }}" class="btn-primary">＋ Yeni Kayıt</a>
+    {% endif %}
+</div>
+
+{% if arizali_malzemeler %}
+<a href="{{ url_for('inventory.envanter') }}" class="alarm-strip">
+    <div class="alarm-strip-icon">⚠️</div>
+    <div class="alarm-strip-body">
+        <div class="alarm-strip-title">{{ arizali_malzemeler|length }} Kritik Arıza — Acil Müdahale Gerekiyor</div>
+        <div class="alarm-strip-desc">Sisteme kayıtlı arızalı malzemeler bulunmaktadır. Envanterden kontrol ediniz.</div>
+    </div>
+</a>
+{% endif %}
+
+{% if bakim_uyarilari %}
+<a href="{{ url_for('inventory.envanter') }}" class="alarm-strip warn-strip">
+    <div class="alarm-strip-icon">🔧</div>
+    <div class="alarm-strip-body">
+        <div class="alarm-strip-title">{{ bakim_uyarilari|length }} Yaklaşan Bakım</div>
+        <div class="alarm-strip-desc">Önümüzdeki 15 gün içerisinde bakımı yapılacak ekipmanlar var.</div>
+    </div>
+</a>
+{% endif %}
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-card-top">
+            <div class="stat-icon" style="background:#e8f0f7;">📦</div>
+            <span class="stat-trend" style="background: var(--navy); color: white;">BİRİM</span>
+        </div>
+        <div class="stat-value">{{ arizali_malzemeler|length + bakim_uyarilari|length + 20 }}</div>
+        <div class="stat-label">Toplam Ekipman</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-card-top">
+            <div class="stat-icon" style="background:var(--red-light);">🔴</div>
+            <span class="stat-trend" style="background: var(--red-light); color: var(--red);">ARIZA</span>
+        </div>
+        <div class="stat-value" style="color: var(--red);">{{ arizali_malzemeler|length }}</div>
+        <div class="stat-label">Arızalı Malzeme</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-card-top">
+            <div class="stat-icon" style="background:var(--amber-light);">🔧</div>
+            <span class="stat-trend" style="background: var(--amber-light); color: var(--amber);">YAKIN</span>
+        </div>
+        <div class="stat-value" style="color: var(--amber);">{{ bakim_uyarilari|length }}</div>
+        <div class="stat-label">Bakım Bekleyen</div>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+    
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">
+                <div class="panel-title-icon" style="background: var(--amber-light);">🔔</div>
+                Acil Aksiyon Listesi
+            </div>
+        </div>
+        {% for m in bakim_uyarilari[:4] %}
+        <a href="{{ url_for('inventory.kutu_detay', kodu=m.kutu.kodu) }}" class="alarm-row">
+            <div class="alarm-row-info">
+                <div class="alarm-row-name">{{ m.ad }}</div>
+                <div class="alarm-row-meta">Kutu: {{ m.kutu.kodu }} · Tarih: {{ m.gelecek_bakim_tarihi.strftime('%d.%m.%Y') }}</div>
+            </div>
+            <div class="status-tag tag-amber">BAKIM</div>
+        </a>
+        {% else %}
+        <div style="padding: 20px; text-align: center; color: var(--text3); font-size: 13px;">
+            Yakın zamanda planlı bir bakım görünmüyor.
+        </div>
+        {% endfor %}
+    </div>
+
+    <div>
+        <div class="panel" style="margin-bottom: 20px;">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <div class="panel-title-icon" style="background: var(--blue-light); color: var(--blue);">🔎</div>
+                    Kutu / Ünite Bul (B Planı)
+                </div>
+            </div>
+            <div style="padding: 20px;">
+                <p style="font-size: 12.5px; color: var(--text3); margin-bottom: 15px; line-height: 1.5;">Kameranız çalışmıyorsa veya QR kod yıpranmışsa, etiketin altındaki numarayı buraya girerek işleme devam edebilirsiniz.</p>
+                
+                <form method="POST" action="{{ url_for('inventory.kutu_bul') }}" style="display: flex; gap: 10px;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    
+                    <input type="text" name="kutu_kodu" placeholder="Örn: KUTU-01" 
+                           class="form-control" 
+                           style="margin-bottom: 0; text-transform: uppercase; font-family: var(--mono); font-weight: 800; font-size: 15px;" required autocomplete="off">
+                           
+                    <button type="submit" class="btn btn-navy" style="flex-shrink: 0; padding: 0 24px;">Bul</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <div class="panel-title-icon" style="background: var(--green-light);">⚡</div>
+                    Hızlı Erişim
+                </div>
+            </div>
+            <div class="quick-grid">
+                <a href="{{ url_for('inventory.envanter_excel') }}" class="quick-btn">
+                    <div style="font-size: 24px;">📊</div>
+                    <div class="quick-label">Excel İndir</div>
+                </a>
+                <a href="{{ url_for('inventory.envanter_pdf') }}" class="quick-btn">
+                    <div style="font-size: 24px;">📄</div>
+                    <div class="quick-label">PDF Rapor</div>
+                </a>
+                {% if rol in ['sahip', 'yetkili'] %}
+                <a href="{{ url_for('inventory.malzeme_ekle') }}" class="quick-btn">
+                    <div style="font-size: 24px;">➕</div>
+                    <div class="quick-label">Kayıt Ekle</div>
+                </a>
+                <a href="{{ url_for('admin.site_yonetimi') }}" class="quick-btn">
+                    <div style="font-size: 24px;">🌐</div>
+                    <div class="quick-label">Site Yönetimi</div>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+</div>
+{% endblock %}

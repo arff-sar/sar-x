@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        /* Google Fonts'tan Roboto çekiliyor (Türkçe uyumlu) */
+        @font-face {
+            font-family: 'Roboto';
+            src: url('https://fonts.gstatic.com/s/roboto/v30/KFOmCnqEu92Fr1Me5WZLCzYlKw.ttf') format('truetype');
+        }
+        
+        body { 
+            font-family: 'Roboto', sans-serif; /* Fontu gövdeye uyguluyoruz */
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; font-size: 10px; }
+        th { background-color: #1a237e; color: white; }
+        .header { text-align: center; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>HAVALIMANI SAR ENVANTER RAPORU</h2>
+        <p>Tarih: {{ tarih.strftime('%d.%m.%Y %H:%M') }}</p>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Ad</th>
+                <th>Seri No</th>
+                <th>Kutu</th>
+                <th>Miktar</th>
+                <th>Durum</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for m in malzemeler %}
+            <tr>
+                <td>{{ m.ad }}</td>
+                <td>{{ m.seri_no or '-' }}</td>
+                <td>{{ m.kutu.kodu }}</td>
+                <td>{{ m.stok_miktari }}</td>
+                <td>{{ m.durum }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

@@ -1,0 +1,44 @@
+name: SAR-X ARFF CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      # Eğer testlerde gerçek bir DB gerekirse buraya servis eklenebilir.
+      # Şu an sqlite :memory: kullandığımız için bu alan boş bırakılmıştır.
+
+    steps:
+    - name: Repo Kodlarını Çek
+      uses: actions/checkout@v3
+
+    - name: Python 3.9 Kurulumu
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.9"
+
+    - name: Bağımlılıkları Yükle
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-flask factory-boy coverage
+
+    - name: Testleri Çalıştır ve Kapsama Raporu Al
+      # .coveragerc dosyasındaki fail_under = 70 kuralı burada otomatik devreye girer.
+      # Eğer kapsam %70'in altındaysa bu adım hata verecek ve "Kırmızı" yanacaktır.
+      run: |
+        coverage run -m pytest
+        coverage report
+
+    - name: Kapsama Raporunu Arşivle (Opsiyonel)
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: coverage-report
+        path: .coverage

@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Havalimanı Yönetimi{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Sayfa özelinde ek stiller */
+    .airport-list-item {
+        transition: background 0.2s;
+    }
+    .airport-list-item:hover {
+        background: var(--surface2);
+    }
+    .form-container {
+        position: sticky;
+        top: 80px;
+    }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Havalimanı & Birim Yönetimi</div>
+        <div class="page-meta">
+            <span>Sistemdeki aktif operasyon noktalarını yönetin</span>
+            <div class="meta-dot" style="width: 3px; height: 3px; background: var(--text4); border-radius: 50%;"></div>
+            <span>Toplam: {{ havalimanlari|length }} Birim</span>
+        </div>
+    </div>
+</div>
+
+<div class="two-col">
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">
+                <div class="panel-title-icon pi-navy">✈️</div>
+                Mevcut Havalimanları
+            </div>
+        </div>
+        
+        <div class="airport-list">
+            {% for h in havalimanlari %}
+            <div class="airport-row airport-list-item">
+                <div class="airport-code-badge {% if loop.first %}active{% endif %}">{{ h.kodu }}</div>
+                <div class="airport-row-info">
+                    <div class="airport-row-name">{{ h.ad }}</div>
+                    <div class="airport-row-meta">
+                        ID: {{ h.id }} | 
+                        <span class="text-muted">Ekipman: {{ h.malzemeler|length }}</span> | 
+                        <span class="text-muted">Personel: {{ h.personeller|length }}</span>
+                    </div>
+                </div>
+                <button class="row-btn" onclick="duzenleModu('{{ h.id }}', '{{ h.ad }}', '{{ h.kodu }}')">
+                    📝 Düzenle
+                </button>
+            </div>
+            {% else %}
+            <div style="padding: 40px; text-align: center; color: var(--text3);">
+                <div style="font-size: 30px; margin-bottom: 10px;">🏝️</div>
+                Henüz bir havalimanı tanımlanmamış.
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="form-container">
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title" id="form-baslik">
+                    <div class="panel-title-icon pi-orange">➕</div>
+                    Yeni Havalimanı Ekle
+                </div>
+            </div>
+            <div style="padding: 24px;">
+                <form action="{{ url_for('admin.havalimanlari') }}" method="POST" id="havalimaniForm">
+                    <input type="hidden" name="islem" id="islem" value="ekle">
+                    <input type="hidden" name="id" id="h_id">
+                    
+                    <div class="mb-16">
+                        <label class="fw-700 text-small" style="display: block; margin-bottom: 8px; color: var(--text2);">HAVALİMANI ADI</label>
+                        <input type="text" name="ad" id="h_ad" placeholder="Örn: Ankara Esenboğa Havalimanı" required 
+                               class="field-input">
+                    </div>
+                    
+                    <div class="mb-20">
+                        <label class="fw-700 text-small" style="display: block; margin-bottom: 8px; color: var(--text2);">BİRİM KODU (IATA)</label>
+                        <input type="text" name="kodu" id="h_kodu" placeholder="Örn: ESB" maxlength="5" required 
+                               class="field-input" style="text-transform: uppercase; font-family: var(--mono); letter-spacing: 1px;">
+                        <small style="display: block; margin-top: 6px; color: var(--text4); font-size: 11px;">
+                            * Bu kod sistemdeki tüm QR ve seri numaralarında ön ek olarak kullanılır.
+                        </small>
+                    </div>
+
+                    <div style="display: flex; gap: 12px;">
+                        <button type="submit" class="btn-primary" style="flex: 2; justify-content: center;">
+                            💾 Kaydet
+                        </button>
+                        <button type="button" class="btn-secondary" onclick="resetForm()" style="flex: 1; justify-content: center;">
+                            İptal
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="pwa-banner" style="margin-top: 16px; background: #fffbeb; border-color: #fef3c7;">
+            <div class="pwa-icon">💡</div>
+            <div class="pwa-text" style="color: #92400e;">
+                <strong>Önemli Not:</strong> Havalimanı kodunu değiştirmek, o birime bağlı eski kayıtların izlenebilirliğini etkilemez ancak raporlarda yeni kod görünür.
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+/**
+ * Formu Düzenleme Moduna Geçirir
+ */
+function duzenleModu(id, ad, kodu) {
+    // Form başlığını ve ikonunu değiştir
+    const baslik = document.getElementById('form-baslik');
+    baslik.innerHTML = '<div class="panel-title-icon pi-navy">📝</div> Birim Düzenle: ' + kodu;
+    
+    // Inputları doldur
+    document.getElementById('islem').value = 'guncelle';
+    document.getElementById('h_id').value = id;
+    document.getElementById('h_ad').value = ad;
+    document.getElementById('h_kodu').value = kodu;
+    
+    // Görsel geri bildirim için inputa odaklan
+    document.getElementById('h_ad').focus();
+    
+    // Panelin etrafına hafif bir vurgu ekle
+    const formPanel = document.querySelector('.form-container .panel');
+    formPanel.style.borderColor = 'var(--navy)';
+    setTimeout(() => { formPanel.style.borderColor = 'var(--border)'; }, 1000);
+}
+
+/**
+ * Formu Sıfırlayarak Ekleme Moduna Döndürür
+ */
+function resetForm() {
+    const baslik = document.getElementById('form-baslik');
+    baslik.innerHTML = '<div class="panel-title-icon pi-orange">➕</div> Yeni Havalimanı Ekle';
+    
+    document.getElementById('islem').value = 'ekle';
+    document.getElementById('h_id').value = '';
+    document.getElementById('havalimaniForm').reset();
+}
+
+// Kod girişini otomatik büyük harfe çevir
+document.getElementById('h_kodu').addEventListener('input', function(e) {
+    this.value = this.value.toUpperCase();
+});
+</script>
+{% endblock %}

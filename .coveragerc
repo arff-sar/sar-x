@@ -1,0 +1,15 @@
+[run]
+source = .
+omit = 
+    venv/*
+    tests/*
+    kurulum.py
+    setup_tests.py
+    migrations/*
+    tam_dizin.py
+    scheduler.py
+
+[report]
+show_missing = True
+fail_under = 70
+precision = 2

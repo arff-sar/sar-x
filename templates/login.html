@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+    <title>Giriş Yap — SAR-X ARFF</title>
+    
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#0f2d4a">
+    <link rel="apple-touch-icon" href="/static/img/icon-192.png">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;800&display=swap" rel="stylesheet"/>
+
+    <style>
+        /* --- SAR-X LOGIN DESIGN SYSTEM --- */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #f0f4f8; --surface: #ffffff; --surface2: #f8fafc;
+            --navy: #0f2d4a; --navy-hover: #1a3f63;
+            --orange: #f97316; --orange-light: #fff7ed; --orange-border: #fed7aa;
+            --border: #e2e8f0; --border-dark: #cbd5e1;
+            --text: #0f172a; --text2: #334155; --text3: #64748b; --text4: #94a3b8;
+            --blue: #2563eb; --blue-light: #eff6ff;
+            --red: #dc2626; --red-light: #fef2f2; --red-border: #fecaca;
+            --green: #16a34a; --green-light: #f0fdf4; --green-border: #bbf7d0;
+            --sans: 'Plus Jakarta Sans', sans-serif; --mono: 'JetBrains Mono', monospace;
+            --r-xl: 18px; --r-lg: 14px; --r: 10px;
+        }
+
+        body { font-family: var(--sans); background: var(--bg); color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+
+        .login-card { width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--border-dark); border-radius: var(--r-xl); box-shadow: 0 8px 40px rgba(15,45,74,.1); transition: all 0.3s ease; }
+        
+        .login-header { background: var(--navy); padding: 32px 32px 28px; text-align: center; border-radius: var(--r-xl) var(--r-xl) 0 0; }
+        .login-logo-mark { width: 56px; height: 56px; background: var(--orange); border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(249,115,22,.4); margin-bottom: 16px; }
+        .login-logo-mark svg { width: 28px; height: 28px; stroke: #fff; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+        .login-title { font-size: 26px; font-weight: 800; color: #fff; letter-spacing: -.02em; }
+        .login-subtitle { font-size: 12px; color: #94a3b8; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+        .login-body { padding: 28px 32px 32px; }
+        
+        /* Animasyon Sınıfları */
+        .fade-in-up { animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Flash Mesajları */
+        .flash-box { padding: 12px 16px; border-radius: var(--r); margin-bottom: 20px; font-size: 13.5px; font-weight: 600; display: flex; align-items: flex-start; gap: 10px; line-height: 1.4; }
+        .flash-danger, .flash-error { background: var(--red-light); color: var(--red); border: 1px solid #fecaca; }
+        .flash-success { background: var(--green-light); color: var(--green); border: 1px solid var(--green-border); }
+
+        .field-group { margin-bottom: 18px; }
+        .field-label { font-size: 12.5px; font-weight: 700; color: var(--text2); margin-bottom: 7px; display: flex; justify-content: space-between; align-items: center; }
+        .field-input { width: 100%; background: var(--surface2); border: 1.5px solid var(--border-dark); border-radius: var(--r); color: var(--text); font-family: var(--sans); font-size: 14px; padding: 12px 14px; outline: none; transition: border-color .2s, box-shadow .2s; }
+        .field-input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(249,115,22,.12); background: var(--surface); }
+        .field-input:invalid:not(:placeholder-shown) { border-color: var(--red); box-shadow: 0 0 0 3px rgba(220,38,38,.1); } 
+
+        /* CAPTCHA ALANI */
+        .captcha-box { display: flex; gap: 8px; align-items: stretch; background: var(--surface2); padding: 8px; border: 1.5px solid var(--border-dark); border-radius: var(--r-lg); transition: border-color .2s, box-shadow .2s; }
+        .captcha-box:focus-within { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(249,115,22,.12); background: var(--surface); }
+        .captcha-canvas-container { position: relative; background: #fff; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); flex-shrink: 0; }
+        #captchaCanvas { display: block; letter-spacing: 4px; width: 120px; height: 44px; }
+        .captcha-progress-bar { position: absolute; bottom: 0; left: 0; width: 100%; height: 3px; background: rgba(0,0,0,0.06); }
+        .captcha-progress-fill { height: 100%; background: var(--orange); width: 100%; transition: width 1s linear, background-color 0.3s; }
+        .captcha-refresh { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; width: 46px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text3); transition: 0.2s; flex-shrink: 0; outline: none; }
+        .captcha-refresh:hover { background: var(--orange-light); color: var(--orange); border-color: var(--orange-border); }
+        .captcha-refresh:active { transform: scale(0.95); }
+        .captcha-input { flex: 1; border: none !important; background: transparent !important; padding: 0 10px !important; font-family: var(--mono) !important; font-weight: 800 !important; font-size: 18px !important; color: var(--navy) !important; text-transform: uppercase; letter-spacing: 2px; box-shadow: none !important; width: 100%; min-width: 0; }
+        .captcha-input::placeholder { font-weight: 500; letter-spacing: normal; font-size: 13px; color: var(--text4); font-family: var(--sans); }
+        .captcha-error { color: var(--red); font-size: 12px; font-weight: 600; margin-top: 6px; display: none; padding-left: 5px; }
+
+        .login-btn-submit { width: 100%; background: var(--orange); color: #fff; border: none; border-radius: var(--r); padding: 14px; font-family: var(--sans); font-size: 15px; font-weight: 800; cursor: pointer; letter-spacing: .01em; box-shadow: 0 3px 14px rgba(249,115,22,.3); transition: transform .1s, box-shadow .1s; margin-top: 10px; }
+        .login-btn-submit:hover { transform: translateY(-1px); box-shadow: 0 5px 20px rgba(249,115,22,.4); }
+
+        .login-footer { margin-top: 24px; padding: 14px; background: var(--blue-light); border: 1px solid #bfdbfe; border-radius: var(--r); font-size: 11.5px; color: #1d4ed8; line-height: 1.45; text-align: center; }
+
+        /* YENİ NESİL ŞİFREMİ UNUTTUM EKRANI STİLLERİ */
+        .forgot-password-link { display: block; text-align: right; font-size: 12.5px; color: var(--blue); font-weight: 700; text-decoration: none; margin-top: -10px; margin-bottom: 15px; transition: color 0.2s; cursor: pointer; }
+        .forgot-password-link:hover { color: var(--navy); text-decoration: underline; }
+        
+        .back-btn-wrapper { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+        .back-icon-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text3); transition: 0.2s; }
+        .back-icon-btn:hover { background: var(--border); color: var(--navy); }
+        .back-icon-btn svg { width: 18px; height: 18px; stroke-width: 2.5; stroke: currentColor; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+        
+        .info-callout { background: var(--blue-light); border: 1px solid #bfdbfe; padding: 16px; border-radius: var(--r-lg); margin-bottom: 24px; display: flex; gap: 14px; align-items: flex-start; }
+        .info-callout-icon { font-size: 22px; line-height: 1; }
+        .info-callout-text { font-size: 13.5px; color: #1e3a8a; line-height: 1.5; font-weight: 500; margin: 0; }
+    </style>
+</head>
+<body>
+
+    <div class="login-card">
+        <div class="login-header">
+            <div class="login-logo-mark">
+                <svg viewBox="0 0 24 24"><path d="M12 2L3 7v5c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7L12 2z"/><path d="M9 12l2 2 4-4"/></svg>
+            </div>
+            <div class="login-title">SAR-X</div>
+            <div class="login-subtitle">ARFF Envanter Yönetim Sistemi</div>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div style="padding: 20px 32px 0;">
+            {% for category, message in messages %}
+              <div class="flash-box flash-{{ category }}">
+                <span style="font-size: 16px;">{% if category == 'success' %}✅{% else %}⚠️{% endif %}</span> 
+                <div>{{ message }}</div>
+              </div>
+            {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+
+        <div class="login-body" id="loginSection">
+            <form method="POST" action="{{ url_for('auth.login') }}" onsubmit="return validateCaptcha()">
+                
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div class="field-group">
+                    <label class="field-label">E-POSTA ADRESİ</label>
+                    <input type="email" name="kullanici_adi" class="field-input" placeholder="ornek@eposta.com" required autofocus 
+                           pattern="[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$" 
+                           title="Lütfen geçerli bir e-posta adresi girin (örn: isim@eposta.com)">
+                </div>
+
+                <div class="field-group">
+                    <label class="field-label">ŞİFRE</label>
+                    <input type="password" name="sifre" class="field-input" placeholder="••••••••" required>
+                </div>
+
+                <a class="forgot-password-link" onclick="toggleSection('forgotPasswordSection')">Şifremi Unuttum?</a>
+
+                <div class="field-group" style="margin-bottom: 5px;">
+                    <label class="field-label">
+                        GÜVENLİK KODU
+                        <span id="captchaTimerText" style="color: var(--orange); font-size: 12px; font-weight: 800; font-family: var(--mono);">60s</span>
+                    </label>
+                    
+                    <div class="captcha-box">
+                        <div class="captcha-canvas-container" title="Bot koruması">
+                            <canvas id="captchaCanvas" width="120" height="44"></canvas>
+                            <div class="captcha-progress-bar"><div id="captchaProgress" class="captcha-progress-fill"></div></div>
+                        </div>
+                        
+                        <button type="button" class="captcha-refresh" onclick="generateCaptcha()" title="Kodu Yenile">
+                            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                        </button>
+                        
+                        <input type="text" id="captchaInput" class="captcha-input" placeholder="Kodu girin" required autocomplete="off">
+                    </div>
+                    <div id="captchaError" class="captcha-error">⚠️ Girdiğiniz güvenlik kodu hatalı!</div>
+                </div>
+
+                <button type="submit" class="login-btn-submit">Sisteme Giriş Yap</button>
+            </form>
+
+            <div class="login-footer">
+                <strong>Güvenli Erişim Paneli</strong><br>
+                Bu sistem ARFF personeli kullanımı için yetkilendirilmiştir.
+            </div>
+        </div>
+
+        <div class="login-body" id="forgotPasswordSection" style="display: none;">
+            
+            <div class="back-btn-wrapper">
+                <button type="button" class="back-icon-btn" onclick="toggleSection('loginSection')" title="Giriş Ekranına Dön">
+                    <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+                <h3 style="color: var(--navy); font-size: 20px; font-weight: 800; margin: 0;">Şifremi Sıfırla</h3>
+            </div>
+            
+            <div class="info-callout">
+                <span class="info-callout-icon">📬</span>
+                <p class="info-callout-text">Sisteme kayıtlı e-posta adresinizi girin. Size şifrenizi yenilemeniz için <b>tek kullanımlık güvenli bir bağlantı</b> göndereceğiz.</p>
+            </div>
+            
+            <form method="POST" action="{{ url_for('auth.sifre_sifirla_talep') }}">
+                
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div class="field-group" style="margin-bottom: 24px;">
+                    <label class="field-label">E-POSTA ADRESİ</label>
+                    <input type="email" name="kullanici_adi" class="field-input" placeholder="ornek@eposta.com" required
+                           pattern="[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$" 
+                           title="Lütfen geçerli bir e-posta adresi girin">
+                </div>
+                
+                <button type="submit" class="login-btn-submit" style="background: var(--navy); box-shadow: 0 3px 14px rgba(15,45,74,.2);">
+                    Sıfırlama Bağlantısı Gönder
+                </button>
+            </form>
+            
+        </div>
+    </div>
+
+    <script>
+        // Formlar arası animasyonlu geçiş
+        function toggleSection(targetId) {
+            const loginSec = document.getElementById('loginSection');
+            const forgotSec = document.getElementById('forgotPasswordSection');
+            
+            // Tüm bölümleri gizle, animasyon sınıfını temizle
+            loginSec.style.display = 'none';
+            loginSec.classList.remove('fade-in-up');
+            forgotSec.style.display = 'none';
+            forgotSec.classList.remove('fade-in-up');
+            
+            // Hedef bölümü göster ve animasyonu tetikle
+            const target = document.getElementById(targetId);
+            target.style.display = 'block';
+            
+            // Animasyonun tetiklenmesi için minik bir gecikme (Reflow zorlaması)
+            void target.offsetWidth; 
+            target.classList.add('fade-in-up');
+        }
+
+        // CAPTCHA KODLARI
+        let currentCaptchaCode = "";
+        let captchaInterval;
+        let timeLeft = 60;
+        const TOTAL_TIME = 60;
+
+        function startCaptchaTimer() {
+            clearInterval(captchaInterval);
+            timeLeft = TOTAL_TIME;
+            updateTimerUI();
+            
+            captchaInterval = setInterval(() => {
+                timeLeft--;
+                updateTimerUI();
+                
+                if (timeLeft <= 0) {
+                    generateCaptcha();
+                }
+            }, 1000);
+        }
+
+        function updateTimerUI() {
+            const progressFill = document.getElementById('captchaProgress');
+            const timerText = document.getElementById('captchaTimerText');
+            
+            if (progressFill && timerText) {
+                const percentage = (timeLeft / TOTAL_TIME) * 100;
+                progressFill.style.width = percentage + '%';
+                timerText.innerText = timeLeft + 's';
+                
+                if (timeLeft <= 10) {
+                    progressFill.style.background = 'var(--red)';
+                    timerText.style.color = 'var(--red)';
+                } else {
+                    progressFill.style.background = 'var(--orange)';
+                    timerText.style.color = 'var(--orange)';
+                }
+            }
+        }
+
+        function generateCaptcha() {
+            const canvas = document.getElementById('captchaCanvas');
+            const ctx = canvas.getContext('2d');
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            currentCaptchaCode = '';
+            
+            for (let i = 0; i < 5; i++) {
+                currentCaptchaCode += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            for (let i = 0; i < 6; i++) {
+                ctx.strokeStyle = `rgba(${Math.random()*100}, ${Math.random()*100}, ${Math.random()*200}, 0.3)`;
+                ctx.lineWidth = Math.random() * 2;
+                ctx.beginPath();
+                ctx.moveTo(Math.random() * canvas.width, Math.random() * canvas.height);
+                ctx.lineTo(Math.random() * canvas.width, Math.random() * canvas.height);
+                ctx.stroke();
+            }
+
+            ctx.font = '800 22px "JetBrains Mono", monospace';
+            ctx.fillStyle = '#0f2d4a';
+            ctx.textBaseline = 'middle';
+            
+            for(let i = 0; i < currentCaptchaCode.length; i++) {
+                let xOffset = 10 + (i * 20);
+                let yOffset = 22 + (Math.random() * 6 - 3); 
+                ctx.fillText(currentCaptchaCode[i], xOffset, yOffset);
+            }
+
+            for (let i = 0; i < 30; i++) {
+                ctx.fillStyle = `rgba(${Math.random()*255}, ${Math.random()*255}, ${Math.random()*255}, 0.5)`;
+                ctx.beginPath();
+                ctx.arc(Math.random() * canvas.width, Math.random() * canvas.height, Math.random() * 1.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            document.getElementById('captchaInput').value = '';
+            document.getElementById('captchaError').style.display = 'none';
+            startCaptchaTimer();
+        }
+
+        function validateCaptcha() {
+            // Şifremi unuttum ekranı açıksa captcha doğrulamasına gerek yok
+            if (document.getElementById('forgotPasswordSection').style.display === 'block') {
+                return true; 
+            }
+
+            const userInput = document.getElementById('captchaInput').value.trim().toUpperCase();
+            if (userInput !== currentCaptchaCode) {
+                document.getElementById('captchaError').style.display = 'block';
+                generateCaptcha(); 
+                document.getElementById('captchaInput').focus();
+                return false; 
+            }
+            return true; 
+        }
+
+        window.onload = generateCaptcha;
+    </script>
+
+</body>
+</html>
