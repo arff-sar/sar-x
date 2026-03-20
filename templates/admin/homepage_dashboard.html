@@ -1,0 +1,36 @@
+{% extends "admin/homepage_base.html" %}
+
+{% block homepage_body %}
+<div class="hp-kpi-grid">
+  <div class="hp-kpi"><div class="label">Slider</div><div class="value">{{ slider_count }}</div></div>
+  <div class="hp-kpi"><div class="label">Public Modül</div><div class="value">{{ section_count }}</div></div>
+  <div class="hp-kpi"><div class="label">Duyuru</div><div class="value">{{ announcement_count }}</div></div>
+  <div class="hp-kpi"><div class="label">İstatistik</div><div class="value">{{ stat_count }}</div></div>
+  <div class="hp-kpi"><div class="label">Yayındaki İçerik</div><div class="value">{{ published_count }}</div></div>
+  <div class="hp-kpi"><div class="label">Taslak İçerik</div><div class="value">{{ draft_count }}</div></div>
+</div>
+
+<div class="panel" style="margin-top:16px;">
+  <div class="panel-header">
+    <div class="panel-title">Yönetim Kısayolları</div>
+  </div>
+  <div class="panel-body" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px;">
+    <a class="btn btn-secondary" href="{{ url_for('content.homepage_slider_create') }}">Yeni Slider Ekle</a>
+    <a class="btn btn-secondary" href="{{ url_for('content.homepage_section_create') }}">Yeni Public İçerik Modülü Ekle</a>
+    <a class="btn btn-secondary" href="{{ url_for('content.homepage_announcement_create') }}">Yeni Duyuru Ekle</a>
+    <a class="btn btn-secondary" href="{{ url_for('content.homepage_stats_list') }}">İstatistik Kartlarını Düzenle</a>
+    <a class="btn btn-secondary" href="{{ url_for('content.media_library') }}">Medya Kütüphanesi</a>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-header">
+    <div class="panel-title">Anasayfa Akışı</div>
+  </div>
+  <div class="panel-body">
+    <div class="hp-preview-note">
+      Public akış slider, duyurular ve sayısal özet alanlarından oluşur. Biz Kimiz görsel alanı ile Eğitimler/Tatbikatlar modülleri public içerik modülleri listesinden yönetilir.
+    </div>
+  </div>
+</div>
+{% endblock %}

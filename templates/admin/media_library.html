@@ -1,0 +1,74 @@
+{% extends "admin/homepage_base.html" %}
+
+{% block homepage_body %}
+<div class="panel">
+  <div class="panel-header">
+    <div class="panel-title">Medya Kütüphanesi</div>
+  </div>
+
+  <div class="hp-toolbar">
+    <form method="GET" class="hp-toolbar-left">
+      <input type="search" name="q" value="{{ search_query or '' }}" placeholder="Başlık veya dosya yolu ara...">
+      <button class="btn btn-secondary" type="submit">Ara</button>
+      <a class="btn btn-secondary" href="{{ url_for('content.media_library') }}">Temizle</a>
+    </form>
+  </div>
+
+  <div class="panel-body">
+    <form method="POST" action="{{ url_for('content.media_upload') }}" enctype="multipart/form-data" style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:18px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="text" name="title" class="form-control" placeholder="Dosya başlığı" required>
+      <input type="text" name="alt_text" class="form-control" placeholder="Alt metin (opsiyonel)">
+      <input type="file" name="media_file" class="form-control" required style="grid-column:1 / -1;">
+      <button class="btn btn-primary" type="submit" style="grid-column:1 / -1; justify-content:center;">Medya Yükle</button>
+    </form>
+
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Önizleme</th>
+            <th>Başlık</th>
+            <th>Yol</th>
+            <th>Tür</th>
+            <th>Durum</th>
+            <th>İşlem</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for asset in assets %}
+          <tr>
+            <td style="width:72px;">
+              {% if asset.file_type == 'image' %}
+                <img src="{{ asset.file_path }}" alt="{{ asset.alt_text or asset.title }}" style="width:56px; height:40px; object-fit:cover; border-radius:6px; border:1px solid var(--border);">
+              {% else %}
+                📄
+              {% endif %}
+            </td>
+            <td>{{ asset.title }}</td>
+            <td style="font-family:var(--mono); font-size:11px;">{{ asset.file_path }}</td>
+            <td>{{ asset.file_type }}</td>
+            <td>
+              <span class="hp-status-pill {% if asset.is_active %}hp-status-published{% else %}hp-status-passive{% endif %}">
+                {{ 'Aktif' if asset.is_active else 'Pasif' }}
+              </span>
+            </td>
+            <td>
+              <div class="row-actions">
+                <a class="row-btn" href="{{ asset.file_path }}" target="_blank">Aç</a>
+                <form method="POST" action="{{ url_for('content.media_toggle', asset_id=asset.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="row-btn" type="submit">{{ 'Pasif Et' if asset.is_active else 'Aktif Et' }}</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6"><div class="hp-empty">Henüz medya kaydı yok. Yukarıdaki formdan dosya yükleyebilirsiniz.</div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

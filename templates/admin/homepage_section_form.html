@@ -1,0 +1,54 @@
+{% extends "admin/homepage_base.html" %}
+
+{% block homepage_body %}
+<div class="panel" style="max-width:940px;">
+  <div class="panel-header">
+    <div class="panel-title">{{ 'Public İçerik Modülünü Düzenle' if section else 'Yeni Public İçerik Modülü Ekle' }}</div>
+  </div>
+  <div class="panel-body">
+    <div class="hp-preview-note">Bu içerikler Hakkımızda sayfalarını ve Faaliyetlerimiz altındaki Eğitimler/Tatbikatlar modüllerini besler. Public sayfadaki başlıklarla birebir eşleşen bloklar burada yönetilir.</div>
+    <form method="POST" action="{% if section %}{{ url_for('content.homepage_section_edit', section_id=section.id) }}{% else %}{{ url_for('content.homepage_section_create') }}{% endif %}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Sayfa / Modül Türü</label>
+      <select name="section_key" class="form-control" required>
+        {% set current_key = section.section_key if section else '' %}
+        {% for key, label in [('about','Biz Kimiz Sayfası'), ('mission','Misyon Kartı'), ('vision','Vizyon Kartı'), ('ethics','Etik Değerler Kartı'), ('training','Eğitimler Sayfası Modülü'), ('exercise','Tatbikatlar Sayfası Modülü'), ('operation','Tatbikatlar Legacy Modülü'), ('featured','Öne Çıkan Bilgi (Legacy)'), ('contact','İletişim Özeti (Legacy)')] %}
+        <option value="{{ key }}" {% if current_key == key %}selected{% endif %}>{{ label }} ({{ key }})</option>
+        {% endfor %}
+      </select>
+      <label>Modül Başlığı</label>
+      <input type="text" name="title" class="form-control" required value="{{ section.title if section else '' }}">
+      <label>Kısa Üst Etiket / Mini Kategori</label>
+      <input type="text" name="subtitle" class="form-control" value="{{ section.subtitle if section else '' }}">
+      <label>Açıklama Metni</label>
+      <textarea name="content" class="form-control" style="height:110px;">{{ section.content if section else '' }}</textarea>
+      <label>İkon (Emoji veya kısa metin)</label>
+      <input type="text" name="icon" class="form-control" value="{{ section.icon if section else '' }}">
+      <label>Görsel Yolu / URL</label>
+      <input type="text" name="image_path" class="form-control" value="{{ section.image_path if section else '' }}">
+      <div style="margin-top:-8px; margin-bottom:10px;">
+        <a href="{{ url_for('content.media_library') }}" class="row-btn" target="_blank">Medya Kütüphanesi Aç</a>
+      </div>
+      <label>Sıralama</label>
+      <input type="number" name="order_index" class="form-control" value="{{ section.order_index if section else 0 }}">
+      <label>Workflow Durumu</label>
+      {% set current_status = workflow_status if workflow_status is defined else ('published' if section and section.is_active else 'draft') %}
+      <select name="workflow_status" class="form-control">
+        <option value="published" {% if current_status == 'published' %}selected{% endif %}>Yayında</option>
+        <option value="draft" {% if current_status == 'draft' %}selected{% endif %}>Taslak</option>
+        <option value="passive" {% if current_status == 'passive' %}selected{% endif %}>Pasif</option>
+        <option value="archived" {% if current_status == 'archived' %}selected{% endif %}>Arşiv</option>
+      </select>
+      <label style="text-transform:none;">
+        <input type="checkbox" name="is_active" {% if (section and section.is_active) or not section %}checked{% endif %}>
+        Legacy aktif bayrağı
+      </label>
+      <div style="display:flex; gap:8px; margin-top:12px;">
+        <button class="btn btn-primary" type="submit">{{ 'Güncelle' if section else 'Kaydet' }}</button>
+        <button class="btn btn-secondary" type="submit" formaction="{{ url_for('content.content_preview', content_type='section') }}" formtarget="_blank">Önizle</button>
+        <a class="btn btn-secondary" href="{{ url_for('content.homepage_section_list') }}">Listeye Dön</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

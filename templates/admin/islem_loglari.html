@@ -1,124 +1,286 @@
 {% extends "base.html" %}
-{% block title %}İşlem Logları{% endblock %}
+{% block title %}İşlem Kayıtları{% endblock %}
 
 {% block extra_css %}
 <style>
-    /* Log kategorileri için özel renk paleti */
-    .tip-giris    { background: var(--blue-light);  color: var(--blue);   border: 1px solid #bfdbfe; }
-    .tip-envanter { background: var(--green-light); color: var(--green);  border: 1px solid var(--green-border); }
-    .tip-guvenlik { background: var(--amber-light); color: var(--amber);  border: 1px solid var(--amber-border); }
-    .tip-hata     { background: var(--red-light);   color: var(--red);    border: 1px solid var(--red-border); }
-    
-    @media print {
-        .sidebar, .topbar, .search-wrap, .btn-secondary { display: none !important; }
-        .main-content { padding: 0 !important; background: white !important; }
-        .panel { border: none !important; box-shadow: none !important; }
-    }
+  .logs-shell { display:grid; gap:22px; }
+  .logs-filter-panel .panel-body { padding:22px; display:grid; gap:18px; }
+  .logs-filter-form { display:grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap:14px; align-items:end; }
+  .logs-filter-form .form-group { margin-bottom:0; }
+  .logs-filter-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .logs-filter-actions .btn { min-width:120px; }
+  .logs-filter-help { padding:14px 16px; border-radius:16px; border:1px solid var(--border); background:linear-gradient(180deg, rgba(255,255,255,.96) 0%, rgba(248,250,252,.96) 100%); color:var(--text3); font-size:12px; line-height:1.55; }
+  .logs-summary { display:grid; gap:14px; padding:18px; border:1px solid var(--border); border-radius:18px; background:linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,250,252,.98) 100%); }
+  .logs-summary-head { display:flex; justify-content:space-between; gap:14px; align-items:flex-start; }
+  .logs-summary-label { font-size:11px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
+  .logs-summary-value { margin-top:4px; font-size:28px; font-weight:900; color:var(--navy); letter-spacing:-.03em; }
+  .logs-summary-note { margin-top:6px; font-size:12.5px; color:var(--text3); line-height:1.55; }
+  .logs-pill-row { display:flex; flex-wrap:wrap; gap:8px; }
+  .logs-pill { display:inline-flex; align-items:center; gap:6px; padding:7px 11px; border-radius:999px; background:var(--surface2); border:1px solid var(--border); color:var(--text3); font-size:11px; font-weight:800; }
+  .logs-pill.is-active { background:var(--blue-light); border-color:#bfdbfe; color:var(--blue); }
+  .logs-pill.is-count { background:rgba(249,115,22,.08); border-color:rgba(249,115,22,.18); color:var(--orange); }
+  .logs-table-panel .table-container { overflow:auto; }
+  .logs-table thead th { white-space:nowrap; }
+  .logs-table td { vertical-align:top; }
+  .log-user-cell { display:grid; gap:6px; min-width:150px; }
+  .log-user-name { font-size:13px; font-weight:800; color:var(--navy); line-height:1.35; }
+  .log-user-note { font-size:11.5px; color:var(--text3); }
+  .log-operation-cell { display:grid; gap:6px; min-width:160px; }
+  .log-operation-title { font-size:13px; font-weight:800; color:var(--navy); line-height:1.35; }
+  .log-operation-note { font-size:11.5px; color:var(--text3); }
+  .log-record-cell { display:grid; gap:6px; min-width:150px; }
+  .log-record-title { font-size:12.5px; font-weight:800; color:var(--text2); line-height:1.35; }
+  .log-record-note { font-size:11px; color:var(--text4); }
+  .log-detail-cell { min-width:280px; }
+  .log-detail-text { font-size:12.5px; color:var(--text2); line-height:1.55; word-break:break-word; }
+  .log-detail-meta { margin-top:8px; font-size:11px; color:var(--text4); }
+  .logs-empty { display:grid; gap:8px; padding:34px 24px; border:1px dashed var(--border-dark); border-radius:18px; background:linear-gradient(180deg, rgba(248,250,252,.92) 0%, rgba(255,255,255,.98) 100%); text-align:center; color:var(--text3); }
+  .logs-empty strong { color:var(--navy); font-size:16px; }
+
+  @media (max-width: 900px) {
+    .logs-summary-head { display:grid; grid-template-columns:1fr; }
+  }
+
+  @media (max-width: 720px) {
+    .logs-filter-form { grid-template-columns: 1fr; }
+    .logs-filter-actions { width:100%; }
+    .logs-filter-actions .btn { flex:1 1 100%; }
+  }
 </style>
 {% endblock %}
 
 {% block body %}
 <div class="page-header">
     <div>
-        <div class="page-title">Sistem İşlem Logları (Kara Kutu)</div>
-        <div class="page-meta">
-            <span>Tüm kullanıcı hareketleri ve denetim kayıtları</span>
-            <div class="meta-dot" style="width: 3px; height: 3px; background: var(--text4); border-radius: 50%;"></div>
-            <span>Toplam: {{ loglar|length }} Kayıt</span>
-        </div>
-    </div>
-    <div style="display: flex; gap: 8px;">
-        <button class="btn-secondary" onclick="window.print()">🖨️ Rapor Yazdır</button>
+        <div class="page-title">İşlem Kayıtları</div>
+        <div class="page-meta">Giriş, güvenlik, kullanıcı, rapor ve içerik işlemlerini tek ekranda filtreleyin.</div>
     </div>
 </div>
 
-<div class="panel">
-    <div class="panel-header">
-        <div class="panel-title">
-            <div class="panel-title-icon pi-navy">📜</div>
-            Denetim Kayıtları
+<div
+    class="logs-shell"
+    id="auditLogsPage"
+    data-result-count="{{ filtered_count }}"
+    data-has-active-filters="{{ 'true' if has_active_filters else 'false' }}"
+>
+    <div class="panel logs-filter-panel">
+        <div class="panel-header">
+            <div>
+                <div class="panel-title">Filtreler</div>
+                <div class="panel-subtitle">İşlem kayıtlarını kullanıcı, işlem türü, ilgili kayıt, sonuç ve tarih aralığına göre daraltın.</div>
+            </div>
         </div>
-        <div class="search-wrap">
-            <span class="search-icon">🔍</span>
-            <input type="text" id="logSearch" class="search-input" placeholder="Personel veya işlem ara..." onkeyup="filterLogs()">
+        <div class="panel-body">
+            <form method="GET" class="logs-filter-form" id="auditLogFilterForm">
+                <div class="form-group">
+                    <label for="auditUserFilter">Kullanıcı</label>
+                    <select name="user_id" id="auditUserFilter" class="form-control">
+                        <option value="">Tüm kullanıcılar</option>
+                        {% for user in users %}
+                        <option value="{{ user.id }}" {% if selected_user_id == user.id %}selected{% endif %}>{{ user.tam_ad }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="auditEventTypeFilter">Olay Tipi</label>
+                    <select name="event_type" id="auditEventTypeFilter" class="form-control">
+                        <option value="">Tüm işlem türleri</option>
+                        {% for option in event_type_options %}
+                        <option value="{{ option.key }}" {% if selected_event_type == option.key %}selected{% endif %}>{{ option.label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% if has_target_model %}
+                <div class="form-group">
+                    <label for="auditTargetModelFilter">İlgili Kayıt Türü</label>
+                    <select name="target_model" id="auditTargetModelFilter" class="form-control">
+                        <option value="">Tüm kayıt türleri</option>
+                        {% for option in target_model_options %}
+                        <option value="{{ option.key }}" {% if selected_target_model == option.key %}selected{% endif %}>{{ option.label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+                <div class="form-group">
+                    <label for="auditOutcomeFilter">Sonuç</label>
+                    <select name="outcome" id="auditOutcomeFilter" class="form-control">
+                        <option value="">Tüm sonuçlar</option>
+                        {% for option in outcome_options %}
+                        <option value="{{ option.key }}" {% if selected_outcome == option.key %}selected{% endif %}>{{ option.label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="auditDateFrom">Tarih Başlangıç</label>
+                    <input type="date" name="date_from" id="auditDateFrom" class="form-control" value="{{ selected_date_from }}">
+                </div>
+                <div class="form-group">
+                    <label for="auditDateTo">Tarih Bitiş</label>
+                    <input type="date" name="date_to" id="auditDateTo" class="form-control" value="{{ selected_date_to }}">
+                </div>
+                <div class="logs-filter-actions">
+                    <button type="submit" class="btn btn-navy" data-log-filter-submit>Filtrele</button>
+                    {% if has_active_filters %}
+                    <a href="{{ url_for('admin.loglari_gor') }}" class="btn btn-secondary" data-log-filter-clear>Temizle</a>
+                    {% endif %}
+                </div>
+            </form>
+
+            <div class="logs-filter-help">
+                Olay tipi ve ilgili kayıt türü seçim kutuları yalnızca sistemde gerçekten kullanılan işlem kategorilerini gösterir. Teknik işlem kodları ana tablodan kaldırılmış, anlaşılır başlıklar öne alınmıştır.
+            </div>
         </div>
     </div>
-    
-    <div class="table-container" style="overflow-x: auto;">
-        <table class="data-table" id="logTable">
-            <thead>
-                <tr>
-                    <th>ZAMAN</th>
-                    <th>PERSONEL</th>
-                    <th>İŞLEM TİPİ</th>
-                    <th>AYRINTILI DETAY</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for log in loglar %}
-                <tr class="log-row">
-                    <td class="date-cell" style="white-space: nowrap;">
-                        {{ log.zaman.strftime('%d.%m.%Y') }}
-                        <div style="font-size: 10px; color: var(--text4);">{{ log.zaman.strftime('%H:%M:%S') }}</div>
-                    </td>
-                    <td>
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <div class="user-avatar" style="width: 28px; height: 28px; font-size: 10px; background: var(--navy2);">
-                                {{ log.yapan_kullanici.tam_ad[0] if log.yapan_kullanici else '?' }}
-                            </div>
-                            <div>
-                                <div class="item-name-cell" style="font-size: 13.5px;">{{ log.yapan_kullanici.tam_ad if log.yapan_kullanici else 'Sistem / Silinmiş' }}</div>
-                                <div class="item-serial" style="font-size: 10px;">@{{ log.yapan_kullanici.kullanici_adi if log.yapan_kullanici else 'system' }}</div>
-                            </div>
+
+    <div class="panel">
+        <div class="panel-body">
+            <div class="logs-summary">
+                <div class="logs-summary-head">
+                    <div>
+                        <div class="logs-summary-label">Filtre Sonucu</div>
+                        <div class="logs-summary-value">{{ filtered_count }}</div>
+                        <div class="logs-summary-note">
+                            {% if has_active_filters %}
+                            Seçili filtrelerle eşleşen işlem kayıtları aşağıda listeleniyor.
+                            {% else %}
+                            Son 500 işlem kaydı varsayılan görünümde gösteriliyor.
+                            {% endif %}
                         </div>
-                    </td>
-                    <td>
-                        <span class="status-pill 
-                            {% if log.islem_tipi == 'Giriş' %}tip-giris
-                            {% elif log.islem_tipi == 'Envanter' %}tip-envanter
-                            {% elif log.islem_tipi == 'Güvenlik' %}tip-guvenlik
-                            {% else %}tip-hata{% endif %}" 
-                            style="font-size: 10px; font-weight: 800;">
-                            {{ log.islem_tipi | upper }}
-                        </span>
-                    </td>
-                    <td>
-                        <div class="log-action" style="font-size: 13px; color: var(--text2); line-height: 1.5;">
-                            {{ log.detay }}
-                        </div>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="4" style="padding: 50px; text-align: center; color: var(--text4);">
-                        <div style="font-size: 30px; margin-bottom: 10px;">📂</div>
-                        Henüz kayıtlı bir işlem logu bulunmuyor.
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+                    </div>
+                    <span class="status-pill {% if filtered_count %}status-aktif{% else %}status-bakim{% endif %}">
+                        {{ 'Kayıt bulundu' if filtered_count else 'Sonuç yok' }}
+                    </span>
+                </div>
+                <div class="logs-pill-row">
+                    {% if has_active_filters %}
+                        {% for label, value in active_filters %}
+                        <span class="logs-pill is-active">{{ label }}: {{ value }}</span>
+                        {% endfor %}
+                    {% else %}
+                    <span class="logs-pill">Varsayılan görünüm</span>
+                    {% endif %}
+                    <span class="logs-pill is-count">{{ filtered_count }} kayıt</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel logs-table-panel">
+        <div class="table-container">
+            {% if loglar %}
+            <table class="data-table logs-table">
+                <thead>
+                    <tr>
+                        <th>Zaman</th>
+                        <th>Kullanıcı</th>
+                        <th>İşlem</th>
+                        <th>İlgili Kayıt</th>
+                        <th>Sonuç</th>
+                        <th>Açıklama</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in loglar %}
+                    <tr>
+                        <td>{{ log.zaman.strftime('%d.%m.%Y %H:%M:%S') if log.zaman else '-' }}</td>
+                        <td>
+                            <div class="log-user-cell">
+                                <div class="log-user-name">{{ log.user_label }}</div>
+                                <div class="log-user-note">{{ 'Eski kayıt' if log.is_legacy else 'Kayıt sahibi' }}</div>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="log-operation-cell">
+                                <div class="log-operation-title">{{ log.operation_label }}</div>
+                                <div class="log-operation-note">{{ log.operation_note }}</div>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="log-record-cell">
+                                <div class="log-record-title">{{ log.record_label }}</div>
+                                <div class="log-record-note">{{ log.record_note }}</div>
+                            </div>
+                        </td>
+                        <td><span class="status-pill {{ log.outcome_class }}">{{ log.outcome_label }}</span></td>
+                        <td class="log-detail-cell">
+                            <div class="log-detail-text">{{ log.detail }}</div>
+                            {% if log.is_legacy %}
+                            <div class="log-detail-meta">Bu satır önceki kayıt yapısından geldiği için bazı ayrıntılar sınırlı olabilir.</div>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="logs-empty">
+                <strong>Kayıt bulunamadı</strong>
+                <div>Seçili filtrelerle eşleşen işlem kaydı yok. Farklı bir olay tipi veya tarih aralığı seçerek tekrar deneyin.</div>
+            </div>
+            {% endif %}
+        </div>
     </div>
 </div>
+{% endblock %}
 
+{% block extra_js %}
 <script>
-/**
- * Tablo içinde anlık filtreleme yapar
- */
-function filterLogs() {
-    const input = document.getElementById("logSearch");
-    const filter = input.value.toUpperCase();
-    const table = document.getElementById("logTable");
-    const tr = table.getElementsByTagName("tr");
+  (function () {
+    const page = document.getElementById('auditLogsPage');
+    const filterForm = document.getElementById('auditLogFilterForm');
+    const clearLink = document.querySelector('[data-log-filter-clear]');
+    const resultCount = Number(page && page.dataset.resultCount ? page.dataset.resultCount : 0);
 
-    for (let i = 1; i < tr.length; i++) {
-        let textContent = tr[i].textContent || tr[i].innerText;
-        if (textContent.toUpperCase().indexOf(filter) > -1) {
-            tr[i].style.display = "";
-        } else {
-            tr[i].style.display = "none";
-        }
+    const queueIntent = function (payload) {
+      try {
+        window.sessionStorage.setItem('auditLogIntent', JSON.stringify(payload));
+      } catch (error) {
+        /* no-op */
+      }
+    };
+
+    const pendingIntent = (function () {
+      try {
+        const raw = window.sessionStorage.getItem('auditLogIntent');
+        if (!raw) return null;
+        window.sessionStorage.removeItem('auditLogIntent');
+        return JSON.parse(raw);
+      } catch (error) {
+        return null;
+      }
+    })();
+
+    if (pendingIntent && typeof window.showToast === 'function') {
+      if (pendingIntent.kind === 'filter') {
+        window.showToast({
+          type: resultCount ? 'info' : 'warning',
+          title: resultCount ? 'Kayıtlar güncellendi' : 'Sonuç bulunamadı',
+          message: resultCount
+            ? (resultCount + ' işlem kaydı listeleniyor.')
+            : 'Seçili filtrelerle eşleşen işlem kaydı bulunamadı.',
+          duration: 2400
+        });
+      } else if (pendingIntent.kind === 'clear') {
+        window.showToast({
+          type: 'info',
+          title: 'Filtreler temizlendi',
+          message: 'İşlem kayıtları varsayılan görünümüne döndü.',
+          duration: 2200
+        });
+      }
     }
-}
+
+    if (filterForm) {
+      filterForm.addEventListener('submit', function () {
+        queueIntent({ kind: 'filter' });
+      });
+    }
+
+    if (clearLink) {
+      clearLink.addEventListener('click', function () {
+        queueIntent({ kind: 'clear' });
+      });
+    }
+  })();
 </script>
 {% endblock %}

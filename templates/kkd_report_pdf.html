@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>KKD Raporu</title>
+<style>
+  @page { size: A4 landscape; margin: 16mm 12mm; }
+  body { font-family: DejaVu Sans, sans-serif; font-size: 9pt; color: #172033; }
+  .title { font-size: 17pt; font-weight: bold; color: #1d3557; }
+  .subtitle { margin-top: 4px; color: #607089; font-size: 8.5pt; }
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+  th, td { border: 1px solid #d5dde8; padding: 6px 7px; vertical-align: top; }
+  th { background: #eef3f8; color: #1d3557; font-weight: bold; }
+  .footer { margin-top: 12px; text-align: right; font-size: 8pt; color: #607089; }
+</style>
+</head>
+<body>
+  <div class="title">KKD Eksik / Hasarlı / Kayıp Raporu</div>
+  <div class="subtitle">Üretilme zamanı: {{ generated_at.strftime('%d.%m.%Y %H:%M') if generated_at else '-' }}</div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Personel</th>
+        <th>Havalimanı</th>
+        <th>KKD</th>
+        <th>Marka / Model</th>
+        <th>Beden</th>
+        <th>Teslim</th>
+        <th>Miktar</th>
+        <th>Durum</th>
+        <th>Açıklama</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for record in records %}
+      <tr>
+        <td>{{ record.user.tam_ad if record.user else '-' }}</td>
+        <td>{{ record.airport.ad if record.airport else '-' }}</td>
+        <td>{{ record.item_name }}</td>
+        <td>{{ record.brand_model or '-' }}</td>
+        <td>{{ record.size_info or '-' }}</td>
+        <td>{{ record.delivered_at.strftime('%d.%m.%Y') if record.delivered_at else '-' }}</td>
+        <td>{{ record.quantity }}</td>
+        <td>{{ ppe_status_label(record.status) }}</td>
+        <td>{{ record.description or '-' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="footer">SAR-X ARFF Operasyon Takip Sistemi</div>
+</body>
+</html>

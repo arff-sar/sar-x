@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Bakım Formları{% endblock %}
+
+{% block extra_css %}
+<style>
+  .form-layout { display:grid; grid-template-columns:minmax(0, .95fr) minmax(0, 1.05fr); gap:18px; }
+  .code-help { font-family: var(--mono); font-size: 11px; color: var(--text3); background: var(--surface2); border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-top: 8px; line-height: 1.6; }
+  .field-pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; border:1px solid var(--border); background:#fff; font-size:11px; font-weight:800; color:var(--text2); }
+  .field-list { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  @media (max-width: 980px) { .form-layout { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Bakım Formu Yönetimi</div>
+        <div class="page-meta">Kontrol maddeleri, saha checklist şablonları ve kritik alan tanımları</div>
+    </div>
+</div>
+
+<div class="form-layout">
+    {% if has_permission('maintenance.templates.manage') or has_permission('maintenance.plan.change') %}
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <div class="panel-title">Yeni Form Şablonu</div>
+                <div class="panel-subtitle">Her satır bir kontrol maddesi olacak şekilde bakım formu oluşturun.</div>
+            </div>
+        </div>
+        <div class="panel-body">
+            <form method="POST" action="{{ url_for('maintenance.bakim_formu_yonetimi') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label>Form Adı</label>
+                <input type="text" name="name" class="form-control" required placeholder="Örn: Solunum Seti Aylık Kontrol">
+                <label>Açıklama</label>
+                <textarea name="description" class="form-control" style="height:80px;"></textarea>
+                <label>Kontrol Maddeleri</label>
+                <textarea name="fields" class="form-control" style="height:220px;" placeholder="Tüp basıncı|number|zorunlu|kritik||Hedef basınç aralığını girin&#10;Gövde hasarı|yes_no|zorunlu|kritik||Evet ise kullanım dışı bırakın&#10;Etiket durumu|pass_fail|opsiyonel|||Etiketi okuyup değerlendirin&#10;Mühür tipi|select|zorunlu||Standart,Yedek,Yok|Seçim listesinden ilerleyin"></textarea>
+                <div class="code-help">
+                    Satır formatı: <strong>Alan Adı | tip | zorunlu/opsiyonel | kritik/boş | seçenek1,seçenek2 | yardım metni</strong><br>
+                    Tipler: text, number, date, yes_no, pass_fail, select
+                </div>
+                <button class="btn btn-primary" style="width:100%; justify-content:center; margin-top:12px;">Formu Kaydet</button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <div class="panel-title">Kayıtlı Form Şablonları</div>
+                <div class="panel-subtitle">Alan tipleri, kritik işaretleri ve yardım metinleriyle birlikte mevcut checklist katalogu.</div>
+            </div>
+        </div>
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Form Adı</th>
+                        <th>Açıklama</th>
+                        <th>Alanlar</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tpl in templates %}
+                    <tr>
+                        <td style="font-weight:700;">{{ tpl.name }}</td>
+                        <td>{{ tpl.description or '-' }}</td>
+                        <td>
+                            <div>{{ tpl.fields|length }} alan</div>
+                            <div class="field-list">
+                                {% for field in tpl.fields %}
+                                {% set meta = field_meta(field) %}
+                                <span class="field-pill">
+                                    {{ field.label }}
+                                    <small>({{ field_type_labels.get(field.field_type, field.field_type) }})</small>
+                                    {% if meta.is_critical %}<small>Kritik</small>{% endif %}
+                                </span>
+                                {% endfor %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" style="text-align:center; color:var(--text3);">Bakım formu bulunmuyor.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

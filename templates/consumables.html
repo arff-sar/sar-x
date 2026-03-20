@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Sarf Malzemeleri{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Sarf Malzemeleri</div>
+        <div class="page-meta">Tüketim, stok seviyesi ve saha lokasyonu bazlı sarf takibi</div>
+    </div>
+</div>
+
+<div class="two-col">
+    <div class="panel">
+        <div class="panel-header"><div class="panel-title">Sarf Listesi</div></div>
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr><th>Kod</th><th>Sarf</th><th>Kategori</th><th>Mevcut</th><th>Durum</th></tr>
+                </thead>
+                <tbody>
+                    {% for item in consumables %}
+                    {% set balance = balances.get(item.id, 0) %}
+                    <tr>
+                        <td style="font-family:var(--mono);">{{ item.code }}</td>
+                        <td>{{ item.title }}</td>
+                        <td>{{ item.category or '-' }}</td>
+                        <td>{{ balance }} {{ item.unit }}</td>
+                        <td>
+                            {% if balance <= item.critical_level %}
+                            <span class="status-pill status-kritik">Kritik</span>
+                            {% elif balance <= item.min_stock_level %}
+                            <span class="status-pill status-bakim">Düşük</span>
+                            {% else %}
+                            <span class="status-pill status-aktif">Yeterli</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" style="text-align:center; color:var(--text3);">Kayıtlı sarf bulunmuyor.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header"><div class="panel-title">Sarf Hareketi</div></div>
+        <div class="panel-body">
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="form-group">
+                    <label>Mevcut Sarf</label>
+                    <select name="item_id" class="form-control">
+                        <option value="">Yeni sarf oluştur</option>
+                        {% for item in consumables %}
+                        <option value="{{ item.id }}">{{ item.code }} · {{ item.title }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group"><label>Kod</label><input name="code" class="form-control"></div>
+                <div class="form-group"><label>Başlık</label><input name="title" class="form-control"></div>
+                <div class="form-group"><label>Kategori</label><input name="category" class="form-control"></div>
+                <div class="form-group"><label>Birim</label><input name="unit" class="form-control" value="adet"></div>
+                <div class="form-group"><label>Min Stok</label><input name="min_stock_level" type="number" step="0.1" class="form-control" value="5"></div>
+                <div class="form-group"><label>Kritik Seviye</label><input name="critical_level" type="number" step="0.1" class="form-control" value="2"></div>
+                <div class="form-group">
+                    <label>Hareket</label>
+                    <select name="movement_type" class="form-control">
+                        <option value="in">Giriş</option>
+                        <option value="out">Çıkış</option>
+                        <option value="adjust">Düzeltme</option>
+                        <option value="transfer">Transfer</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Miktar</label><input name="quantity" type="number" step="0.1" class="form-control" required></div>
+                <div class="form-group">
+                    <label>Kutu / Lokasyon</label>
+                    <select name="kutu_id" class="form-control">
+                        <option value="">Seçimsiz</option>
+                        {% for kutu in kutular %}
+                        <option value="{{ kutu.id }}">{{ kutu.kodu }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group"><label>Referans Notu</label><textarea name="reference_note" class="form-control" style="height:90px;"></textarea></div>
+                <button class="btn btn-primary" style="width:100%; justify-content:center;">Hareketi Kaydet</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

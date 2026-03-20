@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}İş Emirleri{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Bakım İş Emirleri</div>
+        <div class="page-meta">Açık, atanan, işlemde ve tamamlanan tüm iş emirleri</div>
+    </div>
+    {% if rol in ['sahip', 'yetkili'] %}
+    <a href="{{ url_for('maintenance.is_emri_olustur') }}" class="btn btn-primary">➕ İş Emri Oluştur</a>
+    {% endif %}
+</div>
+
+<div class="panel">
+    <div class="panel-body" style="padding-bottom: 10px;">
+        <form method="GET" action="{{ url_for('maintenance.is_emirleri') }}" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:12px; align-items:end;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Durum</label>
+                <select name="durum" class="form-control">
+                    <option value="">Tümü</option>
+                    {% for status in statuses %}
+                    <option value="{{ status }}" {% if selected_status == status %}selected{% endif %}>{{ status|replace('_',' ')|upper }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Öncelik</label>
+                <select name="oncelik" class="form-control">
+                    <option value="">Tümü</option>
+                    {% for p in priorities %}
+                    <option value="{{ p }}" {% if selected_priority == p %}selected{% endif %}>{{ p|upper }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Bakım Türü</label>
+                <select name="bakim_turu" class="form-control">
+                    <option value="">Tümü</option>
+                    <option value="bakim" {% if selected_type == 'bakim' %}selected{% endif %}>Bakım</option>
+                    <option value="ariza" {% if selected_type == 'ariza' %}selected{% endif %}>Arıza</option>
+                    <option value="kontrol" {% if selected_type == 'kontrol' %}selected{% endif %}>Kontrol</option>
+                    <option value="kalibrasyon" {% if selected_type == 'kalibrasyon' %}selected{% endif %}>Kalibrasyon</option>
+                    <option value="periyodik_bakim" {% if selected_type == 'periyodik_bakim' %}selected{% endif %}>Periyodik Bakım</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>İş Emri Tipi</label>
+                <select name="work_order_type" class="form-control">
+                    <option value="">Tümü</option>
+                    {% for wo_type in work_order_types %}
+                    <option value="{{ wo_type }}" {% if selected_work_order_type == wo_type %}selected{% endif %}>{{ wo_type|replace('_',' ')|upper }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button type="submit" class="btn btn-navy" style="width:100%;">Filtrele</button>
+                <a href="{{ url_for('maintenance.is_emirleri') }}" class="btn btn-secondary" style="width:100%;">Sıfırla</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>İş Emri No</th>
+                    <th>Ekipman</th>
+                    <th>Tür</th>
+                    <th>WO Tipi</th>
+                    <th>Durum</th>
+                    <th>Öncelik</th>
+                    <th>Hedef Tarih</th>
+                    <th>Atanan</th>
+                    <th>İşlem</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for order in orders %}
+                <tr>
+                    <td style="font-family:var(--mono); font-weight:700;">{{ order.work_order_no }}</td>
+                    <td>{{ order.asset.equipment_template.name if order.asset and order.asset.equipment_template else '-' }}</td>
+                    <td>{{ order.maintenance_type|replace('_',' ')|upper }}</td>
+                    <td>{{ order.work_order_type|replace('_',' ')|upper }}</td>
+                    <td>{{ status_label(order.status)|upper }}</td>
+                    <td>{{ order.priority|upper }}</td>
+                    <td>{{ order.target_date.strftime('%d.%m.%Y') if order.target_date else '-' }}</td>
+                    <td>{{ order.assigned_user.tam_ad if order.assigned_user else '-' }}</td>
+                    <td><a class="row-btn" href="{{ url_for('maintenance.is_emri_detay', work_order_id=order.id) }}">Detay</a></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="9" style="text-align:center; color:var(--text3);">İş emri bulunmuyor.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

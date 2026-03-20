@@ -73,6 +73,7 @@
             </div>
             <div style="padding: 24px;">
                 <form action="{{ url_for('admin.havalimanlari') }}" method="POST" id="havalimaniForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="islem" id="islem" value="ekle">
                     <input type="hidden" name="id" id="h_id">
                     

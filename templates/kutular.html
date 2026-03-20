@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Kutu / Ünite Yönetimi{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Kutu / Ünite Yönetimi</div>
+        <div class="page-meta">Sahadaki kutu, raf, depo ve araç ünitelerini tek listede görün.</div>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <div class="panel-title">Yerleşim Birimleri</div>
+    </div>
+    <div class="panel-body" style="padding:0;">
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Kod</th>
+                        <th>Konum</th>
+                        <th>Havalimanı</th>
+                        <th>Malzeme</th>
+                        <th>QR</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for kutu in kutular %}
+                    <tr>
+                        <td style="font-family:var(--mono); font-weight:700;">{{ kutu.kodu }}</td>
+                        <td>{{ kutu.konum or '-' }}</td>
+                        <td>{{ kutu.havalimani.ad if kutu.havalimani else '-' }}</td>
+                        <td>{{ kutu.malzemeler|selectattr('is_deleted', 'equalto', false)|list|length }}</td>
+                        <td style="font-family:var(--mono); font-size:12px;">{{ kutu.qr_code_label }}</td>
+                        <td class="row-actions">
+                            <a href="{{ url_for('inventory.kutu_detay', kodu=kutu.kodu) }}" class="row-btn">Detay</a>
+                            {% if has_permission('qr.generate') %}
+                            <a href="{{ url_for('inventory.kutu_qr_uret', box_id=kutu.id) }}" target="_blank" class="row-btn">QR</a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" style="text-align:center; color:var(--text3); padding:28px;">Kayıtlı kutu / ünite bulunmuyor.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

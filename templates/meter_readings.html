@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Sayaç Takibi{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Sayaç Bazlı Bakım</div>
+        <div class="page-meta">Kullanım saati, km, çevrim ve test sayacı okumaları</div>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <div class="panel-title">Yeni Sayaç Okuması</div>
+    </div>
+    <div class="panel-body">
+        <form method="POST" action="{{ url_for('maintenance.meter_readings') }}" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Ekipman</label>
+                <select class="form-control" name="asset_id" required>
+                    <option value="">Seçiniz</option>
+                    {% for asset in assets %}
+                    <option value="{{ asset.id }}" {% if selected_asset and selected_asset.id == asset.id %}selected{% endif %}>
+                        {{ asset.equipment_template.name if asset.equipment_template else 'Ekipman' }} · {{ asset.serial_no or 'SN yok' }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Tanımlı Sayaç</label>
+                <select class="form-control" name="meter_definition_id">
+                    <option value="">Yeni sayaç tanımla</option>
+                    {% for meter in meters %}
+                    <option value="{{ meter.id }}">{{ meter.name }} ({{ meter.meter_type }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Yeni Sayaç Adı</label>
+                <input class="form-control" type="text" name="meter_name" placeholder="Örn: Motor Çalışma Saati">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Sayaç Tipi</label>
+                <select class="form-control" name="meter_type">
+                    <option value="hours">Kullanım Saati</option>
+                    <option value="km">Kilometre</option>
+                    <option value="cycles">Çevrim</option>
+                    <option value="tests">Test Sayısı</option>
+                    <option value="calibration_count">Kalibrasyon Sayacı</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Birim</label>
+                <input class="form-control" type="text" name="unit" placeholder="h / km / adet">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Okuma Değeri</label>
+                <input class="form-control" type="number" step="0.01" min="0" name="reading_value" required>
+            </div>
+            <div class="form-group" style="grid-column:1/-1; margin-bottom:0;">
+                <label>Not</label>
+                <textarea class="form-control" name="note" style="height:80px;"></textarea>
+            </div>
+            <button class="btn btn-primary" style="grid-column:1/-1; justify-content:center;">Sayaç Kaydet</button>
+        </form>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <div class="panel-title">Son Sayaç Kayıtları</div>
+    </div>
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Tarih</th>
+                    <th>Ekipman</th>
+                    <th>Sayaç</th>
+                    <th>Değer</th>
+                    <th>Not</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in readings %}
+                <tr>
+                    <td>{{ row.reading_at.strftime('%d.%m.%Y %H:%M') if row.reading_at else '-' }}</td>
+                    <td>
+                        {{ row.asset.equipment_template.name if row.asset and row.asset.equipment_template else '-' }}
+                        <div style="font-size:11px; color:var(--text3);">{{ row.asset.serial_no if row.asset else '' }}</div>
+                    </td>
+                    <td>
+                        {{ row.meter_definition.name if row.meter_definition else '-' }}
+                        <div style="font-size:11px; color:var(--text3);">{{ row.meter_definition.meter_type if row.meter_definition else '' }}</div>
+                    </td>
+                    <td><strong>{{ row.reading_value }}</strong></td>
+                    <td>{{ row.note or '-' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" style="text-align:center; color:var(--text3);">Sayaç kaydı bulunmuyor.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

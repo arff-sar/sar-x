@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+{% block title %}Rapor Merkezi{% endblock %}
+
+{% block extra_css %}
+<style>
+.report-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+.report-tab { padding:10px 14px; border:1px solid var(--border-dark); border-radius:999px; background:var(--surface); color:var(--text2); text-decoration:none; font-size:12px; font-weight:700; }
+.report-tab.active { background: var(--navy); color:#fff; border-color: var(--navy); }
+.report-kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:18px; }
+.mini-kpi { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px; }
+.mini-kpi-value { font-size:28px; font-weight:800; color:var(--navy); }
+.mini-kpi-label { font-size:12px; color:var(--text3); margin-top:6px; font-weight:700; }
+.mini-kpi-trend { font-size:11px; margin-top:8px; font-weight:700; }
+.charts-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:16px; margin-bottom:18px; }
+.chart-card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px; }
+.chart-head { font-size:13px; font-weight:800; color:var(--navy); margin-bottom:10px; }
+.summary-list { display:grid; gap:10px; }
+.summary-row { display:flex; justify-content:space-between; gap:10px; padding:12px 14px; border:1px solid var(--border); border-radius:12px; background:var(--surface2); }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Rapor Merkezi</div>
+        <div class="page-meta">
+            <span>Operasyonel KPI, filtreli raporlar ve kontrollü export merkezi</span>
+        </div>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a href="{{ url_for('reports.manager_summary_view') }}" class="btn btn-secondary">Yönetici Özeti</a>
+        <a href="{{ url_for('reports.export', report_key=report_key, fmt='csv', **export_query) }}" class="btn btn-secondary">CSV</a>
+        <a href="{{ url_for('reports.export', report_key=report_key, fmt='xlsx', **export_query) }}" class="btn btn-secondary">Excel</a>
+        <a href="{{ url_for('reports.export', report_key=report_key, fmt='pdf', **export_query) }}" class="btn btn-secondary">PDF</a>
+    </div>
+</div>
+
+<div class="report-tabs">
+    {% for tab in tabs %}
+    <a href="{{ url_for('reports.index', report=tab.key) }}" class="report-tab {% if report_key == tab.key %}active{% endif %}">{{ tab.label }}</a>
+    {% endfor %}
+</div>
+
+<div class="panel">
+    <div class="panel-body">
+        <form method="GET" action="{{ url_for('reports.index') }}" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items:end;">
+            <input type="hidden" name="report" value="{{ report_key }}">
+            {% if filter_options.airports|length > 1 %}
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Havalimanı</label>
+                <select name="airport_id" class="form-control">
+                    <option value="">Tümü</option>
+                    {% for airport in filter_options.airports %}
+                    <option value="{{ airport.id }}" {% if filters.airport_id == airport.id %}selected{% endif %}>{{ airport.kodu }} - {{ airport.ad }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Başlangıç</label>
+                <input type="date" name="date_from" class="form-control" value="{{ filters.date_from.strftime('%Y-%m-%d') if filters.date_from else '' }}">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Bitiş</label>
+                <input type="date" name="date_to" class="form-control" value="{{ filters.date_to.strftime('%Y-%m-%d') if filters.date_to else '' }}">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Kategori</label>
+                <select name="category" class="form-control">
+                    <option value="">Tümü</option>
+                    {% for category in filter_options.categories %}
+                    <option value="{{ category }}" {% if filters.category == category %}selected{% endif %}>{{ category }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Bakım Durumu</label>
+                <select name="maintenance_state" class="form-control">
+                    <option value="">Tümü</option>
+                    <option value="normal" {% if filters.maintenance_state == 'normal' %}selected{% endif %}>Normal</option>
+                    <option value="yaklasan" {% if filters.maintenance_state == 'yaklasan' %}selected{% endif %}>Yaklaşan</option>
+                    <option value="gecikmis" {% if filters.maintenance_state == 'gecikmis' %}selected{% endif %}>Gecikmiş</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Lifecycle</label>
+                <select name="asset_status" class="form-control">
+                    <option value="">Tümü</option>
+                    {% for status in filter_options.asset_statuses %}
+                    <option value="{{ status }}" {% if filters.asset_status == status %}selected{% endif %}>{{ status }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>İş Emri Türü</label>
+                <select name="work_order_type" class="form-control">
+                    <option value="">Tümü</option>
+                    <option value="preventive" {% if filters.work_order_type == 'preventive' %}selected{% endif %}>Preventive</option>
+                    <option value="corrective" {% if filters.work_order_type == 'corrective' %}selected{% endif %}>Corrective</option>
+                    <option value="inspection" {% if filters.work_order_type == 'inspection' %}selected{% endif %}>Inspection</option>
+                    <option value="calibration" {% if filters.work_order_type == 'calibration' %}selected{% endif %}>Calibration</option>
+                    <option value="emergency" {% if filters.work_order_type == 'emergency' %}selected{% endif %}>Emergency</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Öncelik</label>
+                <select name="priority" class="form-control">
+                    <option value="">Tümü</option>
+                    <option value="dusuk" {% if filters.priority == 'dusuk' %}selected{% endif %}>Düşük</option>
+                    <option value="orta" {% if filters.priority == 'orta' %}selected{% endif %}>Orta</option>
+                    <option value="yuksek" {% if filters.priority == 'yuksek' %}selected{% endif %}>Yüksek</option>
+                    <option value="kritik" {% if filters.priority == 'kritik' %}selected{% endif %}>Kritik</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Stok Seviyesi</label>
+                <select name="stock_level" class="form-control">
+                    <option value="">Tümü</option>
+                    <option value="low" {% if filters.stock_level == 'low' %}selected{% endif %}>Düşük</option>
+                    <option value="critical" {% if filters.stock_level == 'critical' %}selected{% endif %}>Kritik</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Garanti</label>
+                <select name="warranty_state" class="form-control">
+                    <option value="">Tümü</option>
+                    <option value="under" {% if filters.warranty_state == 'under' %}selected{% endif %}>Garanti Kapsamında</option>
+                    <option value="expired" {% if filters.warranty_state == 'expired' %}selected{% endif %}>Garantisi Bitmiş</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Kalibrasyon</label>
+                <select name="calibration_state" class="form-control">
+                    <option value="">Tümü</option>
+                    <option value="upcoming" {% if filters.calibration_state == 'upcoming' %}selected{% endif %}>Yaklaşan</option>
+                    <option value="overdue" {% if filters.calibration_state == 'overdue' %}selected{% endif %}>Geciken</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Atanan Kullanıcı</label>
+                <select name="assignee_id" class="form-control">
+                    <option value="">Tümü</option>
+                    {% for user in filter_options.users %}
+                    <option value="{{ user.id }}" {% if filters.assignee_id == user.id %}selected{% endif %}>{{ user.tam_ad }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Demo Veri</label>
+                <select name="demo_scope" class="form-control">
+                    <option value="all" {% if filters.demo_scope == 'all' %}selected{% endif %}>Dahil</option>
+                    <option value="exclude" {% if filters.demo_scope == 'exclude' %}selected{% endif %}>Hariç</option>
+                    <option value="only" {% if filters.demo_scope == 'only' %}selected{% endif %}>Sadece Demo</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Trend</label>
+                <select name="trend_days" class="form-control">
+                    {% for day in filter_options.trend_days %}
+                    <option value="{{ day }}" {% if filters.trend_days == day %}selected{% endif %}>{{ day }} Gün</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button type="submit" class="btn btn-navy" style="width:100%;">Filtrele</button>
+                <a href="{{ url_for('reports.index', report=report_key) }}" class="btn btn-secondary" style="width:100%;">Sıfırla</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="report-kpis">
+    {% for key in ['total_assets', 'faulty_assets', 'overdue_maintenance', 'open_work_orders', 'low_stock', 'critical_stock', 'calibration_upcoming', 'calibration_overdue', 'warranty_expiring', 'low_consumables', 'critical_consumables'] %}
+    {% set metric = snapshot.totals[key] if key in snapshot.totals else 0 %}
+    {% if key == 'critical_stock' %}
+        {% set trend = snapshot.trends['low_stock'] %}
+        {% set label = 'Kritik Stok' %}
+    {% else %}
+        {% set trend = dashboard_kpis[key]['trend'] if key in dashboard_kpis else {'percent':0,'direction':'flat'} %}
+        {% set label = dashboard_kpis[key]['label'] if key in dashboard_kpis else key %}
+    {% endif %}
+    <div class="mini-kpi">
+        <div class="mini-kpi-value">{{ metric }}</div>
+        <div class="mini-kpi-label">{{ label }}</div>
+        <div class="mini-kpi-trend trend-{{ trend.direction }}">{{ filters.trend_days }}g farkı: {% if trend.available %}{{ trend.percent }}%{% else %}- · veri yok{% endif %}</div>
+    </div>
+    {% endfor %}
+    <div class="mini-kpi">
+        <div class="mini-kpi-value">{{ snapshot.totals.avg_close_hours }}</div>
+        <div class="mini-kpi-label">Ortalama Kapanma Süresi (saat)</div>
+        <div class="mini-kpi-trend">Son kapanan iş emirlerinden hesaplandı</div>
+    </div>
+</div>
+
+<div class="charts-grid">
+    <div class="chart-card">
+        <div class="chart-head">İş Emri Trend Çizgisi</div>
+        <canvas id="workOrderTrend"></canvas>
+    </div>
+    <div class="chart-card">
+        <div class="chart-head">Durum Oranları</div>
+        <canvas id="statusDonut"></canvas>
+    </div>
+    <div class="chart-card">
+        <div class="chart-head">Sorunlu Kategoriler</div>
+        <canvas id="categoryBar"></canvas>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <div class="panel-title">{{ report_data.label }}</div>
+        <div style="font-size:12px; color:var(--text3);">{{ report_data.rows|length }} satır</div>
+    </div>
+    <div class="panel-body" style="padding:0;">
+        {% if report_data.rows %}
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        {% for column in report_data.columns %}
+                        <th>{{ column }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in report_data.rows %}
+                    <tr>
+                        {% for column in report_data.columns %}
+                        <td>{{ row[column] }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div style="padding:28px; color:var(--text3);">Seçilen filtrelerle eşleşen kayıt bulunamadı.</div>
+        {% endif %}
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const lineData = {{ snapshot.charts.work_order_line|tojson }};
+const donutData = {{ snapshot.charts.status_donut|tojson }};
+const categoryBar = {{ snapshot.charts.category_bar|tojson }};
+
+new Chart(document.getElementById('workOrderTrend'), {
+  type: 'line',
+  data: {
+    labels: lineData.labels,
+    datasets: [
+      { label: 'Açılan', data: lineData.opened, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,.12)', tension: .35, fill: true },
+      { label: 'Tamamlanan', data: lineData.completed, borderColor: '#16a34a', backgroundColor: 'rgba(22,163,74,.10)', tension: .35, fill: true }
+    ]
+  },
+  options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+});
+
+new Chart(document.getElementById('statusDonut'), {
+  type: 'doughnut',
+  data: {
+    labels: donutData.labels,
+    datasets: [{ data: donutData.values, backgroundColor: ['#16a34a', '#dc2626', '#d97706'] }]
+  },
+  options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+});
+
+new Chart(document.getElementById('categoryBar'), {
+  type: 'bar',
+  data: {
+    labels: categoryBar.labels,
+    datasets: [{ label: 'Arıza / Bakımda', data: categoryBar.values, backgroundColor: '#0f2d4a' }]
+  },
+  options: { responsive: true, plugins: { legend: { display: false } } }
+});
+</script>
+{% endblock %}

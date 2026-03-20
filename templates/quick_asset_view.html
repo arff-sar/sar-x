@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% block title %}Hızlı Ekipman Görünümü{% endblock %}
+
+{% block extra_css %}
+<style>
+  .quick-grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap:10px; }
+  .quick-btn { border:1px solid var(--border); border-radius:12px; padding:14px 10px; text-align:center; font-weight:700; background:var(--surface2); cursor:pointer; }
+  .quick-btn:hover { border-color: var(--orange); }
+  .mobile-form .form-control { font-size: 16px; }
+  .asset-overview-grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; margin-bottom:20px; }
+  .asset-overview-card { padding:16px; border:1px solid var(--border); border-radius:16px; background:linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,250,252,.98) 100%); }
+  .asset-overview-label { font-size:11px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
+  .asset-overview-value { margin-top:6px; font-size:15px; font-weight:800; color:var(--navy); line-height:1.45; }
+  .asset-detail-grid { display:grid; grid-template-columns:minmax(0, 1.05fr) minmax(320px, .95fr); gap:20px; align-items:start; }
+  .instruction-image { width:100%; max-height:220px; object-fit:cover; border-radius:16px; border:1px solid var(--border); background:var(--surface2); }
+  .history-list { display:grid; gap:10px; }
+  .history-item { padding:14px; border:1px solid var(--border); border-radius:16px; background:#fff; }
+  .history-item strong { color:var(--navy); }
+  .history-meta { margin-top:4px; font-size:11.5px; color:var(--text3); line-height:1.45; }
+  @media (max-width: 980px) {
+    .asset-overview-grid,
+    .asset-detail-grid { grid-template-columns:1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Hızlı Ekipman Ekranı</div>
+        <div class="page-meta">
+            <span>{{ asset.equipment_template.name if asset.equipment_template else 'Ekipman' }}</span>
+            <div class="meta-dot" style="width:3px; height:3px; background: var(--text4); border-radius:50%;"></div>
+            <span>{{ qr_context.asset_code }}</span>
+            <div class="meta-dot" style="width:3px; height:3px; background: var(--text4); border-radius:50%;"></div>
+            <span>{{ qr_context.airport_name }}</span>
+        </div>
+    </div>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        {% if has_permission('maintenance.view') %}
+        <form method="POST" action="{{ url_for('maintenance.asset_hizli_bakim', asset_id=asset.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-primary">
+                {% if open_work_order %}Bakım Formunu Aç{% else %}Bakım Akışı Başlat{% endif %}
+            </button>
+        </form>
+        {% endif %}
+        {% if has_permission('qr.generate') %}
+        <a href="{{ url_for('inventory.qr_uret', asset_id=asset.id) }}" target="_blank" class="btn btn-secondary">QR Etiketi</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="asset-overview-grid">
+    <div class="asset-overview-card">
+        <div class="asset-overview-label">Durum</div>
+        <div class="asset-overview-value">{{ asset.status|replace('_', ' ')|title }}</div>
+    </div>
+    <div class="asset-overview-card">
+        <div class="asset-overview-label">Bakım Durumu</div>
+        <div class="asset-overview-value">{{ asset.maintenance_state|replace('_', ' ')|title }}</div>
+    </div>
+    <div class="asset-overview-card">
+        <div class="asset-overview-label">Son Bakım</div>
+        <div class="asset-overview-value">{{ asset.last_maintenance_date.strftime('%d.%m.%Y') if asset.last_maintenance_date else '-' }}</div>
+    </div>
+</div>
+
+<div class="asset-detail-grid">
+    <div style="display:grid; gap:20px;">
+        <div class="panel">
+            <div class="panel-body mobile-form">
+                <form method="POST" action="{{ url_for('inventory.quick_asset_view', asset_id=asset.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="quick-grid" style="margin-bottom:12px;">
+                        <button name="status" value="aktif" class="quick-btn" type="submit">Aktif</button>
+                        <button name="status" value="bakimda" class="quick-btn" type="submit">Bakımda</button>
+                        <button name="status" value="arizali" class="quick-btn" type="submit">Arızalı</button>
+                        <button name="status" value="pasif" class="quick-btn" type="submit">Pasif</button>
+                    </div>
+                </form>
+
+                <form method="POST" action="{{ url_for('inventory.quick_asset_view', asset_id=asset.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                        <div class="form-group">
+                            <label>Durum</label>
+                            <select class="form-control" name="status">
+                                <option value="aktif" {% if asset.status == 'aktif' %}selected{% endif %}>Aktif</option>
+                                <option value="bakimda" {% if asset.status == 'bakimda' %}selected{% endif %}>Bakımda</option>
+                                <option value="arizali" {% if asset.status == 'arizali' %}selected{% endif %}>Arızalı</option>
+                                <option value="hurda" {% if asset.status == 'hurda' %}selected{% endif %}>Hurda</option>
+                                <option value="pasif" {% if asset.status == 'pasif' %}selected{% endif %}>Pasif</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Bakım Durumu</label>
+                            <select class="form-control" name="maintenance_state">
+                                <option value="normal" {% if asset.maintenance_state == 'normal' %}selected{% endif %}>Normal</option>
+                                <option value="yaklasan" {% if asset.maintenance_state == 'yaklasan' %}selected{% endif %}>Yaklaşan</option>
+                                <option value="gecikmis" {% if asset.maintenance_state == 'gecikmis' %}selected{% endif %}>Gecikmiş</option>
+                                <option value="ariza" {% if asset.maintenance_state == 'ariza' %}selected{% endif %}>Arıza</option>
+                                <option value="bakimda" {% if asset.maintenance_state == 'bakimda' %}selected{% endif %}>Bakımda</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Son Bakım</label>
+                            <input class="form-control" type="date" name="last_maintenance_date" value="{{ asset.last_maintenance_date.strftime('%Y-%m-%d') if asset.last_maintenance_date else '' }}">
+                        </div>
+                        <div class="form-group">
+                            <label>Asset Kodu</label>
+                            <input class="form-control" type="text" value="{{ qr_context.asset_code }}" readonly>
+                        </div>
+                        <div class="form-group" style="grid-column:1/-1;">
+                            <label>Saha Notu</label>
+                            <textarea class="form-control" name="note" style="height:90px;" placeholder="Kısa saha notu"></textarea>
+                        </div>
+                        <button class="btn btn-primary" style="grid-column:1/-1; justify-content:center;">Hızlı Kaydet</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <div class="panel-title">Zimmet Geçmişi</div>
+                    <div class="panel-subtitle">Bu ekipman üzerinde açılmış zimmet kayıtları ve son durumları.</div>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="history-list">
+                    {% for item in assignment_history %}
+                    <div class="history-item">
+                        <strong>{{ item.assignment.assignment_no }}</strong>
+                        <div class="history-meta">{{ item.assignment.assignment_date.strftime('%d.%m.%Y') if item.assignment.assignment_date else '-' }} • {{ item.assignment.recipient_names or '-' }}</div>
+                        <div class="history-meta">{{ item.quantity }} {{ item.unit or 'adet' }} • Durum: {{ assignment_status_label(item.assignment.status) }}</div>
+                        <div style="margin-top:10px;">
+                            <a href="{{ url_for('inventory.zimmet_detay', assignment_id=item.assignment.id) }}" class="row-btn">Zimmet Detayı</a>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="history-item">
+                        <strong>Zimmet geçmişi yok</strong>
+                        <div class="history-meta">Bu ekipman için henüz bir zimmet kaydı oluşturulmamış.</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header"><div class="panel-title">Son İş Emirleri</div></div>
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>No</th>
+                            <th>Durum</th>
+                            <th>Öncelik</th>
+                            <th>Açılış</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for order in related_work_orders %}
+                        <tr>
+                            <td>{{ order.work_order_no }}</td>
+                            <td>{{ order.status|replace('_',' ')|upper }}</td>
+                            <td>{{ order.priority|upper }}</td>
+                            <td>{{ order.opened_at.strftime('%d.%m.%Y %H:%M') if order.opened_at else '-' }}</td>
+                            <td class="row-actions">
+                                {% if has_permission('workorder.close') %}
+                                <a class="row-btn" href="{{ url_for('maintenance.work_order_quick_close', work_order_id=order.id) }}">Checklist Aç</a>
+                                {% endif %}
+                                {% if has_permission('workorder.view') %}
+                                <a class="row-btn" href="{{ url_for('maintenance.is_emri_pdf', work_order_id=order.id) }}">PDF</a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" style="text-align:center; color:var(--text3);">Kayıtlı iş emri yok.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div style="display:grid; gap:20px;">
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <div class="panel-title">Bakım Talimatı</div>
+                    <div class="panel-subtitle">Kullanım kılavuzu, üretici görseli ve aktif bakım şablonu bilgileri.</div>
+                </div>
+            </div>
+            <div class="panel-body">
+                {% if maintenance_instruction %}
+                <div style="display:grid; gap:14px;">
+                    <div>
+                        <div style="font-size:15px; font-weight:800; color:var(--navy);">{{ maintenance_instruction.title }}</div>
+                        <div style="margin-top:6px; color:var(--text3); line-height:1.6;">{{ maintenance_instruction.description or 'Ek açıklama girilmedi.' }}</div>
+                    </div>
+                    {% if maintenance_instruction.visual_url %}
+                    <img src="{{ maintenance_instruction.visual_url }}" alt="{{ maintenance_instruction.title }}" class="instruction-image">
+                    {% endif %}
+                    <div class="history-list">
+                        <div class="history-item">
+                            <strong>Kullanım Kılavuzu</strong>
+                            <div class="history-meta">
+                                {% if maintenance_instruction.manual_url %}
+                                <a href="{{ maintenance_instruction.manual_url }}" target="_blank" rel="noopener">Kılavuzu aç</a>
+                                {% else %}
+                                Link eklenmedi
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="history-item">
+                            <strong>Revizyon</strong>
+                            <div class="history-meta">{{ maintenance_instruction.revision_no or '-' }} • {{ maintenance_instruction.revision_date.strftime('%d.%m.%Y') if maintenance_instruction.revision_date else '-' }}</div>
+                        </div>
+                        <div class="history-item">
+                            <strong>Aktif Bakım Şablonu</strong>
+                            <div class="history-meta">{{ asset.equipment_template.default_maintenance_form.name if asset.equipment_template and asset.equipment_template.default_maintenance_form else 'Atanmadı' }}</div>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="history-item">
+                    <strong>Bakım talimatı tanımlanmadı</strong>
+                    <div class="history-meta">Bu ekipman tipi için henüz kullanım kılavuzu, görsel veya revizyon bilgisi eklenmedi.</div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

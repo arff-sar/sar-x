@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="tr">
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Helvetica, Arial, sans-serif; color:#0f172a; font-size: 12px; }
+        .wrapper { border:1px solid #cbd5e1; border-radius:12px; padding:18px; }
+        .header { text-align:center; margin-bottom:16px; }
+        .header img { width: 140px; height: 140px; margin-bottom:10px; }
+        .code { font-size:22px; font-weight:bold; }
+        .airport { font-size:14px; margin-top:6px; }
+        table { width:100%; border-collapse: collapse; margin-top: 14px; }
+        th, td { border:1px solid #e2e8f0; padding:6px 8px; text-align:left; }
+        th { background:#f8fafc; }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="header">
+            {% if qr_data_uri %}
+            <img src="{{ qr_data_uri }}" alt="Kutu QR">
+            {% endif %}
+            <div class="code">{{ qr_context.box_code }}</div>
+            <div class="airport">{{ qr_context.airport_name }}</div>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Malzeme</th>
+                    <th>Seri No</th>
+                    <th>Adet</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for malzeme in materials %}
+                <tr>
+                    <td>{{ malzeme.ad }}</td>
+                    <td>{{ malzeme.seri_no or '-' }}</td>
+                    <td>{{ malzeme.stok_miktari or 1 }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="3">Kutu içinde malzeme bulunmuyor.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

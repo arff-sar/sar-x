@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Yedek Parçalar{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Yedek Parça Yönetimi</div>
+        <div class="page-meta">Stok görünürlüğü, kritik seviye ve parça tüketim takibi</div>
+    </div>
+    {% if rol in ['sahip', 'yetkili'] %}
+    <a href="{{ url_for('parts.spare_part_create') }}" class="btn btn-primary">➕ Yeni Parça</a>
+    {% endif %}
+</div>
+
+<div class="panel">
+    <div class="panel-body">
+        <form method="GET" action="{{ url_for('parts.spare_parts_list') }}" style="display:grid; grid-template-columns: 1.5fr 1fr auto auto; gap:10px; align-items:end;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Arama</label>
+                <input class="form-control" type="text" name="q" value="{{ search_query }}" placeholder="Parça kodu / ad / üretici">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Kategori</label>
+                <select class="form-control" name="kategori">
+                    <option value="">Tümü</option>
+                    {% for c in categories %}
+                    <option value="{{ c }}" {% if selected_category == c %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <label style="display:flex; align-items:center; gap:7px; margin-bottom:15px;">
+                <input type="checkbox" name="dusuk_stok" value="1" {% if low_only %}checked{% endif %}>
+                Sadece düşük stok
+            </label>
+            <button class="btn btn-navy" type="submit">Filtrele</button>
+        </form>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Parça Kodu</th>
+                    <th>Parça Adı</th>
+                    <th>Kategori</th>
+                    <th>Uyumlu Tip</th>
+                    <th>Toplam Stok</th>
+                    <th>Kritik Durum</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for part in parts %}
+                {% set stocks = stock_map.get(part.id, []) %}
+                {% set total_on_hand = stocks|sum(attribute='quantity_on_hand') %}
+                {% set total_reserved = stocks|sum(attribute='quantity_reserved') %}
+                {% set total_available = total_on_hand - total_reserved %}
+                {% set ns = namespace(low_stock=false) %}
+                {% for s in stocks %}
+                    {% if s.available_quantity <= (s.reorder_point if s.reorder_point is not none else part.min_stock_level) %}
+                        {% set ns.low_stock = true %}
+                    {% endif %}
+                {% endfor %}
+                <tr>
+                    <td style="font-family:var(--mono); font-weight:700;">{{ part.part_code }}</td>
+                    <td>{{ part.title }}</td>
+                    <td>{{ part.category or '-' }}</td>
+                    <td>{{ part.compatible_asset_type or '-' }}</td>
+                    <td>
+                        <strong>{{ "%.1f"|format(total_available) }}</strong>
+                        <div style="font-size:11px; color:var(--text3);">Rezerve: {{ "%.1f"|format(total_reserved) }}</div>
+                    </td>
+                    <td>
+                        {% if ns.low_stock %}
+                        <span class="status-pill status-ariza">Düşük Stok</span>
+                        {% else %}
+                        <span class="status-pill status-aktif">Normal</span>
+                        {% endif %}
+                    </td>
+                    <td class="row-actions">
+                        <a class="row-btn" href="{{ url_for('parts.spare_part_detail', part_id=part.id) }}">Detay</a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" style="text-align:center; color:var(--text3);">Yedek parça kaydı bulunamadı.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

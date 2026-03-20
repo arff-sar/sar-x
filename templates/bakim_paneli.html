@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Bakım Paneli{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Bakım Operasyon Paneli</div>
+        <div class="page-meta">Periyodik bakım, iş emri ve kritik ekipman görünümü</div>
+    </div>
+    {% if rol in ['sahip', 'yetkili'] %}
+    <a href="{{ url_for('maintenance.is_emri_olustur') }}" class="btn btn-primary">🧰 Yeni İş Emri</a>
+    {% endif %}
+</div>
+
+<div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-bottom:16px;">
+    <div class="panel" style="margin:0;">
+        <div class="panel-body" style="padding:16px;">
+            <div style="font-size:12px; color:var(--text3);">Bugün Yaklaşan Bakım</div>
+            <div style="font-size:30px; font-weight:800; color:var(--amber);">{{ upcoming_assets|length }}</div>
+        </div>
+    </div>
+    <div class="panel" style="margin:0;">
+        <div class="panel-body" style="padding:16px;">
+            <div style="font-size:12px; color:var(--text3);">Geciken Bakım</div>
+            <div style="font-size:30px; font-weight:800; color:var(--red);">{{ overdue_assets|length }}</div>
+        </div>
+    </div>
+    <div class="panel" style="margin:0;">
+        <div class="panel-body" style="padding:16px;">
+            <div style="font-size:12px; color:var(--text3);">Açık İş Emirleri</div>
+            <div style="font-size:30px; font-weight:800; color:var(--blue);">{{ open_orders|length }}</div>
+        </div>
+    </div>
+    <div class="panel" style="margin:0;">
+        <div class="panel-body" style="padding:16px;">
+            <div style="font-size:12px; color:var(--text3);">Kritik Arızalı Ekipman</div>
+            <div style="font-size:30px; font-weight:800; color:var(--red);">{{ critical_fault_assets|length }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="two-col">
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">⏳ Geciken Bakımlar</div>
+            <a href="{{ url_for('maintenance.geciken_bakimlar') }}" class="btn btn-secondary">Tümü</a>
+        </div>
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Ekipman</th>
+                        <th>Seri No</th>
+                        <th>Sonraki Bakım</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for asset in overdue_assets[:10] %}
+                    <tr>
+                        <td>{{ asset.equipment_template.name if asset.equipment_template else '-' }}</td>
+                        <td>{{ asset.serial_no or '-' }}</td>
+                        <td style="color:var(--red); font-weight:700;">{{ asset.next_maintenance_date.strftime('%d.%m.%Y') if asset.next_maintenance_date else '-' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" style="text-align:center; color:var(--text3);">Geciken bakım bulunmuyor.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">🧾 Açık İş Emirleri</div>
+            <a href="{{ url_for('maintenance.is_emirleri') }}" class="btn btn-secondary">Liste</a>
+        </div>
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>İş Emri No</th>
+                        <th>Durum</th>
+                        <th>Öncelik</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in open_orders[:10] %}
+                    <tr>
+                        <td><a href="{{ url_for('maintenance.is_emri_detay', work_order_id=order.id) }}">{{ order.work_order_no }}</a></td>
+                        <td>{{ order.status|replace('_',' ')|upper }}</td>
+                        <td>{{ order.priority|upper }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" style="text-align:center; color:var(--text3);">Açık iş emri bulunmuyor.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

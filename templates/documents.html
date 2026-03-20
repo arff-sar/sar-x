@@ -1,0 +1,48 @@
+{% extends "base_public.html" %}
+
+{% block title %}Dokümanlar | SAR-X{% endblock %}
+
+{% block extra_css %}
+<style>
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; }
+  .item { padding: 18px; }
+  .item h2 { margin: 0 0 8px; font-size: 20px; }
+  .item p { margin: 0; color: var(--ink-500); line-height: 1.7; }
+  .cat { margin-top: 8px; color: #6c8199; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; }
+  .link { display: inline-block; margin-top: 12px; text-decoration: none; color: #0f4c84; font-size: 13px; font-weight: 700; }
+  @media (max-width: 980px) { .grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="public-section">
+  <div class="container">
+    <div class="section-head">
+      <p class="section-kicker">Dokümanlar</p>
+      <h1 class="section-title">Form ve Doküman Merkezi</h1>
+      <p class="section-lead">Aktif doküman kayıtları; prosedür, form ve operasyonel referans belgeleri.</p>
+    </div>
+
+    <div class="grid">
+      {% for doc in documents %}
+        {% set raw_link = (doc.file_path or "")|trim %}
+        {% set safe_link = raw_link if raw_link and not (raw_link|lower).startswith('javascript:') and not (raw_link|lower).startswith('data:') and not (raw_link|lower).startswith('vbscript:') else "" %}
+        <article class="public-card item">
+          <h2>{{ doc.title }}</h2>
+          <p>{{ doc.description or "Doküman açıklaması yönetim panelinden güncellenebilir." }}</p>
+          <div class="cat">{{ doc.category or "Doküman" }}</div>
+          {% if safe_link %}
+            <a class="link" href="{{ safe_link }}" target="_blank" rel="noopener noreferrer">Dokümana Git</a>
+          {% endif %}
+        </article>
+      {% else %}
+        <div class="public-card item">
+          <h2>Aktif doküman kaydı bulunmuyor</h2>
+          <p>Yönetim panelinden aktif doküman eklendiğinde bu listede otomatik gösterilecektir.</p>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

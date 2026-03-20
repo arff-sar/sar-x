@@ -1,4 +1,4 @@
-name: SAR-X ARFF CI/CD Pipeline
+name: SAR-X CI
 
 on:
   push:
@@ -10,35 +10,37 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
 
-    services:
-      # Eğer testlerde gerçek bir DB gerekirse buraya servis eklenebilir.
-      # Şu an sqlite :memory: kullandığımız için bu alan boş bırakılmıştır.
-
     steps:
-    - name: Repo Kodlarını Çek
-      uses: actions/checkout@v3
+    - name: Checkout
+      uses: actions/checkout@v4
 
-    - name: Python 3.9 Kurulumu
-      uses: actions/setup-python@v4
+    - name: Setup Python 3.11
+      uses: actions/setup-python@v5
       with:
-        python-version: "3.9"
+        python-version: "3.11"
+        cache: "pip"
+        cache-dependency-path: |
+          requirements.txt
+          requirements-dev.txt
 
-    - name: Bağımlılıkları Yükle
+    - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-flask factory-boy coverage
+        pip install -r requirements-dev.txt
 
-    - name: Testleri Çalıştır ve Kapsama Raporu Al
-      # .coveragerc dosyasındaki fail_under = 70 kuralı burada otomatik devreye girer.
-      # Eğer kapsam %70'in altındaysa bu adım hata verecek ve "Kırmızı" yanacaktır.
+    - name: Run tests with coverage
+      env:
+        APP_ENV: testing
+        SECRET_KEY: test-secret-key-for-ci-only
+        ENABLE_SCHEDULER: "0"
       run: |
         coverage run -m pytest
         coverage report
 
-    - name: Kapsama Raporunu Arşivle (Opsiyonel)
+    - name: Upload coverage artifact
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: coverage-report
-        path: .coverage
+        path: |
+          .coverage

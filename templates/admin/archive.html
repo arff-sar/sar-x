@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}Geri Dönüşüm Kutusu{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Arşiv Sekme Stilleri */
+    .nav-tabs { border-bottom: 1px solid var(--border); padding: 0 15px; gap: 10px; }
+    .nav-link { 
+        border: none !important; 
+        color: var(--text3); 
+        font-weight: 600; 
+        font-size: 13.5px; 
+        padding: 12px 20px; 
+        position: relative;
+        transition: color 0.2s;
+    }
+    .nav-link.active { 
+        color: var(--orange) !important; 
+        background: none !important; 
+    }
+    .nav-link.active::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 2px;
+        background: var(--orange);
+    }
+    .badge-count { font-size: 10px; padding: 2px 6px; border-radius: 10px; margin-left: 5px; background: var(--surface2); color: var(--text2); }
+    .nav-link.active .badge-count { background: var(--orange-light); color: var(--orange); }
+
+    /* İşlem Butonları */
+    .btn-restore { background: var(--green-light); color: var(--green); border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; transition: 0.2s; }
+    .btn-restore:hover { background: var(--green); color: white; }
+    .btn-purge { background: var(--red-light); color: var(--red); border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; transition: 0.2s; }
+    .btn-purge:hover { background: var(--red); color: white; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">🗑️ Geri Dönüşüm Kutusu</div>
+        <div class="page-meta">
+            <span>Sistemden silinen (arşivlenen) tüm kayıtlar burada tutulur.</span>
+        </div>
+    </div>
+</div>
+
+<div class="panel">
+    <ul class="nav nav-tabs" id="arsivTab" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="malzeme-tab" data-bs-toggle="tab" data-bs-target="#malzeme" type="button" role="tab">
+                <i class="bi bi-box"></i> Malzemeler <span class="badge-count">{{ malzemeler|length }}</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="kullanici-tab" data-bs-toggle="tab" data-bs-target="#kullanici" type="button" role="tab">
+                <i class="bi bi-people"></i> Personeller <span class="badge-count">{{ kullanicilar|length }}</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="havalimani-tab" data-bs-toggle="tab" data-bs-target="#havalimani" type="button" role="tab">
+                <i class="bi bi-building"></i> Havalimanları <span class="badge-count">{{ havalimanlari|length }}</span>
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="arsivTabContent">
+        
+        <div class="tab-pane fade show active" id="malzeme" role="tabpanel">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>MALZEME / SERİ NO</th>
+                        <th style="text-align: center;">SİLİNME TARİHİ</th>
+                        <th style="text-align: right;">İŞLEMLER</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for m in malzemeler %}
+                    <tr>
+                        <td>
+                            <div style="font-weight: 700; color: var(--navy);">{{ m.ad }}</div>
+                            <div style="font-size: 11px; color: var(--text3); font-family: var(--mono);">SN: {{ m.seri_no or '-' }}</div>
+                        </td>
+                        <td style="text-align: center; font-size: 12px; color: var(--text2);">
+                            {{ m.deleted_at.strftime('%d.%m.%Y %H:%M') if m.deleted_at else 'Belirtilmedi' }}
+                        </td>
+                        <td style="text-align: right;">
+                            <form action="{{ url_for('admin.arsiv_islem') }}" method="POST" class="d-inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="model_tipi" value="malzeme">
+                                <input type="hidden" name="kayit_id" value="{{ m.id }}">
+                                <button type="submit" name="islem_tipi" value="geri_yukle" class="btn-restore">↩️ Geri Yükle</button>
+                                <button type="submit" name="islem_tipi" value="kalici_sil" class="btn-purge" onclick="return confirm('Bu malzemeyi TAMAMEN silmek istediğinize emin misiniz? Bu işlem geri alınamaz!');">❌ Kalıcı Sil</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" style="padding: 40px; text-align: center; color: var(--text4);">Arşivlenmiş malzeme bulunmuyor.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="tab-pane fade" id="kullanici" role="tabpanel">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>AD SOYAD / KULLANICI ADI</th>
+                        <th style="text-align: center;">SİLİNME TARİHİ</th>
+                        <th style="text-align: right;">İŞLEMLER</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for k in kullanicilar %}
+                    <tr>
+                        <td>
+                            <div style="font-weight: 700; color: var(--navy);">{{ k.tam_ad }}</div>
+                            <div style="font-size: 11px; color: var(--text3);">{{ k.kullanici_adi }}</div>
+                        </td>
+                        <td style="text-align: center; font-size: 12px; color: var(--text2);">
+                            {{ k.deleted_at.strftime('%d.%m.%Y %H:%M') if k.deleted_at else 'Belirtilmedi' }}
+                        </td>
+                        <td style="text-align: right;">
+                            <form action="{{ url_for('admin.arsiv_islem') }}" method="POST" class="d-inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="model_tipi" value="kullanici">
+                                <input type="hidden" name="kayit_id" value="{{ k.id }}">
+                                <button type="submit" name="islem_tipi" value="geri_yukle" class="btn-restore">↩️ Geri Yükle</button>
+                                <button type="submit" name="islem_tipi" value="kalici_sil" class="btn-purge" onclick="return confirm('Bu personeli TAMAMEN silmek istediğinize emin misiniz?');">❌ Kalıcı Sil</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" style="padding: 40px; text-align: center; color: var(--text4);">Arşivlenmiş personel bulunmuyor.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="tab-pane fade" id="havalimani" role="tabpanel">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>HAVALİMANI ADI / KODU</th>
+                        <th style="text-align: center;">SİLİNME TARİHİ</th>
+                        <th style="text-align: right;">İŞLEMLER</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for h in havalimanlari %}
+                    <tr>
+                        <td>
+                            <div style="font-weight: 700; color: var(--navy);">{{ h.ad }}</div>
+                            <div style="font-size: 11px;"><span class="badge bg-dark">{{ h.kodu }}</span></div>
+                        </td>
+                        <td style="text-align: center; font-size: 12px; color: var(--text2);">
+                            {{ h.deleted_at.strftime('%d.%m.%Y %H:%M') if h.deleted_at else 'Belirtilmedi' }}
+                        </td>
+                        <td style="text-align: right;">
+                            <form action="{{ url_for('admin.arsiv_islem') }}" method="POST" class="d-inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="model_tipi" value="havalimani">
+                                <input type="hidden" name="kayit_id" value="{{ h.id }}">
+                                <button type="submit" name="islem_tipi" value="geri_yukle" class="btn-restore">↩️ Geri Yükle</button>
+                                <button type="submit" name="islem_tipi" value="kalici_sil" class="btn-purge" onclick="return confirm('Havalimanını silmek tüm bağlı birimleri etkiler. Kalıcı olarak silinsin mi?');">❌ Kalıcı Sil</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" style="padding: 40px; text-align: center; color: var(--text4);">Arşivlenmiş havalimanı bulunmuyor.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

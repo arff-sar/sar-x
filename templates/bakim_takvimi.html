@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Bakım Takvimi{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">{% if overdue_only %}Geciken Bakımlar{% else %}Bakım Takvimi{% endif %}</div>
+        <div class="page-meta">Planlı bakım tarihleri ve saha öncelikleri</div>
+    </div>
+    <a href="{{ url_for('maintenance.bakim_paneli') }}" class="btn btn-secondary">Panele Dön</a>
+</div>
+
+<div class="panel">
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Ekipman</th>
+                    <th>Havalimanı</th>
+                    <th>Seri No</th>
+                    <th>Bakım Tarihi</th>
+                    <th>Durum</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for asset in assets %}
+                {% set is_overdue = asset.next_maintenance_date and asset.next_maintenance_date < today %}
+                <tr>
+                    <td>{{ asset.equipment_template.name if asset.equipment_template else '-' }}</td>
+                    <td>{{ asset.airport.kodu if asset.airport else '-' }}</td>
+                    <td>{{ asset.serial_no or '-' }}</td>
+                    <td>{{ asset.next_maintenance_date.strftime('%d.%m.%Y') if asset.next_maintenance_date else '-' }}</td>
+                    <td>
+                        {% if is_overdue %}
+                        <span class="status-pill status-ariza">Geciken</span>
+                        {% elif asset.maintenance_state == 'yaklasan' %}
+                        <span class="status-pill status-bakim">Yaklaşan</span>
+                        {% else %}
+                        <span class="status-pill status-aktif">Planlı</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" style="text-align:center; color:var(--text3);">Bakım takviminde kayıt bulunmuyor.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

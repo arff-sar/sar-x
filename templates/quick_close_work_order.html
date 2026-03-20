@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Hızlı İş Emri Kapat{% endblock %}
+
+{% block extra_css %}
+<style>
+  .check-grid { display:grid; gap:12px; }
+  .check-card { border:1px solid var(--border); border-radius:14px; padding:14px; background:var(--surface2); }
+  .option-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .option-row label { flex:1; min-width:120px; border:1px solid var(--border); border-radius:12px; padding:12px; background:#fff; font-weight:700; text-align:center; cursor:pointer; }
+  .option-row input { margin-right:6px; transform:scale(1.2); }
+  .check-help { margin-top:6px; font-size:11.5px; color:var(--text3); line-height:1.45; }
+  .check-critical { display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; border:1px solid var(--amber-border); background:var(--amber-light); color:var(--amber); font-size:10.5px; font-weight:800; margin-left:8px; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Hızlı İş Emri Kapatma</div>
+        <div class="page-meta">{{ order.work_order_no }} · {{ order.asset.equipment_template.name if order.asset and order.asset.equipment_template else '-' }}</div>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a href="{{ url_for('maintenance.is_emri_pdf', work_order_id=order.id) }}" class="btn btn-secondary">PDF Formu</a>
+        <a href="{{ url_for('maintenance.is_emri_detay', work_order_id=order.id) }}" class="btn btn-secondary">Detaya Dön</a>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-body">
+        <form method="POST" action="{{ url_for('maintenance.work_order_quick_close', work_order_id=order.id) }}" style="display:grid; gap:12px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Sonuç</label>
+                <textarea class="form-control" name="result" style="height:80px;" required>Hızlı saha kapanışı tamamlandı.</textarea>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Kullanılan Parçalar (KOD:ADET)</label>
+                <textarea class="form-control" name="used_parts" style="height:70px;" placeholder="FILTRE-01:1&#10;PIL-12V:2"></textarea>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>İşçilik (Saat)</label>
+                    <input class="form-control" type="number" name="labor_hours" step="0.1" min="0">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>Ek Not</label>
+                    <input class="form-control" type="text" name="extra_notes">
+                </div>
+            </div>
+            {% if checklist_fields %}
+            <div class="panel" style="margin:0;">
+                <div class="panel-header"><div class="panel-title">Checklist</div></div>
+                <div class="panel-body">
+                    <div class="check-grid">
+                    {% for field in checklist_fields %}
+                    {% set meta = field_meta(field) %}
+                    <div class="check-card">
+                        <label>
+                            {{ field.label }}
+                            {% if meta.is_critical %}<span class="check-critical">Kritik</span>{% endif %}
+                            {% if field.is_required %}<span style="color:var(--red);">*</span>{% endif %}
+                        </label>
+                        {% if field.field_type in ['number', 'numeric_reading'] %}
+                        <input class="form-control" type="number" step="0.01" name="field_{{ field.id }}">
+                        {% elif field.field_type in ['date'] %}
+                        <input class="form-control" type="date" name="field_{{ field.id }}">
+                        {% elif field.field_type in ['boolean', 'checkbox', 'yes_no'] %}
+                        <div class="option-row">
+                            <label><input type="radio" name="field_{{ field.id }}" value="evet">Evet</label>
+                            <label><input type="radio" name="field_{{ field.id }}" value="hayir">Hayır</label>
+                        </div>
+                        {% elif field.field_type in ['pass_fail'] %}
+                        <div class="option-row">
+                            <label><input type="radio" name="field_{{ field.id }}" value="pass">Geçti</label>
+                            <label><input type="radio" name="field_{{ field.id }}" value="fail">Kaldı</label>
+                        </div>
+                        {% elif field.field_type == 'select' %}
+                        <select class="form-control" name="field_{{ field.id }}">
+                            <option value="">Seçin</option>
+                            {% for option in meta.options %}
+                            <option value="{{ option }}">{{ option }}</option>
+                            {% endfor %}
+                        </select>
+                        {% else %}
+                        <input class="form-control" type="text" name="field_{{ field.id }}">
+                        {% endif %}
+                        {% if meta.help_text %}
+                        <div class="check-help">{{ meta.help_text }}</div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            <button class="btn btn-primary" style="justify-content:center;">Hızlı Kapat</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

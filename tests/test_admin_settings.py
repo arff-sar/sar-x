@@ -1,3 +1,6 @@
+import json
+
+
 def test_update_site_settings(client, app):
     # ✅ CSRF korumasını test ortamında kapatıyoruz ki POST işlemi engellenmesin
     app.config['WTF_CSRF_ENABLED'] = False 
@@ -20,7 +23,9 @@ def test_update_site_settings(client, app):
     # Şimdi sisteme gerçekten 'sahip' yetkisiyle post atıyoruz
     response = client.post('/site-ayarlarini-guncelle', data={
         'baslik': 'Yeni SAR-X Paneli',
-        'alt_metin': 'Güvenli Envanter Yönetimi'
+        'alt_metin': 'Gönüllü ekip vitrini',
+        'logo_url': 'https://example.com/logo.png',
+        'public_contact_note': 'İş birliği ve duyuru paylaşımı için bize yazın.'
     }, follow_redirects=True)
 
     assert response.status_code == 200
@@ -31,3 +36,6 @@ def test_update_site_settings(client, app):
     
     # Mutlu son!
     assert guncel_ayar.baslik == 'Yeni SAR-X Paneli'
+    meta = json.loads(guncel_ayar.iletisim_notu)
+    assert meta["public_logo_url"] == 'https://example.com/logo.png'
+    assert meta["public_contact_note"] == 'İş birliği ve duyuru paylaşımı için bize yazın.'

@@ -1,25 +1,196 @@
 {% extends "base.html" %}
-{% block title %}Site Yönetimi{% endblock %}
+{% block title %}Site Ayarları Merkezi{% endblock %}
 
 {% block extra_css %}
 <style>
-    /* Slider önizleme kartları için ek stil */
+    .settings-tabs {
+        display: flex;
+        gap: 10px;
+        padding: 10px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--r-lg);
+        margin-bottom: 16px;
+        overflow-x: auto;
+    }
+    .settings-tab-btn {
+        border: 1px solid var(--border-dark);
+        background: var(--surface2);
+        color: var(--text2);
+        border-radius: 999px;
+        padding: 8px 14px;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: 0.2s;
+    }
+    .settings-tab-btn:hover { border-color: var(--orange); color: var(--orange); }
+    .settings-tab-btn.active {
+        background: var(--orange-light);
+        color: var(--orange);
+        border-color: var(--orange-border);
+    }
+
+    .settings-pane { display: none; }
+    .settings-pane.active { display: block; }
+
+    .stack { display: flex; flex-direction: column; gap: 16px; }
+    .grid-two { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+    .grid-two-equal { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    .airport-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+    }
+    .airport-row:hover { background: var(--surface2); }
+    .airport-code {
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 800;
+        color: var(--navy);
+        background: var(--blue-light);
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        padding: 4px 8px;
+        min-width: 56px;
+        text-align: center;
+    }
+    .airport-meta {
+        margin-left: auto;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .mini-help {
+        font-size: 11px;
+        color: var(--text4);
+        margin-top: -6px;
+    }
+
+    .slider-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+        gap: 12px;
+    }
     .slider-card {
         border: 1px solid var(--border);
         border-radius: var(--r);
         overflow: hidden;
         background: var(--surface);
-        transition: transform 0.2s, box-shadow 0.2s;
-    }
-    .slider-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 10px 20px rgba(0,0,0,0.1);
     }
     .slider-img {
         width: 100%;
-        height: 140px;
+        height: 120px;
         object-fit: cover;
         border-bottom: 1px solid var(--border);
+    }
+    .homepage-demo-panel { margin-bottom: 16px; }
+    .demo-actions-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+    }
+    .demo-card {
+        border: 1px solid var(--border);
+        border-radius: var(--r-lg);
+        background: var(--surface2);
+        padding: 16px;
+        display: grid;
+        gap: 10px;
+    }
+    .demo-card h4 {
+        margin: 0;
+        font-size: 14px;
+        color: var(--navy);
+    }
+    .demo-card p {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.6;
+        color: var(--text3);
+    }
+    .demo-status-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+    }
+    .demo-status-box {
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        background: var(--surface);
+        padding: 14px;
+    }
+    .demo-status-label {
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        color: var(--text4);
+        margin-bottom: 6px;
+    }
+    .demo-status-value {
+        font-size: 24px;
+        font-weight: 800;
+        color: var(--navy);
+    }
+    .demo-status-copy {
+        font-size: 12px;
+        color: var(--text4);
+        margin-top: 4px;
+    }
+    .demo-pill-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .demo-pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 30px;
+        padding: 0 10px;
+        border-radius: 999px;
+        background: var(--orange-light);
+        border: 1px solid var(--orange-border);
+        color: var(--orange);
+        font-size: 12px;
+        font-weight: 700;
+    }
+    .demo-meta-grid {
+        display: grid;
+        grid-template-columns: 1.2fr .8fr;
+        gap: 16px;
+    }
+    .demo-logo-preview {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        background: var(--surface);
+    }
+    .demo-logo-preview img {
+        width: 56px;
+        height: 56px;
+        object-fit: cover;
+        border-radius: 14px;
+        border: 1px solid var(--border-dark);
+        background: #fff;
+    }
+
+    @media (max-width: 980px) {
+        .grid-two, .grid-two-equal { grid-template-columns: 1fr; }
+        .demo-actions-grid, .demo-status-grid, .demo-meta-grid { grid-template-columns: 1fr; }
+        .airport-row { flex-direction: column; }
+        .airport-meta { margin-left: 0; width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+        .settings-tabs { gap: 8px; padding: 8px; }
+        .settings-tab-btn { padding: 7px 12px; font-size: 11.5px; }
+        .menu-add-form { grid-template-columns: 1fr; }
     }
 </style>
 {% endblock %}
@@ -27,141 +198,467 @@
 {% block body %}
 <div class="page-header">
     <div>
-        <div class="page-title">Sistem & İçerik Yönetimi (CMS)</div>
+        <div class="page-title">Site Ayarları Merkezi</div>
         <div class="page-meta">
-            <span>Anasayfa başlıkları, duyurular ve görselleri yönetin</span>
+            <span>Sadece site sahibi için sistem, organizasyon ve içerik yönetimi</span>
+        </div>
+    </div>
+    {% if demo_tools_enabled %}
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">
+                <div class="panel-title-icon pi-navy">Demo</div>
+                Demo Veri Araçları
+            </div>
+        </div>
+        <div class="panel-body">
+            <div class="grid-two-equal">
+                <form method="POST" action="{{ url_for('admin.demo_veri_olustur') }}" class="stack">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div style="font-size: 13px; color: var(--text3); line-height: 1.55;">
+                        3 havalimanı, 40 kullanıcı ve ilişkili operasyonel test kayıtları üretir. Aynı demo set zaten varsa tekrar çoğaltmaz.
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>Onay Metni</label>
+                        <input type="text" name="confirm_demo_seed" class="form-control" placeholder="DEMO">
+                    </div>
+                    <label style="display:flex; align-items:center; gap:8px; font-size:12px; text-transform:none; letter-spacing:0;">
+                        <input type="checkbox" name="demo_reset" value="1" style="width:auto; margin:0;">
+                        Önce mevcut demo verileri temizlensin
+                    </label>
+                    <button type="submit" class="btn btn-primary" style="justify-content:center;">Demo Veriyi Oluştur</button>
+                </form>
+                <form method="POST" action="{{ url_for('admin.demo_veri_temizle') }}" class="stack">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div style="font-size: 13px; color: var(--text3); line-height: 1.55;">
+                        Sadece demo seed ile oluşturulmuş kayıtları siler. Gerçek operasyon verilerini hedeflemez.
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>Onay Metni</label>
+                        <input type="text" name="confirm_demo_clear" class="form-control" placeholder="DEMO-SIL">
+                    </div>
+                    <button type="submit" class="btn btn-danger" style="justify-content:center;">Demo Veriyi Temizle</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if demo_tools_enabled %}
+<div class="panel homepage-demo-panel">
+    <div class="panel-header">
+            <div class="panel-title">
+                <div class="panel-title-icon pi-orange">Home</div>
+                Anasayfa Demo Araçları
+            </div>
+        </div>
+        <div class="panel-body stack">
+            <div class="pwa-banner" style="background: var(--blue-light); border-color: #bfdbfe;">
+                <div class="pwa-icon" style="background: var(--blue);">i</div>
+                <div class="pwa-text" style="color: var(--blue);">
+                    <strong>Bu alan yalnızca public anasayfa ve ilgili public içerik sayfalarını test etmek için ayrı bir demo seti kurar.</strong>
+                    Mevcut genel demo araçlarını değiştirmez. Demo aktifken public tarafta yalnızca bu set görünür; temizlendiğinde gerçek içerikler tekrar devreye girer.
+                </div>
+            </div>
+
+            <div class="demo-actions-grid">
+                <form method="POST" action="{{ url_for('admin.anasayfa_demo_olustur') }}" class="demo-card">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <h4>Anasayfa demosunu kur</h4>
+                    <p>3 slider, duyurular, sayısal özet kartları, Biz Kimiz görseli ve Eğitimler / Tatbikatlar modülleriyle zengin bir public demo seti oluşturur.</p>
+                    <button type="submit" class="btn btn-primary" style="justify-content:center;">Anasayfa Demosunu Kur</button>
+                </form>
+
+                <form method="POST" action="{{ url_for('admin.anasayfa_demo_temizle') }}" class="demo-card">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <h4>Anasayfa demosunu temizle</h4>
+                    <p>Yalnızca bu anasayfa demosu için açılmış kayıtları siler. Gerçek slider, duyuru ve diğer public içerik kayıtlarına dokunmaz.</p>
+                    <button type="submit" class="btn btn-danger" style="justify-content:center;">Anasayfa Demosunu Temizle</button>
+                </form>
+            </div>
+
+            <div class="demo-status-grid">
+                <div class="demo-status-box">
+                    <div class="demo-status-label">Durum</div>
+                    <div class="demo-status-value">{{ 'Aktif' if homepage_demo_status and homepage_demo_status.active else 'Pasif' }}</div>
+                    <div class="demo-status-copy">Public sayfa görünümü demo moduna göre filtrelenir.</div>
+                </div>
+                <div class="demo-status-box">
+                    <div class="demo-status-label">Slider</div>
+                    <div class="demo-status-value">{{ homepage_demo_status.sliders if homepage_demo_status else 0 }}</div>
+                    <div class="demo-status-copy">Demo hero kayıtları</div>
+                </div>
+                <div class="demo-status-box">
+                    <div class="demo-status-label">Duyuru</div>
+                    <div class="demo-status-value">{{ homepage_demo_status.announcements if homepage_demo_status else 0 }}</div>
+                    <div class="demo-status-copy">Anasayfa ve duyuru merkezi kayıtları</div>
+                </div>
+                <div class="demo-status-box">
+                    <div class="demo-status-label">Sayısal Özet</div>
+                    <div class="demo-status-value">{{ homepage_demo_status.stats if homepage_demo_status else 0 }}</div>
+                    <div class="demo-status-copy">Anasayfa kartları</div>
+                </div>
+            </div>
+
+            <div class="demo-meta-grid">
+                <div class="demo-card">
+                    <h4>Oluşan içerik sayfaları</h4>
+                    <p>Bu demo seti, public sayfalarda hangi bölümlerin dolu geleceğini burada özetler.</p>
+                    <div class="demo-pill-list">
+                        {% if homepage_demo_status and homepage_demo_status.pages %}
+                            {% for page_name in homepage_demo_status.pages %}
+                        <span class="demo-pill">{{ page_name }}</span>
+                            {% endfor %}
+                        {% else %}
+                        <span class="demo-pill" style="background: var(--surface); border-color: var(--border); color: var(--text3);">Henüz demo sayfası yok</span>
+                        {% endif %}
+                    </div>
+                    <div class="mini-help">
+                        Eğitim modülü: {{ homepage_demo_status.training_modules if homepage_demo_status else 0 }} |
+                        Tatbikat modülü: {{ homepage_demo_status.exercise_modules if homepage_demo_status else 0 }} |
+                        Toplam içerik modülü: {{ homepage_demo_status.sections if homepage_demo_status else 0 }}
+                    </div>
+                </div>
+
+                <div class="stack">
+                    <div class="demo-card">
+                        <h4>Son işlem sonucu</h4>
+                        <p>{{ homepage_demo_status.last_message if homepage_demo_status else 'Anasayfa demosu henüz çalıştırılmadı.' }}</p>
+                        <div class="mini-help">Son güncelleme: {{ homepage_demo_status.updated_at if homepage_demo_status else '-' }}</div>
+                    </div>
+                {% if homepage_demo_status and homepage_demo_status.demo_logo_url %}
+                <div class="demo-logo-preview">
+                    <img src="{{ homepage_demo_status.demo_logo_url }}" alt="Anasayfa demo logo önizlemesi">
+                    <div>
+                        <div style="font-weight: 700; color: var(--navy);">Demo logo fallback hazır</div>
+                        <div class="mini-help" style="margin-top: 4px;">Gerçek public logo tanımlı değilse header bu görsel fallbackini kullanabilir.</div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <a href="{{ url_for('content.homepage_dashboard') }}" class="row-btn">Anasayfa İçerik Yönetimini Aç</a>
+            <a href="{{ url_for('ana_sayfa') }}" class="row-btn" target="_blank">Public Anasayfayı Aç</a>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="settings-tabs" id="settingsTabs">
+    <button type="button" class="settings-tab-btn {% if aktif_sekme == 'genel' %}active{% endif %}" data-tab-target="genel">
+        Genel Ayarlar
+    </button>
+    <button type="button" class="settings-tab-btn {% if aktif_sekme == 'organizasyon' %}active{% endif %}" data-tab-target="organizasyon">
+        Organizasyon
+    </button>
+    <button type="button" class="settings-tab-btn {% if aktif_sekme == 'icerik' %}active{% endif %}" data-tab-target="icerik">
+        İçerik
+    </button>
+</div>
+
+<div class="settings-pane {% if aktif_sekme == 'genel' %}active{% endif %}" id="pane-genel">
+    <div class="grid-two-equal">
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <div class="panel-title-icon pi-navy">Site</div>
+                    Genel Site Metinleri
+                </div>
+            </div>
+            <div class="panel-body">
+                <form method="POST" action="{{ url_for('admin.site_ayarlarini_guncelle') }}" class="stack">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>İç Başlık Kaydı</label>
+                        <input type="text" name="baslik" value="{{ ayarlar.baslik if ayarlar else '' }}" class="form-control" placeholder="Örn: ARFF SAR İç Yönetim Başlığı">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>Footer Ek Notu</label>
+                        <textarea name="alt_metin" class="form-control" rows="4" style="margin-bottom: 0;">{{ ayarlar.alt_metin if ayarlar else '' }}</textarea>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>Public Header Logosu</label>
+                        <input type="text" name="logo_url" value="{{ public_logo_url or '' }}" class="form-control" placeholder="Logo görsel yolu veya URL">
+                        <div class="mini-help">Medya kütüphanesinden alınan görsel yolunu kullanabilirsiniz. Header’da yalnız ARFF SAR yazısı görünür.</div>
+                        <div style="margin-top:8px;">
+                            <a href="{{ url_for('content.media_library') }}" class="row-btn" target="_blank">Medya Kütüphanesi Aç</a>
+                        </div>
+                    </div>
+                    {% if public_logo_url %}
+                    <div style="padding: 14px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface2);">
+                        <div style="font-size: 12px; font-weight: 700; color: var(--text3); margin-bottom: 8px;">Mevcut Logo Önizleme</div>
+                        <img src="{{ public_logo_url }}" alt="Public logo" style="width: 64px; height: 64px; object-fit: cover; border-radius: 14px; border: 1px solid var(--border-dark); background: #fff;">
+                    </div>
+                    {% endif %}
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>Public İletişim Notu</label>
+                        <textarea name="public_contact_note" class="form-control" rows="3" style="margin-bottom: 0;">{{ public_contact_note }}</textarea>
+                        <div class="mini-help">Footer iletişim kartında görünür.</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">
+                        Genel Ayarları Kaydet
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <div class="panel-title-icon pi-orange">Not</div>
+                    Erişim ve Yetki Özeti
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="pwa-banner" style="background: var(--orange-light); border-color: var(--orange-border);">
+                    <div class="pwa-icon">!</div>
+                    <div class="pwa-text" style="color: #9a3412;">
+                        <strong>Bu ekran sadece site sahibine açıktır.</strong>
+                        Havalimanı, yetki etiketi ve içerik değişikliklerinin tamamı sistem geneline etki eder.
+                    </div>
+                </div>
+                <div style="height: 12px;"></div>
+                <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Rol Kodu</th>
+                            <th>Görünen Adı</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><span class="tag-navy">sahip</span></td><td>{{ rol_etiketleri.sahip }}</td></tr>
+                        <tr><td><span class="tag-navy">yetkili</span></td><td>{{ rol_etiketleri.yetkili }}</td></tr>
+                        <tr><td><span class="tag-navy">personel</span></td><td>{{ rol_etiketleri.personel }}</td></tr>
+                        <tr><td><span class="tag-navy">genel_mudurluk</span></td><td>{{ rol_etiketleri.genel_mudurluk }}</td></tr>
+                    </tbody>
+                </table>
+                </div>
+            </div>
         </div>
     </div>
 </div>
 
-<div class="two-col">
-    <div style="display: flex; flex-direction: column; gap: 20px;">
-        
-        <div class="panel">
-            <div class="panel-header">
-                <div class="panel-title">
-                    <div class="panel-title-icon pi-navy">⚙️</div>
-                    Genel Site Ayarları
+<div class="settings-pane {% if aktif_sekme == 'organizasyon' %}active{% endif %}" id="pane-organizasyon">
+    <div class="grid-two">
+        <div class="stack">
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <div class="panel-title-icon pi-green">Birim</div>
+                        Havalimanı Yönetimi
+                    </div>
                 </div>
-            </div>
-            <div style="padding: 24px;">
-                <form method="POST" action="{{ url_for('admin.site_ayarlarini_guncelle') }}">
-                    <div class="mb-16">
-                        <label class="fw-700 text-small" style="display: block; margin-bottom: 8px;">ANASAYFA ANA BAŞLIK</label>
-                        <input type="text" name="baslik" value="{{ ayarlar.baslik if ayarlar else '' }}" 
-                               class="search-input" style="width: 100%; padding-left: 12px;" placeholder="Örn: AIRPORT SAR YÖNETİM SİSTEMİ">
+                <div class="panel-body" style="padding: 0;">
+                    {% for h in havalimanlari %}
+                    <div class="airport-row">
+                        <div class="airport-code">{{ h.kodu }}</div>
+                        <div>
+                            <div style="font-weight: 700; color: var(--navy);">{{ h.ad }}</div>
+                            <div style="font-size: 11px; color: var(--text4);">
+                                Personel: {{ h.personeller|length }} | Malzeme: {{ h.malzemeler|length }}
+                            </div>
+                        </div>
+                        <div class="airport-meta">
+                            <button type="button" class="row-btn" onclick='havalimaniDuzenle({{ h.id }}, {{ h.ad|tojson }}, {{ h.kodu|tojson }})'>
+                                Düzenle
+                            </button>
+                            <form method="POST" action="{{ url_for('admin.havalimani_sil', id=h.id) }}" style="display:inline;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="row-btn" style="color: var(--red); border-color: var(--red-border);" onclick="return confirm('Bu havalimanını arşive taşımak istiyor musunuz?')">
+                                    Arşivle
+                                </button>
+                            </form>
+                        </div>
                     </div>
-                    <div class="mb-20">
-                        <label class="fw-700 text-small" style="display: block; margin-bottom: 8px;">ALT AÇIKLAMA METNİ</label>
-                        <textarea name="alt_metin" class="search-input" 
-                                  style="width: 100%; padding: 12px; height: 80px; resize: none;">{{ ayarlar.alt_metin if ayarlar else '' }}</textarea>
-                    </div>
-                    <button type="submit" class="btn-primary" style="width: 100%; justify-content: center;">
-                        💾 Genel Ayarları Güncelle
-                    </button>
-                </form>
+                    {% else %}
+                    <div style="padding: 24px; color: var(--text3);">Aktif havalimanı kaydı bulunmuyor.</div>
+                    {% endfor %}
+                </div>
             </div>
         </div>
 
-        <div class="panel">
-            <div class="panel-header">
-                <div class="panel-title">
-                    <div class="panel-title-icon pi-orange">📰</div>
-                    Haber ve Duyuru Yayınla
+        <div class="stack">
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title" id="havalimani-form-baslik">
+                        <div class="panel-title-icon pi-orange">Ekle</div>
+                        Yeni Havalimanı Ekle
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <form method="POST" action="{{ url_for('admin.havalimanlari') }}" id="havalimaniForm" class="stack">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="islem" id="h_islem" value="ekle">
+                        <input type="hidden" name="id" id="h_id">
+
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Havalimanı Adı</label>
+                            <input type="text" class="form-control" name="ad" id="h_ad" required placeholder="Örn: Ankara Esenboğa Havalimanı">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Birim Kodu</label>
+                            <input type="text" class="form-control" name="kodu" id="h_kodu" required maxlength="6" style="text-transform: uppercase; font-family: var(--mono);">
+                            <div class="mini-help">Kod değeri tüm operasyon etiketlerinde görünür.</div>
+                        </div>
+
+                        <div style="display: flex; gap: 8px;">
+                            <button type="submit" class="btn btn-primary" style="flex: 2; justify-content: center;">Kaydet</button>
+                            <button type="button" class="btn btn-secondary" style="flex: 1; justify-content: center;" onclick="havalimaniFormReset()">İptal</button>
+                        </div>
+                    </form>
                 </div>
             </div>
-            <div style="padding: 24px;">
-                <form method="POST" action="{{ url_for('admin.haber_ekle') }}">
-                    <div class="mb-16">
-                        <label class="fw-700 text-small" style="display: block; margin-bottom: 8px;">HABER BAŞLIĞI</label>
-                        <input type="text" name="haber_baslik" required class="search-input" style="width: 100%; padding-left: 12px;" placeholder="Duyuru başlığını girin...">
+
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <div class="panel-title-icon pi-navy">Rol</div>
+                        Yetki İsimleri
                     </div>
-                    <div class="mb-20">
-                        <label class="fw-700 text-small" style="display: block; margin-bottom: 8px;">DETAYLI İÇERİK</label>
-                        <textarea name="haber_icerik" required class="search-input" 
-                                  style="width: 100%; padding: 12px; height: 100px; resize: none;" placeholder="Personelin göreceği duyuru metni..."></textarea>
-                    </div>
-                    <button type="submit" class="btn-primary" style="width: 100%; justify-content: center; background: var(--navy);">
-                        📣 Haberi Hemen Yayınla
-                    </button>
-                </form>
+                </div>
+                <div class="panel-body">
+                    <form method="POST" action="{{ url_for('admin.yetki_isimlerini_guncelle') }}" class="stack">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Sahip Rolü</label>
+                            <input type="text" class="form-control" name="rol_sahip" value="{{ rol_etiketleri.sahip }}">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Yetkili Rolü</label>
+                            <input type="text" class="form-control" name="rol_yetkili" value="{{ rol_etiketleri.yetkili }}">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Personel Rolü</label>
+                            <input type="text" class="form-control" name="rol_personel" value="{{ rol_etiketleri.personel }}">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Genel Müdürlük Rolü</label>
+                            <input type="text" class="form-control" name="rol_genel_mudurluk" value="{{ rol_etiketleri.genel_mudurluk }}">
+                        </div>
+                        <button type="submit" class="btn btn-navy" style="width: 100%; justify-content: center;">Yetki İsimlerini Güncelle</button>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
+</div>
 
-    <div style="display: flex; flex-direction: column; gap: 20px;">
-        
-        <div class="panel">
-            <div class="panel-header">
-                <div class="panel-title">
-                    <div class="panel-title-icon pi-green">🔗</div>
-                    Üst Menü Linkleri
+<div class="settings-pane {% if aktif_sekme == 'icerik' %}active{% endif %}" id="pane-icerik">
+    <div class="grid-two-equal">
+        <div class="stack">
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <div class="panel-title-icon pi-orange">Haber</div>
+                        Haber ve Duyuru
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <form method="POST" action="{{ url_for('admin.haber_ekle') }}" class="stack">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Haber Başlığı</label>
+                            <input type="text" name="haber_baslik" required class="form-control" placeholder="Duyuru başlığını girin">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Detaylı İçerik</label>
+                            <textarea name="haber_icerik" required class="form-control" rows="5" style="margin-bottom: 0;" placeholder="Personelin göreceği duyuru metni"></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">Haberi Yayınla</button>
+                    </form>
                 </div>
             </div>
-            <div style="padding: 20px;">
-                <form method="POST" action="{{ url_for('admin.menu_ekle') }}" style="display: flex; gap: 8px; margin-bottom: 15px;">
-                    <input type="text" name="menu_ad" placeholder="Menü Adı" required class="search-input" style="flex: 1; padding-left: 10px;">
-                    <input type="text" name="menu_link" placeholder="Link" class="search-input" style="flex: 1; padding-left: 10px;">
-                    <button type="submit" class="btn-primary" style="padding: 10px;">➕</button>
-                </form>
-                
-                <table class="data-table" style="font-size: 13px;">
-                    <thead>
-                        <tr>
-                            <th>MENÜ ADI</th>
-                            <th>LİNK</th>
-                            <th style="text-align: right;">İŞLEM</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for menu in menuler %}
-                        <tr>
-                            <td class="fw-700">{{ menu.ad }}</td>
-                            <td class="mono text-muted" style="font-size: 11px;">{{ menu.link }}</td>
-                            <td style="text-align: right;">
-                                <a href="{{ url_for('admin.menu_sil', id=menu.id) }}" style="color: var(--red); text-decoration: none; font-weight: bold;">❌</a>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <div class="panel-title-icon pi-green">Menü</div>
+                        Üst Menü Linkleri
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <form method="POST" action="{{ url_for('admin.menu_ekle') }}" class="menu-add-form" style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; margin-bottom: 12px;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="text" name="menu_ad" required class="form-control" placeholder="Menü adı" style="margin-bottom: 0;">
+                        <input type="text" name="menu_link" class="form-control" placeholder="Bağlantı" style="margin-bottom: 0;">
+                        <button type="submit" class="btn btn-primary" style="padding: 0 14px;">Ekle</button>
+                    </form>
+
+                    <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Menü</th>
+                                <th>Bağlantı</th>
+                                <th style="text-align:right;">İşlem</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for menu in menuler %}
+                            <tr>
+                                <td>{{ menu.ad }}</td>
+                                <td style="font-family: var(--mono); font-size: 12px;">{{ menu.link }}</td>
+                                <td style="text-align:right;">
+                                    <form method="POST" action="{{ url_for('admin.menu_sil', id=menu.id) }}" style="display:inline;">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit" class="row-btn" style="color: var(--red); border-color: var(--red-border);" onclick="return confirm('Bu menü kaydını silmek istiyor musunuz?')">Sil</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="3" style="color: var(--text4);">Menü kaydı yok.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
             </div>
         </div>
 
         <div class="panel" id="sliderPanel">
             <div class="panel-header">
                 <div class="panel-title">
-                    <div class="panel-title-icon pi-amber">🖼️</div>
-                    Slider (Görsel) Yönetimi
+                    <div class="panel-title-icon pi-amber">Slider</div>
+                    Slider Yönetimi
                 </div>
             </div>
-            <div style="padding: 20px;">
-                <div id="sliderFormAlani" style="background: var(--surface2); padding: 16px; border-radius: var(--r); margin-bottom: 20px; border: 1px dashed var(--border-dark);">
-                    <h4 id="formBaslik" style="font-size: 13px; margin-bottom: 12px; color: var(--navy);">Yeni Slider Ekle</h4>
-                    <form id="sliderForm" method="POST" action="{{ url_for('admin.slider_ekle') }}">
-                        <input type="text" id="inputUrl" name="resim_url" placeholder="Görsel URL Linki" required class="search-input" style="width: 100%; padding-left: 10px; margin-bottom: 10px;">
-                        <input type="text" id="inputBaslik" name="slider_baslik" placeholder="Görsel Üzeri Yazı" class="search-input" style="width: 100%; padding-left: 10px; margin-bottom: 12px;">
+            <div class="panel-body">
+                <div style="background: var(--surface2); border: 1px dashed var(--border-dark); border-radius: var(--r); padding: 14px; margin-bottom: 14px;" id="sliderFormWrap">
+                    <div style="font-size: 13px; font-weight: 700; margin-bottom: 10px; color: var(--navy);" id="sliderFormTitle">Yeni Slider Ekle</div>
+                    <form id="sliderForm" method="POST" action="{{ url_for('admin.slider_ekle') }}" class="stack">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="text" id="sliderUrl" name="resim_url" required class="form-control" placeholder="Görsel URL" style="margin-bottom: 0;">
+                        <input type="text" id="sliderBaslik" name="slider_baslik" class="form-control" placeholder="Görsel başlığı" style="margin-bottom: 0;">
                         <div style="display: flex; gap: 8px;">
-                            <button type="submit" id="submitBtn" class="btn-primary" style="flex: 2; justify-content: center;">💾 Kaydet</button>
-                            <button type="button" onclick="formuSifirla()" id="vazgecBtn" style="display:none;" class="btn-secondary">İptal</button>
+                            <button type="submit" class="btn btn-primary" id="sliderSubmitBtn" style="flex: 2; justify-content: center;">Kaydet</button>
+                            <button type="button" class="btn btn-secondary" id="sliderCancelBtn" onclick="sliderFormReset()" style="display: none;">İptal</button>
                         </div>
                     </form>
                 </div>
 
-                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px;">
+                <div class="slider-grid">
                     {% for slider in sliderlar %}
                     <div class="slider-card">
-                        <img src="{{ slider.resim_url }}" class="slider-img" alt="Slider">
-                        <div style="padding: 8px;">
-                            <div class="text-small fw-700" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px;">{{ slider.baslik }}</div>
-                            <div style="display: flex; justify-content: space-between;">
-                                <button onclick="duzenle('{{ slider.id }}', '{{ slider.resim_url }}', '{{ slider.baslik }}')" 
-                                        style="background:none; border:none; color:var(--blue); cursor:pointer; font-size: 11px; font-weight: 700;">✏️ DÜZENLE</button>
-                                <a href="{{ url_for('admin.slider_sil', id=slider.id) }}" 
-                                   style="color: var(--red); text-decoration: none; font-size: 11px; font-weight: 700;">❌ SİL</a>
+                        <img src="{{ slider.resim_url }}" class="slider-img" alt="Slider görseli">
+                        <div style="padding: 10px;">
+                            <div style="font-size: 12px; font-weight: 700; color: var(--text2); margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                {{ slider.baslik or 'Başlıksız Slider' }}
+                            </div>
+                            <div style="display: flex; justify-content: space-between; gap: 8px;">
+                                <button type="button" class="row-btn" style="font-size: 11px;" onclick='sliderDuzenle({{ slider.id }}, {{ slider.resim_url|tojson }}, {{ (slider.baslik or "")|tojson }})'>Düzenle</button>
+                                <form method="POST" action="{{ url_for('admin.slider_sil', id=slider.id) }}" style="display:inline;">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="row-btn" style="font-size: 11px; color: var(--red); border-color: var(--red-border);" onclick="return confirm('Bu slider kaydını silmek istiyor musunuz?')">Sil</button>
+                                </form>
                             </div>
                         </div>
                     </div>
+                    {% else %}
+                    <div style="grid-column: 1 / -1; color: var(--text4);">Slider kaydı yok.</div>
                     {% endfor %}
                 </div>
             </div>
@@ -170,36 +667,64 @@
 </div>
 
 <script>
-/**
- * Slider düzenleme modunu başlatır
- */
-function duzenle(id, url, baslik) {
-    document.getElementById('formBaslik').innerText = "📝 Slider Güncelleniyor...";
-    document.getElementById('formBaslik').style.color = "var(--orange)";
-    document.getElementById('inputUrl').value = url;
-    document.getElementById('inputBaslik').value = baslik;
-    
-    // Blueprint rotasına uygun dinamik URL güncellemesi
-    document.getElementById('sliderForm').action = "/slider-guncelle/" + id;
-    
-    document.getElementById('submitBtn').innerText = "Değişiklikleri Uygula";
-    document.getElementById('vazgecBtn').style.display = "inline-flex";
-    document.getElementById('sliderFormAlani').style.borderColor = "var(--orange)";
-    
-    document.getElementById('sliderPanel').scrollIntoView({ behavior: 'smooth' });
+function sekmeAc(tabName) {
+    const buttons = document.querySelectorAll('.settings-tab-btn');
+    const panes = document.querySelectorAll('.settings-pane');
+
+    buttons.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tabTarget === tabName);
+    });
+    panes.forEach(pane => {
+        pane.classList.toggle('active', pane.id === 'pane-' + tabName);
+    });
+
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set('tab', tabName);
+    window.history.replaceState({}, '', nextUrl.toString());
 }
 
-/**
- * Slider formunu temizler
- */
-function formuSifirla() {
-    document.getElementById('formBaslik').innerText = "Yeni Slider Ekle";
-    document.getElementById('formBaslik').style.color = "var(--navy)";
+document.querySelectorAll('.settings-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => sekmeAc(btn.dataset.tabTarget));
+});
+
+function havalimaniDuzenle(id, ad, kodu) {
+    document.getElementById('h_islem').value = 'guncelle';
+    document.getElementById('h_id').value = id;
+    document.getElementById('h_ad').value = ad;
+    document.getElementById('h_kodu').value = kodu;
+    document.getElementById('havalimani-form-baslik').innerHTML = '<div class="panel-title-icon pi-navy">Düzenle</div> Havalimanı Düzenle';
+    sekmeAc('organizasyon');
+}
+
+function havalimaniFormReset() {
+    document.getElementById('havalimaniForm').reset();
+    document.getElementById('h_islem').value = 'ekle';
+    document.getElementById('h_id').value = '';
+    document.getElementById('havalimani-form-baslik').innerHTML = '<div class="panel-title-icon pi-orange">Ekle</div> Yeni Havalimanı Ekle';
+}
+
+function sliderDuzenle(id, url, baslik) {
+    document.getElementById('sliderFormTitle').innerText = 'Slider Güncelle';
+    document.getElementById('sliderFormWrap').style.borderColor = 'var(--orange)';
+    document.getElementById('sliderForm').action = '/slider-guncelle/' + id;
+    document.getElementById('sliderUrl').value = url || '';
+    document.getElementById('sliderBaslik').value = baslik || '';
+    document.getElementById('sliderSubmitBtn').innerText = 'Güncelle';
+    document.getElementById('sliderCancelBtn').style.display = 'inline-flex';
+    sekmeAc('icerik');
+}
+
+function sliderFormReset() {
     document.getElementById('sliderForm').reset();
     document.getElementById('sliderForm').action = "{{ url_for('admin.slider_ekle') }}";
-    document.getElementById('submitBtn').innerText = "💾 Kaydet";
-    document.getElementById('vazgecBtn').style.display = "none";
-    document.getElementById('sliderFormAlani').style.borderColor = "var(--border-dark)";
+    document.getElementById('sliderFormTitle').innerText = 'Yeni Slider Ekle';
+    document.getElementById('sliderFormWrap').style.borderColor = 'var(--border-dark)';
+    document.getElementById('sliderSubmitBtn').innerText = 'Kaydet';
+    document.getElementById('sliderCancelBtn').style.display = 'none';
 }
+
+document.getElementById('h_kodu')?.addEventListener('input', function () {
+    this.value = this.value.toUpperCase();
+});
 </script>
 {% endblock %}

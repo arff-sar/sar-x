@@ -1,0 +1,436 @@
+{% extends "base_public.html" %}
+
+{% block title %}{{ page_title }} | ARFF SAR{% endblock %}
+
+{% block extra_css %}
+<style>
+  .info-hero {
+    padding-top: 22px;
+  }
+  .info-hero-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 32px;
+    background:
+      radial-gradient(circle at top left, rgba(245,158,11,.12), transparent 28%),
+      linear-gradient(135deg, #0a1f38 0%, #123558 58%, #1a456c 100%);
+    color: #fff;
+    min-height: 248px;
+    padding: 30px;
+    box-shadow: 0 24px 54px rgba(8,27,49,.15);
+    border: 1px solid rgba(255,255,255,.08);
+  }
+  .info-hero-card::after {
+    content: "";
+    position: absolute;
+    inset: auto -70px -90px auto;
+    width: 220px;
+    height: 220px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.06);
+  }
+  .info-kicker {
+    color: #ffc96d;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+  }
+  .info-hero-card h1 {
+    margin: 12px 0 12px;
+    font-size: clamp(34px, 5vw, 52px);
+    line-height: 1.02;
+    letter-spacing: -.05em;
+    max-width: 12ch;
+  }
+  .info-hero-card p {
+    margin: 0;
+    max-width: 60ch;
+    color: #d7e5f5;
+    line-height: 1.82;
+    font-size: 15px;
+  }
+
+  .info-feature-grid,
+  .info-grid,
+  .info-modules {
+    margin-top: 22px;
+  }
+  .info-feature-grid,
+  .info-modules {
+    display: grid;
+    gap: 18px;
+  }
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .info-feature-card,
+  .info-card,
+  .info-module-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 26px;
+    border: 1px solid rgba(197,212,229,.92);
+    background: linear-gradient(180deg, #ffffff, #f9fbfe);
+    box-shadow: 0 18px 38px rgba(8,27,49,.08);
+  }
+  .info-feature-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1.02fr) minmax(320px, .98fr);
+    min-height: 320px;
+  }
+  .info-feature-card.is-text-only {
+    grid-template-columns: 1fr;
+  }
+  .info-feature-body,
+  .info-card,
+  .info-module-copy {
+    padding: 26px;
+    display: grid;
+    gap: 12px;
+    align-content: center;
+  }
+  .info-feature-media,
+  .info-module-media {
+    position: relative;
+    min-height: 100%;
+    background: #dfe8f2;
+  }
+  .info-feature-media::after,
+  .info-module-media::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(180deg, rgba(8,27,49,.06), rgba(8,27,49,.2)),
+      linear-gradient(135deg, rgba(245,158,11,.08), transparent 42%);
+    pointer-events: none;
+  }
+  .info-feature-image,
+  .info-card-image,
+  .info-module-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .info-feature-image {
+    min-height: 320px;
+  }
+  .info-card-image {
+    height: 232px;
+    border-radius: 18px;
+    border: 1px solid var(--line);
+    background: #dfe8f2;
+  }
+  .info-subtitle {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    min-height: 30px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: rgba(245,158,11,.1);
+    color: var(--accent-dark);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .info-feature-body h2,
+  .info-card h2,
+  .info-module-copy h2 {
+    margin: 0;
+    font-size: clamp(28px, 4vw, 36px);
+    line-height: 1.08;
+    letter-spacing: -.045em;
+  }
+  .info-feature-body p,
+  .info-card p,
+  .info-module-copy p {
+    margin: 0;
+    color: var(--ink-500);
+    line-height: 1.84;
+    font-size: 15px;
+    white-space: pre-wrap;
+  }
+
+  .info-module-card {
+    display: grid;
+    grid-template-columns: minmax(290px, 360px) minmax(0, 1fr);
+    align-items: stretch;
+    min-height: 320px;
+  }
+  .info-module-card.is-reverse {
+    grid-template-columns: minmax(0, 1fr) minmax(290px, 360px);
+  }
+  .info-module-media {
+    background:
+      radial-gradient(circle at top left, rgba(245,158,11,.1), transparent 22%),
+      linear-gradient(180deg, #0a1f38 0%, #13395d 100%);
+  }
+  .info-module-media img {
+    min-height: 320px;
+  }
+  .info-module-copy {
+    gap: 14px;
+  }
+  .info-module-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .info-module-order {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 42px;
+    min-height: 42px;
+    padding: 0 10px;
+    border-radius: 14px;
+    background: rgba(8,27,49,.05);
+    border: 1px solid rgba(197,212,229,.9);
+    color: var(--ink-700);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .04em;
+  }
+  .info-module-caption {
+    font-size: 12px;
+    color: var(--ink-500);
+    line-height: 1.7;
+  }
+  .info-module-copy h2 {
+    max-width: 18ch;
+  }
+  .info-module-card.is-reverse .info-module-media {
+    order: 2;
+  }
+  .info-module-card.is-reverse .info-module-copy {
+    order: 1;
+  }
+
+  .info-empty {
+    padding: 24px;
+    border-radius: 24px;
+    border: 1px dashed var(--line-strong);
+    background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(248,251,255,.84));
+    display: grid;
+    gap: 12px;
+  }
+  .info-empty strong {
+    font-size: 24px;
+    line-height: 1.05;
+    letter-spacing: -.04em;
+    color: var(--ink-900);
+  }
+  .info-empty p {
+    margin: 0;
+    color: var(--ink-500);
+    line-height: 1.76;
+    font-size: 14px;
+  }
+  .info-empty-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .info-empty-pills span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 34px;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: var(--surface-soft);
+    border: 1px solid rgba(197,212,229,.9);
+    color: var(--ink-700);
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .info-back-shell {
+    display: flex;
+    justify-content: flex-start;
+    margin-top: 20px;
+  }
+  .info-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 42px;
+    padding: 0 14px;
+    border-radius: 14px;
+    background: rgba(255,255,255,.78);
+    border: 1px solid rgba(197,212,229,.9);
+    text-decoration: none;
+    color: var(--ink-700);
+    font-size: 12.5px;
+    font-weight: 800;
+    transition: transform .16s ease, border-color .16s ease, background .16s ease;
+  }
+  .info-back:hover {
+    transform: translateY(-1px);
+    border-color: rgba(245,158,11,.28);
+    background: rgba(245,158,11,.08);
+  }
+
+  @media (max-width: 980px) {
+    .info-feature-card,
+    .info-module-card,
+    .info-module-card.is-reverse {
+      grid-template-columns: 1fr;
+      min-height: auto;
+    }
+    .info-module-card.is-reverse .info-module-media,
+    .info-module-card.is-reverse .info-module-copy {
+      order: initial;
+    }
+    .info-feature-image,
+    .info-module-media img {
+      min-height: 250px;
+    }
+  }
+
+  @media (max-width: 860px) {
+    .info-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 760px) {
+    .info-hero-card {
+      padding: 24px 20px;
+      border-radius: 24px;
+      min-height: 220px;
+    }
+    .info-feature-card,
+    .info-card,
+    .info-module-card,
+    .info-empty {
+      border-radius: 20px;
+    }
+    .info-feature-body,
+    .info-card,
+    .info-module-copy {
+      padding: 20px;
+    }
+    .info-card-image {
+      height: 210px;
+      border-radius: 16px;
+    }
+    .info-module-head {
+      align-items: flex-start;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set fallback_image = "https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=1400&q=80" %}
+{% set variant = page_variant or 'feature' %}
+{% set normalized_page_title = (page_title or '')|replace('?', '')|replace('!', '')|trim|lower %}
+
+<section class="public-section info-hero" data-public-page="{{ page_title|lower|replace(' ', '-') }}">
+  <div class="container">
+    <div class="info-hero-card">
+      <div class="info-kicker">{{ page_group }}</div>
+      <h1>{{ page_title }}</h1>
+      <p>{{ page_lead }}</p>
+    </div>
+
+    {% if variant == 'duo' %}
+      <div class="info-grid">
+        {% for card in cards %}
+          {% set raw_image = (card.image_url or "")|trim %}
+          {% set image = raw_image if raw_image and not (raw_image|lower).startswith('javascript:') and not (raw_image|lower).startswith('data:') and not (raw_image|lower).startswith('vbscript:') else '' %}
+          <article class="public-card info-card">
+            {% if image %}
+              <img src="{{ image }}" alt="{{ card.title }}" class="info-card-image" loading="lazy" onerror="this.src='{{ fallback_image }}'">
+            {% endif %}
+            {% if card.subtitle %}
+              <div class="info-subtitle">{{ card.subtitle }}</div>
+            {% endif %}
+            <h2>{{ card.title }}</h2>
+            <p>{{ card.content }}</p>
+          </article>
+        {% endfor %}
+      </div>
+    {% elif variant == 'modules' %}
+      <div class="info-modules" data-module-system="modules">
+        {% for card in cards %}
+          {% set raw_image = (card.image_url or "")|trim %}
+          {% set image = raw_image if raw_image and not (raw_image|lower).startswith('javascript:') and not (raw_image|lower).startswith('data:') and not (raw_image|lower).startswith('vbscript:') else fallback_image %}
+          {% set normalized_card_title = (card.title or '')|replace('?', '')|replace('!', '')|trim|lower %}
+          {% set hide_card_title = cards|length == 1 and normalized_card_title == normalized_page_title %}
+          <article class="public-card info-module-card {% if loop.index is even %}is-reverse{% endif %}">
+            <div class="info-module-media">
+              <img src="{{ image }}" alt="{{ card.title or page_title }}" loading="lazy" onerror="this.src='{{ fallback_image }}'">
+            </div>
+            <div class="info-module-copy">
+              <div class="info-module-head">
+                <div>
+                  {% if card.subtitle %}
+                    <div class="info-subtitle">{{ card.subtitle }}</div>
+                  {% else %}
+                    <div class="info-subtitle">{{ page_group }}</div>
+                  {% endif %}
+                </div>
+                <div class="info-module-order">{{ "%02d"|format(loop.index) }}</div>
+              </div>
+              {% if not hide_card_title and card.title %}
+                <h2>{{ card.title }}</h2>
+              {% endif %}
+              <p>{{ card.content }}</p>
+              <div class="info-module-caption">Görsel ve metin dengesi, dinamik modüller birden fazla olduğunda da aynı ritimde kalacak şekilde korunur.</div>
+            </div>
+          </article>
+        {% else %}
+          <div class="info-empty">
+            <strong>İçerik yakında burada yerini alacak</strong>
+            <p>Sayfa iskeleti hazır. Yönetim panelinden modül eklediğinizde içerikler aynı düzen içinde otomatik yerleşir.</p>
+            <div class="info-empty-pills">
+              <span>Hazırlık notları</span>
+              <span>Saha tekrarları</span>
+              <span>Ekip koordinasyonu</span>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="info-feature-grid">
+        {% for card in cards %}
+          {% set raw_image = (card.image_url or "")|trim %}
+          {% set image = raw_image if raw_image and not (raw_image|lower).startswith('javascript:') and not (raw_image|lower).startswith('data:') and not (raw_image|lower).startswith('vbscript:') else '' %}
+          {% set normalized_card_title = (card.title or '')|replace('?', '')|replace('!', '')|trim|lower %}
+          {% set hide_card_title = cards|length == 1 and normalized_card_title == normalized_page_title %}
+          <article class="public-card info-feature-card {% if not image %}is-text-only{% endif %}">
+            <div class="info-feature-body">
+              {% if card.subtitle %}
+                <div class="info-subtitle">{{ card.subtitle }}</div>
+              {% endif %}
+              {% if not hide_card_title and card.title %}
+                <h2>{{ card.title }}</h2>
+              {% endif %}
+              <p>{{ card.content }}</p>
+            </div>
+            {% if image %}
+              <div class="info-feature-media">
+                <img src="{{ image }}" alt="{{ card.title or page_title }}" class="info-feature-image" loading="lazy" onerror="this.src='{{ fallback_image }}'">
+              </div>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="info-back-shell">
+      <a class="info-back" href="{{ url_for('ana_sayfa') }}" data-info-back>← Anasayfaya dön</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

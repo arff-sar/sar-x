@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Rol Detayı{% endblock %}
+
+{% block extra_css %}
+<style>
+.role-title { display:flex; align-items:center; gap:10px; }
+.permission-module { margin-bottom:18px; }
+.permission-module-title { font-size:12px; font-weight:800; color:var(--text3); text-transform:uppercase; margin-bottom:10px; letter-spacing:.05em; }
+.permission-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
+.permission-card { border:1px solid var(--border); border-radius:14px; padding:14px; background:var(--surface2); min-height:92px; display:flex; align-items:flex-start; }
+.permission-meta { display:flex; flex-direction:column; gap:6px; }
+.permission-meta-head { display:flex; align-items:flex-start; gap:8px; }
+.permission-meta-label { font-size:12.5px; font-weight:800; color:var(--navy); line-height:1.35; }
+.permission-meta-key { font-family:var(--mono); font-size:11px; color:var(--text4); }
+.permission-card.status-pasif { opacity: .72; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title role-title">
+            <span>{{ role.label }}</span>
+            {% set tooltip_text = role.description %}
+            {% set tooltip_aria_label = role.label ~ ' rol açıklaması' %}
+            {% include "admin/_info_tooltip.html" %}
+        </div>
+        <div class="page-meta">Varsayılan kapsam: {{ role.scope }}</div>
+    </div>
+    <a href="{{ url_for('admin.permissions') }}" class="btn btn-secondary">Yetki Matrisine Dön</a>
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <div class="panel-title">Varsayılan Yetkiler</div>
+    </div>
+    <div class="panel-body">
+        <div style="margin-bottom:14px; color:var(--text2);">{{ role.description }}</div>
+        {% for module, permissions in permission_catalog.items() %}
+        <div class="permission-module">
+            <div class="permission-module-title">{{ permissions[0].module_label }}</div>
+            <div class="permission-grid">
+                {% for permission in permissions %}
+                <div class="permission-card {% if permission.key in role_permissions %}status-aktif{% else %}status-pasif{% endif %}">
+                    {% include "admin/_permission_meta.html" %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

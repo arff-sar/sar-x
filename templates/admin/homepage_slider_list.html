@@ -1,0 +1,113 @@
+{% extends "admin/homepage_base.html" %}
+
+{% block homepage_body %}
+<div class="panel">
+  <div class="panel-header">
+    <div class="panel-title">Slider Yönetimi</div>
+    <a class="btn btn-primary" href="{{ url_for('content.homepage_slider_create') }}">➕ Yeni Slider</a>
+  </div>
+
+  <div class="hp-toolbar">
+    <form method="GET" class="hp-toolbar-left">
+      <input type="search" name="q" placeholder="Başlık veya alt başlık ara..." value="{{ search_query or '' }}">
+      <select name="status">
+        <option value="">Tüm Durumlar</option>
+        <option value="published" {% if selected_status == 'published' %}selected{% endif %}>Yayında</option>
+        <option value="draft" {% if selected_status == 'draft' %}selected{% endif %}>Taslak</option>
+        <option value="passive" {% if selected_status == 'passive' %}selected{% endif %}>Pasif</option>
+        <option value="archived" {% if selected_status == 'archived' %}selected{% endif %}>Arşiv</option>
+      </select>
+      <button class="btn btn-secondary" type="submit">Filtrele</button>
+      <a class="btn btn-secondary" href="{{ url_for('content.homepage_slider_list') }}">Temizle</a>
+    </form>
+  </div>
+
+  <form method="POST" action="{{ url_for('content.homepage_bulk_action', content_type='slider') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="hp-toolbar">
+      <div class="hp-toolbar-left hp-bulk">
+        <select name="bulk_action">
+          <option value="">Toplu İşlem</option>
+          <option value="publish">Seçilileri Yayına Al</option>
+          <option value="passive">Seçilileri Pasif Et</option>
+          <option value="archive">Seçilileri Arşivle</option>
+          <option value="normalize">Sıralamayı Normalize Et</option>
+        </select>
+        <button class="btn btn-secondary" type="submit">Uygula</button>
+      </div>
+      <div class="hp-toolbar-right" style="font-size:12px; color:var(--text3);">Toplam: {{ sliders|length }} kayıt</div>
+    </div>
+
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width:36px;"><input type="checkbox" id="selectAllRows"></th>
+            <th>Başlık</th>
+            <th>Sıra</th>
+            <th>Durum</th>
+            <th>Yayın Bilgisi</th>
+            <th>İşlemler</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for slider in sliders %}
+          {% set wf = workflow_map.get(slider.id) %}
+          <tr>
+            <td><input type="checkbox" name="selected_ids" value="{{ slider.id }}" class="row-selector"></td>
+            <td>
+              <div style="font-weight:700;">{{ slider.title }}</div>
+              <div style="font-size:11px; color:var(--text3);">{{ slider.subtitle or '-' }}</div>
+            </td>
+            <td>{{ slider.order_index }}</td>
+            <td>
+              {% if wf and wf.status == 'published' %}<span class="hp-status-pill hp-status-published">Yayında</span>
+              {% elif wf and wf.status == 'draft' %}<span class="hp-status-pill hp-status-draft">Taslak</span>
+              {% elif wf and wf.status == 'archived' %}<span class="hp-status-pill hp-status-archived">Arşiv</span>
+              {% else %}<span class="hp-status-pill hp-status-passive">Pasif</span>{% endif %}
+            </td>
+            <td style="font-size:12px; color:var(--text3);">
+              {% if wf and wf.published_at %}{{ wf.published_at.strftime('%d.%m.%Y %H:%M') }}{% else %}-{% endif %}
+            </td>
+            <td>
+              <div class="row-actions">
+                <a class="row-btn" href="{{ url_for('content.homepage_slider_edit', slider_id=slider.id) }}">Düzenle</a>
+                <form method="POST" action="{{ url_for('content.homepage_move_item', content_type='slider', item_id=slider.id, direction='up') }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="row-btn" type="submit">↑</button>
+                </form>
+                <form method="POST" action="{{ url_for('content.homepage_move_item', content_type='slider', item_id=slider.id, direction='down') }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="row-btn" type="submit">↓</button>
+                </form>
+                <form method="POST" action="{{ url_for('content.homepage_slider_toggle', slider_id=slider.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="row-btn" type="submit">{{ 'Pasife Al' if wf and wf.status == 'published' else 'Yayınla' }}</button>
+                </form>
+                <form method="POST" action="{{ url_for('content.homepage_slider_delete', slider_id=slider.id) }}" onsubmit="return confirm('Slider silinsin mi?');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="row-btn" type="submit" style="color:var(--red); border-color:var(--red-border);">Sil</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6"><div class="hp-empty">Henüz slider kaydı yok. Yeni slider oluşturarak başlayabilirsiniz.</div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+</div>
+
+<script>
+  (function () {
+    const selectAll = document.getElementById('selectAllRows');
+    const rows = Array.from(document.querySelectorAll('.row-selector'));
+    if (!selectAll) return;
+    selectAll.addEventListener('change', function () {
+      rows.forEach((row) => { row.checked = selectAll.checked; });
+    });
+  })();
+</script>
+{% endblock %}

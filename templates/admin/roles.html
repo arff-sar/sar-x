@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Roller{% endblock %}
+
+{% block extra_css %}
+<style>
+.roles-table td { vertical-align: middle; }
+.role-cell { display:flex; align-items:center; gap:10px; }
+.role-meta { display:grid; gap:4px; }
+.role-label { font-size:14px; font-weight:800; color:var(--navy); }
+.role-key { font-size:11px; color:var(--text4); font-family:var(--mono); }
+.role-scope { display:inline-flex; align-items:center; justify-content:center; min-width:92px; padding:6px 10px; border-radius:999px; background:var(--surface2); border:1px solid var(--border); font-size:11px; font-weight:800; color:var(--text3); letter-spacing:.04em; text-transform:uppercase; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Roller</div>
+        <div class="page-meta">Kurumsal rol kataloğu ve mevcut kullanıcı dağılımı</div>
+    </div>
+    <a href="{{ url_for('admin.permissions') }}" class="btn btn-navy">Yetki Matrisi</a>
+</div>
+
+<div class="panel">
+    <div class="table-container">
+        <table class="data-table roles-table">
+            <thead>
+                <tr>
+                    <th>Rol</th>
+                    <th>Kapsam</th>
+                    <th>Kullanıcı</th>
+                    <th>Varsayılan Yetki</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for role in role_options %}
+                <tr>
+                    <td>
+                        <span class="role-cell">
+                            <span class="role-meta">
+                                <span class="role-label">{{ role.label }}</span>
+                                <span class="role-key">{{ role.key }}</span>
+                            </span>
+                            {% set tooltip_text = role.description %}
+                            {% set tooltip_aria_label = role.label ~ ' rol açıklaması' %}
+                            {% include "admin/_info_tooltip.html" %}
+                        </span>
+                    </td>
+                    <td><span class="role-scope">{{ role.scope }}</span></td>
+                    <td>{{ role_counts.get(role.key, 0) }}</td>
+                    <td>{{ default_role_permissions.get(role.key, [])|length }}</td>
+                    <td class="row-actions">
+                        <a href="{{ url_for('admin.role_detail', role_key=role.key) }}" class="row-btn">Detay</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

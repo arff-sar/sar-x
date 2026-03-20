@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Yönetici Özeti{% endblock %}
+
+{% block extra_css %}
+<style>
+.report-kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:18px; }
+.mini-kpi { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px; }
+.mini-kpi-value { font-size:28px; font-weight:800; color:var(--navy); }
+.mini-kpi-label { font-size:12px; color:var(--text3); margin-top:6px; font-weight:700; }
+.summary-list { display:grid; gap:10px; }
+.summary-row { display:flex; justify-content:space-between; gap:10px; padding:12px 14px; border:1px solid var(--border); border-radius:12px; background:var(--surface2); }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Yönetici Özeti</div>
+        <div class="page-meta">Kırmızı alanlar, yaklaşan riskler ve son {{ summary.snapshot.filters.trend_days }} gün performansı</div>
+    </div>
+    <a href="{{ url_for('reports.index') }}" class="btn btn-secondary">Rapor Merkezine Dön</a>
+</div>
+
+<div class="report-kpis">
+    <div class="mini-kpi"><div class="mini-kpi-value">{{ summary.snapshot.totals.overdue_maintenance }}</div><div class="mini-kpi-label">Geciken Bakım</div></div>
+    <div class="mini-kpi"><div class="mini-kpi-value">{{ summary.snapshot.totals.critical_stock }}</div><div class="mini-kpi-label">Kritik Stok</div></div>
+    <div class="mini-kpi"><div class="mini-kpi-value">{{ summary.snapshot.totals.open_work_orders }}</div><div class="mini-kpi-label">Açık İş Emri</div></div>
+    <div class="mini-kpi"><div class="mini-kpi-value">{{ summary.snapshot.totals.avg_close_hours }}</div><div class="mini-kpi-label">Ort. Kapanma Süresi</div></div>
+</div>
+
+<div class="two-col">
+    <div class="panel">
+        <div class="panel-header"><div class="panel-title">Kırmızı Alanlar</div></div>
+        <div class="panel-body">
+            <div class="summary-list">
+                {% for item in summary.red_flags %}
+                <div class="summary-row"><strong>{{ item }}</strong></div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="panel">
+        <div class="panel-header"><div class="panel-title">Yaklaşan Riskler</div></div>
+        <div class="panel-body">
+            <div class="summary-list">
+                {% for category, count in summary.risk_categories %}
+                <div class="summary-row"><span>{{ category }}</span><strong>{{ count }}</strong></div>
+                {% else %}
+                <div class="summary-row"><span>Risk yoğun kategori görünmüyor.</span></div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="two-col">
+    <div class="panel">
+        <div class="panel-header"><div class="panel-title">En Çok İş Emri Üreten Lokasyon</div></div>
+        <div class="panel-body">
+            <div class="summary-list">
+                {% for airport, count in summary.top_airports %}
+                <div class="summary-row"><span>{{ airport }}</span><strong>{{ count }}</strong></div>
+                {% else %}
+                <div class="summary-row"><span>Aktif lokasyon yoğunluğu görünmüyor.</span></div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="panel">
+        <div class="panel-header"><div class="panel-title">Kapanmayan Kritik İşler</div></div>
+        <div class="panel-body">
+            <div class="summary-list">
+                {% for order in summary.stale_critical_orders %}
+                <div class="summary-row">
+                    <span>{{ order.work_order_no }} · {{ order.asset.airport.ad if order.asset and order.asset.airport else '-' }}</span>
+                    <strong>{{ order.priority|upper }}</strong>
+                </div>
+                {% else %}
+                <div class="summary-row"><span>Kapanmayan kritik iş görünmüyor.</span></div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

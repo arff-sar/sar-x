@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Asset Lifecycle{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Asset Lifecycle Yönetimi</div>
+        <div class="page-meta">Garanti, servis ve operasyonel yaşam döngüsü geçişleri</div>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Asset</th>
+                    <th>Ekipman</th>
+                    <th>Lifecycle</th>
+                    <th>Garanti</th>
+                    <th>Servis</th>
+                    <th>Geçiş</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for asset in assets %}
+                <tr>
+                    <td style="font-family:var(--mono);">{{ asset.asset_code }}</td>
+                    <td>{{ asset.equipment_template.name if asset.equipment_template else '-' }}</td>
+                    <td>{{ asset.lifecycle_status }}</td>
+                    <td>{{ asset.warranty_end_date.strftime('%d.%m.%Y') if asset.warranty_end_date else '-' }}</td>
+                    <td>{{ asset.operational_state.service_provider if asset.operational_state else '-' }}</td>
+                    <td>
+                        <form method="POST" style="display:grid; gap:8px;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="asset_id" value="{{ asset.id }}">
+                            <select name="lifecycle_status" class="form-control">
+                                {% for status in lifecycle_statuses %}
+                                <option value="{{ status }}" {% if asset.lifecycle_status == status %}selected{% endif %}>{{ status }}</option>
+                                {% endfor %}
+                            </select>
+                            <select name="target_airport_id" class="form-control">
+                                <option value="">Havalimanı değişmesin</option>
+                                {% for airport in airports %}
+                                <option value="{{ airport.id }}">{{ airport.kodu }} - {{ airport.ad }}</option>
+                                {% endfor %}
+                            </select>
+                            <input name="service_provider" class="form-control" placeholder="Servis sağlayıcı" value="{{ asset.operational_state.service_provider if asset.operational_state else '' }}">
+                            <input type="date" name="warranty_start" class="form-control" value="{{ asset.operational_state.warranty_start.strftime('%Y-%m-%d') if asset.operational_state and asset.operational_state.warranty_start else '' }}">
+                            <input type="date" name="warranty_end" class="form-control" value="{{ asset.warranty_end_date.strftime('%Y-%m-%d') if asset.warranty_end_date else '' }}">
+                            <textarea name="lifecycle_note" class="form-control" style="height:70px;" placeholder="Geçiş notu">{{ asset.operational_state.lifecycle_note if asset.operational_state else '' }}</textarea>
+                            <button class="btn btn-secondary" type="submit">Kaydet</button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" style="text-align:center; color:var(--text3);">Kayıt bulunamadı.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

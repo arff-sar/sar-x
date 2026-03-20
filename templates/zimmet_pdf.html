@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>Zimmet Formu</title>
+<style>
+  @page { size: A4; margin: 18mm 14mm 16mm 14mm; }
+  {% if pdf_font_regular %}
+  @font-face {
+    font-family: "AssignmentPdfSans";
+    src: url("{{ pdf_font_regular }}");
+  }
+  @font-face {
+    font-family: "AssignmentPdfSans";
+    src: url("{{ pdf_font_bold }}");
+    font-weight: bold;
+  }
+  {% endif %}
+  body {
+    font-family: {% if pdf_font_regular %}"AssignmentPdfSans"{% else %}"DejaVu Sans"{% endif %}, sans-serif;
+    font-size: 9.8pt;
+    color: #172033;
+    line-height: 1.45;
+  }
+  .sheet-header {
+    border: 1px solid #d8e0ea;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #ffffff;
+  }
+  .sheet-header-accent {
+    height: 6px;
+    background: #f97316;
+  }
+  .sheet-header-body {
+    padding: 14px 16px 12px;
+  }
+  .header-grid {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .header-grid td {
+    vertical-align: top;
+  }
+  .header-kicker {
+    color: #a14c10;
+    font-size: 8.4pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+  .header-title {
+    margin-top: 4px;
+    font-size: 18pt;
+    font-weight: bold;
+    color: #102a43;
+  }
+  .header-subtitle {
+    margin-top: 4px;
+    color: #52637a;
+    font-size: 9pt;
+  }
+  .header-meta {
+    text-align: right;
+  }
+  .meta-pill {
+    display: inline-block;
+    padding: 6px 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 999px;
+    background: #fff7ed;
+    color: #9a3412;
+    font-size: 8.5pt;
+    font-weight: bold;
+  }
+  .meta-stamp {
+    margin-top: 10px;
+    font-size: 8.7pt;
+    color: #52637a;
+  }
+  .section-title {
+    margin: 16px 0 8px;
+    font-size: 10.8pt;
+    font-weight: bold;
+    color: #102a43;
+  }
+  .meta-table,
+  .item-table,
+  .signature-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .meta-table td {
+    border: 1px solid #d8e0ea;
+    padding: 7px 9px;
+    vertical-align: top;
+  }
+  .meta-label {
+    width: 19%;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 8.7pt;
+    font-weight: bold;
+  }
+  .meta-value {
+    color: #172033;
+    font-size: 9.4pt;
+  }
+  .item-table thead th {
+    padding: 8px 9px;
+    border: 1px solid #d8e0ea;
+    background: #fff7ed;
+    color: #9a3412;
+    font-size: 8.8pt;
+    font-weight: bold;
+    text-align: left;
+  }
+  .item-table tbody td {
+    padding: 8px 9px;
+    border: 1px solid #d8e0ea;
+    font-size: 9pt;
+    vertical-align: top;
+  }
+  .item-code {
+    color: #64748b;
+    font-size: 8.2pt;
+    margin-top: 2px;
+  }
+  .note-box {
+    border: 1px solid #d8e0ea;
+    border-radius: 10px;
+    background: #ffffff;
+    padding: 11px 12px;
+    min-height: 56px;
+    font-size: 9pt;
+  }
+  .signature-table {
+    margin-top: 18px;
+  }
+  .signature-table td {
+    width: 50%;
+    padding: 0 10px 0 0;
+    vertical-align: top;
+  }
+  .signature-card {
+    border: 1px solid #d8e0ea;
+    border-radius: 10px;
+    padding: 12px 14px 14px;
+    min-height: 120px;
+    background: #ffffff;
+  }
+  .signature-title {
+    font-size: 9pt;
+    font-weight: bold;
+    color: #102a43;
+  }
+  .signature-name {
+    margin-top: 10px;
+    font-size: 9.4pt;
+    color: #172033;
+  }
+  .signature-note {
+    margin-top: 42px;
+    padding-top: 7px;
+    border-top: 1px solid #94a3b8;
+    color: #64748b;
+    font-size: 8.4pt;
+  }
+  .footer {
+    margin-top: 16px;
+    font-size: 8.2pt;
+    color: #64748b;
+    text-align: right;
+  }
+</style>
+</head>
+<body>
+  <div class="sheet-header">
+    <div class="sheet-header-accent"></div>
+    <div class="sheet-header-body">
+      <table class="header-grid">
+        <tr>
+          <td>
+            <div class="header-kicker">SAR-X • Resmi Belge</div>
+            <div class="header-title">Zimmet Formu</div>
+            <div class="header-subtitle">Malzeme, ekipman ve teslim bilgilerini içeren resmi zimmet kaydı.</div>
+          </td>
+          <td class="header-meta">
+            <div class="meta-pill">{{ assignment.assignment_no }}</div>
+            <div class="meta-stamp">Oluşturulma: {{ generated_at.strftime('%d.%m.%Y %H:%M') if generated_at else '-' }}</div>
+          </td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="section-title">Belge Bilgileri</div>
+  <table class="meta-table">
+    <tr>
+      <td class="meta-label">Zimmet No</td>
+      <td class="meta-value">{{ assignment.assignment_no }}</td>
+      <td class="meta-label">Tarih</td>
+      <td class="meta-value">{{ assignment.assignment_date.strftime('%d.%m.%Y') if assignment.assignment_date else '-' }}</td>
+    </tr>
+    <tr>
+      <td class="meta-label">Havalimanı</td>
+      <td class="meta-value">{{ assignment.airport.ad if assignment.airport else 'Global erişim' }}</td>
+      <td class="meta-label">Durum</td>
+      <td class="meta-value">{{ assignment_status_label(assignment.status) }}</td>
+    </tr>
+    <tr>
+      <td class="meta-label">Teslim Eden</td>
+      <td class="meta-value">{{ assignment.delivered_by.tam_ad if assignment.delivered_by else '-' }}</td>
+      <td class="meta-label">Teslim Alan</td>
+      <td class="meta-value">{{ assignment.recipient_names or '-' }}</td>
+    </tr>
+  </table>
+
+  <div class="section-title">Zimmetlenen Malzeme Listesi</div>
+  <table class="item-table">
+    <thead>
+      <tr>
+        <th style="width:6%;">#</th>
+        <th style="width:38%;">Malzeme / Ekipman</th>
+        <th style="width:18%;">Varlık / Seri No</th>
+        <th style="width:12%;">Miktar</th>
+        <th style="width:10%;">Birim</th>
+        <th style="width:16%;">Not</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in assignment.items %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>
+          <strong>{{ item.item_name }}</strong>
+          {% if item.material and item.material.havalimani %}
+          <div class="item-code">{{ item.material.havalimani.ad }}</div>
+          {% endif %}
+        </td>
+        <td>
+          {% if item.asset and item.asset.asset_code %}
+          {{ item.asset.asset_code }}
+          {% elif item.material and item.material.seri_no %}
+          {{ item.material.seri_no }}
+          {% else %}
+          -
+          {% endif %}
+        </td>
+        <td>{{ item.quantity }}</td>
+        <td>{{ item.unit or 'adet' }}</td>
+        <td>{{ item.note or '-' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="section-title">Açıklama / Not</div>
+  <div class="note-box">{{ assignment.note or 'Ek not girilmemiştir.' }}</div>
+
+  <table class="signature-table">
+    <tr>
+      <td>
+        <div class="signature-card">
+          <div class="signature-title">Teslim Eden</div>
+          <div class="signature-name">{{ assignment.delivered_by.tam_ad if assignment.delivered_by else '-' }}</div>
+          <div class="signature-note">Ad Soyad • İmza • Tarih</div>
+        </div>
+      </td>
+      <td>
+        <div class="signature-card">
+          <div class="signature-title">Teslim Alan</div>
+          <div class="signature-name">{{ assignment.recipient_names or '-' }}</div>
+          <div class="signature-note">Ad Soyad • İmza • Tarih</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="footer">SAR-X zimmet modulu tarafindan uretildi.</div>
+</body>
+</html>

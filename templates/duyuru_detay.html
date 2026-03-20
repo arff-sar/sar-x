@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ announcement.title }} - Duyuru</title>
+  <style>
+    body { margin: 0; font-family: 'Plus Jakarta Sans', Arial, sans-serif; background: #f3f6fb; color: #0f233a; }
+    .container { width: min(920px, 92vw); margin: 0 auto; }
+    .top { background: #0f233a; color: #fff; padding: 14px 0; }
+    .top a { color: #fff; text-decoration: none; font-weight: 700; }
+    .card { background: #fff; border: 1px solid #dce4ee; border-radius: 14px; box-shadow: 0 12px 28px rgba(15,35,58,.08); padding: 24px; margin: 24px 0 40px; }
+    h1 { margin: 0 0 8px; font-size: 32px; }
+    .meta { color: #60738c; font-size: 13px; margin-bottom: 18px; }
+    p { color: #384c63; line-height: 1.8; }
+    .back { display: inline-block; text-decoration: none; margin-top: 18px; color: #0f4c84; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div class="container"><a href="{{ url_for('ana_sayfa') }}">← Ana Sayfaya Dön</a></div>
+  </div>
+  <div class="container">
+    <article class="card">
+      <h1>{{ announcement.title }}</h1>
+      <div class="meta">📅 {{ announcement.published_at.strftime('%d.%m.%Y %H:%M') if announcement.published_at else '-' }}</div>
+      <p>{{ announcement.content }}</p>
+      <a class="back" href="{{ url_for('ana_sayfa') }}#duyurular">Duyurular listesine dön</a>
+    </article>
+  </div>
+</body>
+</html>

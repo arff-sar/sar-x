@@ -1,0 +1,14 @@
+{% if tooltip_text %}
+<span class="info-stack" data-open="false">
+    <button
+        type="button"
+        class="info-trigger"
+        data-tooltip-trigger
+        aria-label="{{ tooltip_aria_label or 'Bilgi açıklamasını göster' }}"
+        aria-expanded="false"
+    >
+        <span aria-hidden="true">i</span>
+    </button>
+    <span class="info-popover" role="tooltip">{{ tooltip_text }}</span>
+</span>
+{% endif %}

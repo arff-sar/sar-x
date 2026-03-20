@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>İş Emri Formu</title>
+<style>
+  @page { size: A4; margin: 18mm 14mm; }
+  body { font-family: DejaVu Sans, sans-serif; font-size: 9.5pt; color: #172033; }
+  .title { font-size: 17pt; font-weight: bold; color: #1d3557; }
+  .subtitle { margin-top: 4px; color: #607089; font-size: 8.5pt; }
+  .section-title { margin-top: 16px; margin-bottom: 8px; font-size: 11pt; font-weight: bold; color: #1d3557; }
+  .meta-table, .checklist-table { width: 100%; border-collapse: collapse; }
+  .meta-table td, .checklist-table th, .checklist-table td { border: 1px solid #d5dde8; padding: 7px 8px; vertical-align: top; }
+  .meta-label { width: 24%; background: #eef3f8; font-weight: bold; color: #1d3557; }
+  .checklist-table th { background: #eef3f8; color: #1d3557; font-weight: bold; }
+  .note-box { border: 1px solid #d5dde8; padding: 10px; min-height: 54px; }
+</style>
+</head>
+<body>
+  <div class="title">Bakım / Kontrol İş Emri Formu</div>
+  <div class="subtitle">{{ order.work_order_no }} • {{ generated_at.strftime('%d.%m.%Y %H:%M') if generated_at else '-' }}</div>
+
+  <div class="section-title">İş Emri Bilgileri</div>
+  <table class="meta-table">
+    <tr>
+      <td class="meta-label">İş Emri No</td>
+      <td>{{ order.work_order_no }}</td>
+      <td class="meta-label">Durum</td>
+      <td>{{ order.status|replace('_', ' ')|title }}</td>
+    </tr>
+    <tr>
+      <td class="meta-label">Ekipman</td>
+      <td>{{ order.asset.equipment_template.name if order.asset and order.asset.equipment_template else '-' }}</td>
+      <td class="meta-label">Seri No</td>
+      <td>{{ order.asset.serial_no if order.asset else '-' }}</td>
+    </tr>
+    <tr>
+      <td class="meta-label">Atanan</td>
+      <td>{{ order.assigned_user.tam_ad if order.assigned_user else '-' }}</td>
+      <td class="meta-label">Öncelik</td>
+      <td>{{ order.priority|title }}</td>
+    </tr>
+    <tr>
+      <td class="meta-label">Açıklama</td>
+      <td colspan="3">{{ order.description or '-' }}</td>
+    </tr>
+  </table>
+
+  <div class="section-title">Checklist Sonuçları</div>
+  <table class="checklist-table">
+    <thead>
+      <tr>
+        <th style="width:38%;">Kontrol Maddesi</th>
+        <th style="width:18%;">Alan Tipi</th>
+        <th style="width:16%;">Kritik</th>
+        <th>Yanıt</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for field in checklist_fields %}
+      {% set meta = field_meta(field) %}
+      <tr>
+        <td>{{ field.label }}</td>
+        <td>{{ field.field_type|replace('_', ' ')|title }}</td>
+        <td>{{ 'Evet' if meta.is_critical else 'Hayır' }}</td>
+        <td>{{ response_map.get(field.field_key, '-') }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="4">Bu iş emri için checklist alanı tanımlanmamış.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="section-title">Sonuç / Notlar</div>
+  <div class="note-box">{{ order.result or order.extra_notes or 'İş emri henüz sonuçlandırılmamış.' }}</div>
+</body>
+</html>

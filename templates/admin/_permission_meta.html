@@ -1,0 +1,9 @@
+<span class="permission-meta" data-permission-key="{{ permission.key }}">
+    <span class="permission-meta-head">
+        <span class="permission-meta-label">{{ permission.label }}</span>
+        {% set tooltip_text = permission.description %}
+        {% set tooltip_aria_label = permission.label ~ ' açıklaması' %}
+        {% include "admin/_info_tooltip.html" %}
+    </span>
+    <span class="permission-meta-key">{{ permission.key }}</span>
+</span>

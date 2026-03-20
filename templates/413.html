@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>İstek Çok Büyük</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f4f7fb; color: #0f172a; margin: 0; }
+        .wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+        .card { max-width: 540px; width: 100%; background: #fff; border: 1px solid #dbe3ec; border-radius: 12px; padding: 28px; }
+        h1 { margin: 0 0 12px; font-size: 24px; color: #0f2d4a; }
+        p { margin: 0 0 18px; line-height: 1.6; color: #334155; }
+        a { display: inline-block; background: #0f2d4a; color: #fff; text-decoration: none; padding: 10px 16px; border-radius: 8px; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="card">
+        <h1>413 · İstek Boyutu Aşıldı</h1>
+        <p>{{ mesaj or "Gönderdiğiniz dosya veya form verisi izin verilen sınırı aşıyor." }}</p>
+        <a href="{{ url_for('ana_sayfa') }}">Ana Sayfaya Dön</a>
+    </div>
+</div>
+</body>
+</html>

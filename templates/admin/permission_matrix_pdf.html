@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @page { size: A4; margin: 18mm 14mm 16mm 14mm; }
+    body { font-family: DejaVu Sans, sans-serif; font-size: 10px; color: #0f172a; }
+    .kicker { font-size: 10px; font-weight: bold; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; }
+    h1 { font-size: 22px; margin: 8px 0 2px; color: #0f2d4a; }
+    .subtitle { font-size: 11px; color: #475569; margin-bottom: 14px; }
+    .summary-box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; background: #f8fafc; margin-bottom: 12px; }
+    .summary-role { font-size: 14px; font-weight: bold; color: #0f2d4a; }
+    .summary-meta { margin-top: 6px; font-size: 10px; color: #475569; line-height: 1.5; }
+    .summary-total { margin-top: 8px; font-size: 11px; color: #f97316; font-weight: bold; }
+    .module { border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+    .module-head { font-size: 12px; font-weight: bold; color: #0f2d4a; margin-bottom: 8px; }
+    .module-count { font-size: 10px; color: #64748b; }
+    ul { margin: 0; padding-left: 14px; }
+    li { margin-bottom: 5px; line-height: 1.45; }
+    .permission-key { color: #64748b; font-family: Courier, monospace; font-size: 9px; }
+    .empty { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 10px 12px; color: #64748b; background: #fff; }
+  </style>
+</head>
+<body>
+  <div class="kicker">Aktif Matrix Özeti</div>
+  <h1>{{ selected_role.label if selected_role else 'Rol seçilmedi' }}</h1>
+  <div class="subtitle">Rol bazlı yetki özeti, kategori blokları altında tek sayfalık çıktı olarak hazırlanmıştır.</div>
+
+  <div class="summary-box">
+    <div class="summary-role">{{ selected_role.label if selected_role else 'Rol seçilmedi' }}</div>
+    <div class="summary-meta">{{ selected_role.description if selected_role else 'Rol açıklaması bulunmuyor.' }}</div>
+    <div class="summary-total">Toplam aktif yetki: {{ selected_permissions|length }}</div>
+  </div>
+
+  {% set active_modules = summary_modules | selectattr('active_count') | list %}
+  {% if active_modules %}
+    {% for module in active_modules %}
+    <section class="module">
+      <div class="module-head">{{ module.label }}</div>
+      <div class="module-count">{{ module.active_count }} aktif yetki</div>
+      <ul>
+        {% for permission in module.active_permissions %}
+        <li>
+          <strong>{{ permission.label }}</strong>
+          <span class="permission-key">({{ permission.key }})</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endfor %}
+  {% else %}
+    <div class="empty">Bu rol için aktif bir yetki seçimi bulunmuyor.</div>
+  {% endif %}
+</body>
+</html>

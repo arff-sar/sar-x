@@ -1,0 +1,300 @@
+{% extends "base.html" %}
+{% block title %}KKD Takibi{% endblock %}
+
+{% block extra_css %}
+<style>
+  .ppe-layout { display:grid; grid-template-columns:minmax(0, 1.15fr) minmax(340px, .85fr); gap:20px; align-items:start; }
+  .ppe-filter-form { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:12px; align-items:end; }
+  .ppe-card-list { display:grid; gap:14px; }
+  .ppe-card { border:1px solid var(--border); border-radius:18px; background:#fff; overflow:hidden; }
+  .ppe-card-head { padding:16px 18px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+  .ppe-card-title { font-size:15px; font-weight:800; color:var(--navy); }
+  .ppe-card-subtitle { font-size:12px; color:var(--text3); line-height:1.55; margin-top:5px; }
+  .ppe-card-body { padding:18px; display:grid; gap:14px; }
+  .ppe-meta-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+  .ppe-meta-item { padding:12px; border:1px solid var(--border); border-radius:14px; background:var(--surface2); }
+  .ppe-meta-label { font-size:10.5px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
+  .ppe-meta-value { margin-top:4px; font-size:12.5px; color:var(--text2); line-height:1.45; }
+  .ppe-actions { display:flex; gap:10px; flex-wrap:wrap; }
+  .ppe-create-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+  .ppe-create-grid .form-group.full { grid-column:1 / -1; }
+  .ppe-timeline { display:grid; gap:10px; }
+  .ppe-event { padding:12px 14px; border:1px solid var(--border); border-radius:14px; background:#fff; }
+  .ppe-event strong { color:var(--navy); }
+  .ppe-event-meta { margin-top:4px; font-size:11.5px; color:var(--text3); line-height:1.45; }
+  .ppe-empty { padding:22px; border:1px dashed var(--border-dark); border-radius:16px; text-align:center; color:var(--text3); background:linear-gradient(180deg, rgba(248,250,252,.92) 0%, rgba(255,255,255,.98) 100%); }
+  .ppe-empty strong { display:block; color:var(--navy); margin-bottom:6px; }
+  @media (max-width: 1080px) {
+    .ppe-layout,
+    .ppe-filter-form { grid-template-columns:1fr; }
+  }
+  @media (max-width: 760px) {
+    .ppe-create-grid,
+    .ppe-meta-grid { grid-template-columns:1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">KKD Takibi</div>
+        <div class="page-meta">
+            <span>Kişisel koruyucu donanım tahsis ve bildirim akışı</span>
+            <div class="meta-dot" style="width:3px; height:3px; background:var(--text4); border-radius:50%;"></div>
+            <span>{{ records|length }} kayıt</span>
+        </div>
+    </div>
+    {% if can_manage_ppe %}
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a href="{{ url_for('inventory.kkd_export', fmt='xlsx', status=selected_status or None, airport_id=selected_airport or None, user_id=selected_user or None) }}" class="btn btn-secondary">Excel Al</a>
+        <a href="{{ url_for('inventory.kkd_export', fmt='pdf', status=selected_status or None, airport_id=selected_airport or None, user_id=selected_user or None) }}" class="btn btn-secondary">PDF Al</a>
+    </div>
+    {% endif %}
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <div>
+            <div class="panel-title">Filtreler</div>
+            <div class="panel-subtitle">Havalimanı, personel ve KKD durumuna göre görünümü daraltın.</div>
+        </div>
+    </div>
+    <div class="panel-body">
+        <form method="GET" action="{{ url_for('inventory.kkd_listesi') }}" class="ppe-filter-form">
+            {% if can_manage_ppe %}
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Havalimanı</label>
+                <select name="airport_id" class="form-control">
+                    <option value="">Tüm görünür havalimanları</option>
+                    {% for airport in visible_airports %}
+                    <option value="{{ airport.id }}" {% if selected_airport == airport.id %}selected{% endif %}>{{ airport.kodu }} - {{ airport.ad }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            {% if can_manage_ppe %}
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Personel</label>
+                <select name="user_id" class="form-control">
+                    <option value="">Tüm personel</option>
+                    {% for user in visible_users %}
+                    <option value="{{ user.id }}" {% if selected_user == user.id %}selected{% endif %}>{{ user.tam_ad }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% else %}
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Personel</label>
+                <input type="hidden" name="user_id" value="{{ current_user.id }}">
+                <input type="text" class="form-control" value="{{ current_user.tam_ad }}" readonly>
+            </div>
+            {% endif %}
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Durum</label>
+                <select name="status" class="form-control">
+                    <option value="">Tüm durumlar</option>
+                    {% for status_key, status_label in ppe_status_labels.items() %}
+                    <option value="{{ status_key }}" {% if selected_status == status_key %}selected{% endif %}>{{ status_label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button type="submit" class="btn btn-navy" style="width:100%;">Filtrele</button>
+                <a href="{{ url_for('inventory.kkd_listesi') }}" class="btn btn-secondary" style="width:100%; text-align:center;">Temizle</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="ppe-layout">
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <div class="panel-title">{% if can_manage_ppe %}KKD Kayıtları{% else %}Bana Tahsisli KKD'ler{% endif %}</div>
+                <div class="panel-subtitle">{% if can_manage_ppe %}Havalimanı kapsamındaki tahsisleri, bildirimleri ve talepleri takip edin.{% else %}Size teslim edilen KKD kayıtlarını ve durum bildirimlerinizi buradan yönetin.{% endif %}</div>
+            </div>
+        </div>
+        <div class="panel-body">
+            <div class="ppe-card-list">
+                {% for record in records %}
+                <div class="ppe-card">
+                    <div class="ppe-card-head">
+                        <div>
+                            <div class="ppe-card-title">{{ record.item_name }}</div>
+                            <div class="ppe-card-subtitle">
+                                {% if can_manage_ppe %}
+                                {{ record.user.tam_ad if record.user else '-' }} • {{ record.airport.ad if record.airport else '-' }}
+                                {% else %}
+                                {{ record.airport.ad if record.airport else '-' }} • {{ record.delivered_at.strftime('%d.%m.%Y') if record.delivered_at else '-' }}
+                                {% endif %}
+                            </div>
+                        </div>
+                        <span class="status-pill {% if record.status == 'aktif' %}status-aktif{% elif record.status in ['eksik', 'degisim_talebi'] %}status-bakim{% else %}status-ariza{% endif %}">{{ ppe_status_labels.get(record.status, record.status) }}</span>
+                    </div>
+                    <div class="ppe-card-body">
+                        <div class="ppe-meta-grid">
+                            <div class="ppe-meta-item">
+                                <div class="ppe-meta-label">Marka / Model</div>
+                                <div class="ppe-meta-value">{{ record.brand_model or '-' }}</div>
+                            </div>
+                            <div class="ppe-meta-item">
+                                <div class="ppe-meta-label">Beden / Ölçü</div>
+                                <div class="ppe-meta-value">{{ record.size_info or '-' }}</div>
+                            </div>
+                            <div class="ppe-meta-item">
+                                <div class="ppe-meta-label">Teslim Tarihi</div>
+                                <div class="ppe-meta-value">{{ record.delivered_at.strftime('%d.%m.%Y') if record.delivered_at else '-' }}</div>
+                            </div>
+                            <div class="ppe-meta-item">
+                                <div class="ppe-meta-label">Miktar</div>
+                                <div class="ppe-meta-value">{{ record.quantity }}</div>
+                            </div>
+                            <div class="ppe-meta-item">
+                                <div class="ppe-meta-label">İlişkili Zimmet</div>
+                                <div class="ppe-meta-value">
+                                    {% if record.assignment %}
+                                    <a href="{{ url_for('inventory.zimmet_detay', assignment_id=record.assignment.id) }}">{{ record.assignment.assignment_no }}</a>
+                                    {% else %}
+                                    -
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="ppe-meta-item">
+                                <div class="ppe-meta-label">Belge / Fotoğraf</div>
+                                <div class="ppe-meta-value">
+                                    {% if record.photo_url %}
+                                    <a href="{{ record.photo_url }}" target="_blank" rel="noopener">Dosyayı Aç</a>
+                                    {% else %}
+                                    -
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% if record.description %}
+                        <div style="font-size:12.5px; color:var(--text2); line-height:1.65;">{{ record.description }}</div>
+                        {% endif %}
+
+                        <div class="ppe-actions">
+                            {% if can_manage_ppe %}
+                            <form method="POST" action="{{ url_for('inventory.kkd_bildirim', record_id=record.id) }}" style="display:flex; gap:8px; flex-wrap:wrap; width:100%;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <select name="status" class="form-control" style="flex:1 1 180px; margin-bottom:0;">
+                                    {% for status_key, status_label in ppe_status_labels.items() %}
+                                    <option value="{{ status_key }}" {% if record.status == status_key %}selected{% endif %}>{{ status_label }}</option>
+                                    {% endfor %}
+                                </select>
+                                <input type="text" name="event_note" class="form-control" style="flex:2 1 220px; margin-bottom:0;" placeholder="İşlem notu">
+                                <button type="submit" class="btn btn-navy">Durumu Güncelle</button>
+                            </form>
+                            {% elif can_request_ppe %}
+                            <form method="POST" action="{{ url_for('inventory.kkd_bildirim', record_id=record.id) }}" style="display:flex; gap:8px; flex-wrap:wrap; width:100%;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <select name="status" class="form-control" style="flex:1 1 180px; margin-bottom:0;">
+                                    <option value="eksik">Eksik</option>
+                                    <option value="hasarli">Hasarlı</option>
+                                    <option value="kayip">Kayıp</option>
+                                    <option value="kullanim_disi">Kullanım Dışı</option>
+                                    <option value="degisim_talebi">Değişim Talebi</option>
+                                </select>
+                                <input type="text" name="event_note" class="form-control" style="flex:2 1 220px; margin-bottom:0;" placeholder="Kısa açıklama">
+                                <button type="submit" class="btn btn-primary">Bildirim Oluştur</button>
+                            </form>
+                            {% endif %}
+                        </div>
+
+                        <div class="ppe-timeline">
+                            {% for event in record.events[:3] %}
+                            <div class="ppe-event">
+                                <strong>{{ ppe_status_labels.get(event.status_after, event.status_after) }}</strong>
+                                <div class="ppe-event-meta">{{ event.event_note or 'Durum güncellendi.' }}</div>
+                                <div class="ppe-event-meta">{{ event.created_at.strftime('%d.%m.%Y %H:%M') if event.created_at else '-' }} • {{ event.created_by.tam_ad if event.created_by else 'Sistem' }}</div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="ppe-empty">
+                    <strong>KKD kaydı bulunamadı</strong>
+                    Seçili filtreler içinde gösterilecek bir tahsis ya da bildirim kaydı yok.
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    {% if can_manage_ppe %}
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <div class="panel-title">Yeni KKD Tahsisi</div>
+                <div class="panel-subtitle">Personel bazlı KKD tahsisi açın, isterseniz ilgili zimmet kaydına bağlayın.</div>
+            </div>
+        </div>
+        <div class="panel-body">
+            <form method="POST" action="{{ url_for('inventory.kkd_listesi', airport_id=selected_airport or None, status=selected_status or None, user_id=selected_user or None) }}" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="ppe-create-grid">
+                    <div class="form-group">
+                        <label>Personel</label>
+                        <select name="user_id" class="form-control" required>
+                            <option value="">Seçin</option>
+                            {% for user in visible_users %}
+                            <option value="{{ user.id }}" {% if selected_user == user.id %}selected{% endif %}>{{ user.tam_ad }} • {{ user.havalimani.ad if user.havalimani else 'Global' }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>KKD Malzeme Adı</label>
+                        <input type="text" name="item_name" class="form-control" placeholder="Örn: Baret" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Marka / Model</label>
+                        <input type="text" name="brand_model" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Beden / Ölçü</label>
+                        <input type="text" name="size_info" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Teslim Tarihi</label>
+                        <input type="date" name="delivered_at" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Miktar</label>
+                        <input type="number" name="quantity" class="form-control" min="1" value="1">
+                    </div>
+                    <div class="form-group">
+                        <label>Başlangıç Durumu</label>
+                        <select name="status" class="form-control">
+                            {% for status_key, status_label in ppe_status_labels.items() %}
+                            <option value="{{ status_key }}" {% if status_key == 'aktif' %}selected{% endif %}>{{ status_label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>İlişkili Zimmet</label>
+                        <select name="assignment_id" class="form-control">
+                            <option value="">Bağlantı yok</option>
+                            {% for assignment in active_assignments %}
+                            <option value="{{ assignment.id }}">{{ assignment.assignment_no }} • {{ assignment.recipient_names or '-' }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group full">
+                        <label>Belge / Fotoğraf</label>
+                        <input type="file" name="photo_document" class="form-control" accept=".pdf,.png,.jpg,.jpeg,.webp">
+                    </div>
+                    <div class="form-group full">
+                        <label>Açıklama</label>
+                        <textarea name="description" class="form-control" style="height:100px;" placeholder="Teslim açıklaması, vardiya notu veya kullanıma ilişkin bilgi"></textarea>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">KKD Tahsisini Kaydet</button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

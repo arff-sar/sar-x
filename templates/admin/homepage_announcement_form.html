@@ -1,0 +1,69 @@
+{% extends "admin/homepage_base.html" %}
+
+{% block homepage_body %}
+<div class="panel" style="max-width:980px;">
+  <div class="panel-header">
+    <div class="panel-title">{{ 'Duyuru Düzenle' if announcement else 'Yeni Duyuru Ekle' }}</div>
+  </div>
+  <div class="panel-body">
+    <div class="hp-preview-note">Duyurular public anasayfada tarihli kartlar ve sağda görsel önizleme paneliyle görünür. Başlık, tarih ve kapak görselini birlikte net tutmanız önerilir.</div>
+    <form method="POST" action="{% if announcement %}{{ url_for('content.homepage_announcement_edit', announcement_id=announcement.id) }}{% else %}{{ url_for('content.homepage_announcement_create') }}{% endif %}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Başlık</label>
+      <input type="text" name="title" class="form-control" required value="{{ announcement.title if announcement else '' }}">
+      <label>Bağlantı Adresi (slug)</label>
+      <input type="text" name="slug" class="form-control" value="{{ announcement.slug if announcement else '' }}">
+      <div style="margin:-2px 0 10px; font-size:12px; color:var(--text3);">
+        Boş bırakırsanız sistem başlıktan otomatik üretir. Kısa ve anlaşılır bir bağlantı adresi kullanmanız önerilir.
+      </div>
+      <label>Kısa Özet</label>
+      <textarea name="summary" class="form-control" style="height:90px;">{{ announcement.summary if announcement else '' }}</textarea>
+      <label>Yayın Tarihi</label>
+      <input type="datetime-local" name="published_at" class="form-control" value="{{ announcement.published_at.strftime('%Y-%m-%dT%H:%M') if announcement and announcement.published_at else '' }}">
+      <div style="margin:-2px 0 10px; font-size:12px; color:var(--text3);">
+        Boş bırakılırsa yayın anında güncel tarih atanır.
+      </div>
+      <label>İçerik</label>
+      <textarea name="content" class="form-control" style="height:180px;" required>{{ announcement.content if announcement else '' }}</textarea>
+      <label>Kapak Görseli</label>
+      <input type="text" name="cover_image" class="form-control" value="{{ announcement.cover_image if announcement else '' }}">
+      <div style="margin-top:-8px; margin-bottom:10px;">
+        <a href="{{ url_for('content.media_library') }}" class="row-btn" target="_blank">Medya Kütüphanesi Aç</a>
+      </div>
+      <div style="margin:-2px 0 12px; font-size:12px; color:var(--text3);">
+        Görsel metinleri public sayfada ortak stil ile işlendiği için ek font ayarı yapmadan temiz ve tutarlı bir görünüm korunur.
+      </div>
+      <label>Meta Başlığı (arama motoru başlığı)</label>
+      <input type="text" name="meta_title" class="form-control" value="{{ seo.meta_title if seo else '' }}" maxlength="255">
+      <label>Meta Açıklaması (arama motoru özeti)</label>
+      <textarea name="meta_description" class="form-control" style="height:80px;" maxlength="500">{{ seo.meta_description if seo else '' }}</textarea>
+      <label>Yayın Durumu</label>
+      {% set current_status = workflow_status if workflow_status is defined else ('published' if announcement and announcement.is_published else 'draft') %}
+      <select name="workflow_status" class="form-control">
+        <option value="published" {% if current_status == 'published' %}selected{% endif %}>Yayında</option>
+        <option value="draft" {% if current_status == 'draft' %}selected{% endif %}>Taslak</option>
+        <option value="passive" {% if current_status == 'passive' %}selected{% endif %}>Pasif</option>
+        <option value="archived" {% if current_status == 'archived' %}selected{% endif %}>Arşiv</option>
+      </select>
+      <div style="margin:-2px 0 10px; font-size:12px; color:var(--text3);">
+        Duyurunun yayında mı, taslakta mı yoksa arşivde mi kalacağını buradan belirleyebilirsiniz.
+      </div>
+      <label style="text-transform:none;">
+        <input type="checkbox" name="is_published" {% if (announcement and announcement.is_published) or not announcement %}checked{% endif %}>
+        Anasayfada ve detay sayfasında göster
+      </label>
+      {% if announcement and announcement.cover_image %}
+        <div style="margin-top:12px; padding:12px; border:1px solid var(--border); border-radius:12px; background:var(--surface2);">
+          <div style="font-size:12px; color:var(--text3); margin-bottom:8px; font-weight:700;">Mevcut Görsel</div>
+          <img src="{{ announcement.cover_image }}" alt="{{ announcement.title }}" style="width:100%; max-height:220px; object-fit:cover; border-radius:10px; border:1px solid var(--border);">
+        </div>
+      {% endif %}
+      <div style="display:flex; gap:8px; margin-top:12px;">
+        <button class="btn btn-primary" type="submit">{{ 'Güncelle' if announcement else 'Kaydet' }}</button>
+        <button class="btn btn-secondary" type="submit" formaction="{{ url_for('content.content_preview', content_type='announcement') }}" formtarget="_blank">Önizle</button>
+        <a class="btn btn-secondary" href="{{ url_for('content.homepage_announcements_list') }}">Listeye Dön</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

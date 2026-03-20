@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Kalibrasyon{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Kalibrasyon Yönetimi</div>
+        <div class="page-meta">Yaklaşan, geciken ve tamamlanan kalibrasyon kayıtları</div>
+    </div>
+</div>
+
+<div class="two-col">
+    <div class="panel">
+        <div class="panel-header"><div class="panel-title">Kalibrasyon Kaydı</div></div>
+        <div class="panel-body">
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="form-group">
+                    <label>Asset</label>
+                    <select name="asset_id" class="form-control" required>
+                        {% for asset in assets %}
+                        <option value="{{ asset.id }}">{{ asset.asset_code }} · {{ asset.equipment_template.name if asset.equipment_template else '-' }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group"><label>Kalibrasyon Tarihi</label><input type="date" name="calibration_date" class="form-control" value="{{ today.strftime('%Y-%m-%d') }}"></div>
+                <div class="form-group"><label>Sonraki Kalibrasyon</label><input type="date" name="next_calibration_date" class="form-control"></div>
+                <div class="form-group"><label>Periyot (gün)</label><input type="number" name="period_days" class="form-control" value="180"></div>
+                <div class="form-group"><label>Uyarı Günü</label><input type="number" name="warning_days" class="form-control" value="15"></div>
+                <div class="form-group"><label>Sağlayıcı</label><input name="provider" class="form-control"></div>
+                <div class="form-group"><label>Sertifika No</label><input name="certificate_no" class="form-control"></div>
+                <div class="form-group">
+                    <label>Sonuç</label>
+                    <select name="result_status" class="form-control">
+                        <option value="passed">Başarılı</option>
+                        <option value="conditional">Koşullu</option>
+                        <option value="failed">Başarısız</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Not</label><textarea name="note" class="form-control" style="height:90px;"></textarea></div>
+                <button class="btn btn-primary" style="width:100%; justify-content:center;">Kalibrasyon Kaydet</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header"><div class="panel-title">Son Kayıtlar</div></div>
+        <div class="table-container">
+            <table class="data-table">
+                <thead><tr><th>Asset</th><th>Kalibrasyon</th><th>Sonraki</th><th>Sonuç</th></tr></thead>
+                <tbody>
+                    {% for row in records %}
+                    <tr>
+                        <td>{{ row.asset.asset_code if row.asset else '-' }}</td>
+                        <td>{{ row.calibration_date.strftime('%d.%m.%Y') if row.calibration_date else '-' }}</td>
+                        <td>{{ row.next_calibration_date.strftime('%d.%m.%Y') if row.next_calibration_date else '-' }}</td>
+                        <td>{{ row.result_status }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" style="text-align:center; color:var(--text3);">Kayıt bulunmuyor.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

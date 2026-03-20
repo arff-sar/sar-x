@@ -1,9 +1,11 @@
+
 <!DOCTYPE html>
 <html lang="tr">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
 <title>SAR-X Panel - {% block title %}{% endblock %}</title>
+<meta name="csrf-token" content="{{ csrf_token() }}">
 
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#0f2d4a">
@@ -20,7 +22,7 @@
 /* --- SAR-X ARFF DESIGN SYSTEM --- */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg: #f0f4f8; --surface: #ffffff; --surface2: #f8fafc;
+  --bg: #f0f4f8; --surface: #ffffff; --surface2: #f8fafc; --surface3: #eef2f7;
   --border: #e2e8f0; --border-dark: #cbd5e1;
   --navy: #0f2d4a; --navy2: #1a3f63; --navy3: #1e4d78;
   --orange: #f97316; --orange-light: #fff7ed; --orange-border: #fed7aa;
@@ -35,16 +37,25 @@
 html, body { font-family: var(--sans); background: var(--bg); color: var(--text); min-height: 100vh; }
 
 /* Layout Structure */
-.app-shell { display: grid; grid-template-columns: 240px 1fr; grid-template-rows: 56px 1fr; min-height: 100vh; }
+.app-shell { display: grid; grid-template-columns: 280px 1fr; grid-template-rows: 56px 1fr; min-height: 100vh; }
 
 /* Topbar Styles */
 .topbar { grid-column: 1 / -1; background: var(--navy); display: flex; align-items: center; padding: 0 24px; gap: 16px; position: sticky; top: 0; z-index: 100; }
+.sidebar-toggle { display: none; width: 38px; height: 38px; border-radius: 10px; border: 1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.08); color: #fff; font-size: 18px; cursor: pointer; }
 .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
 .logo-mark { width: 32px; height: 32px; background: var(--orange); border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .logo-mark svg { width: 18px; height: 18px; stroke: #fff; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .logo-text-main { font-size: 17px; font-weight: 800; color: #fff; letter-spacing: -0.01em; line-height: 1; }
 .logo-text-sub { font-size: 11px; font-weight: 500; color: #94a3b8; margin-top: 2px; }
 .topbar-end { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.notification-wrap { position: relative; }
+.notification-btn { width: 40px; height: 40px; border-radius: 10px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.08); color: #fff; cursor: pointer; position: relative; }
+.notification-count { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; border-radius: 999px; background: var(--orange); color: #fff; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
+.notification-panel { display: none; position: absolute; right: 0; top: calc(100% + 8px); width: 320px; background: #fff; border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 20px 40px rgba(15,23,42,.16); padding: 10px; z-index: 120; }
+.notification-panel.is-open { display: block; }
+.notification-head { display:flex; justify-content:space-between; align-items:center; padding:8px 8px 12px; }
+.notification-item { display:block; padding:12px; border-radius:10px; text-decoration:none; color:inherit; border:1px solid transparent; }
+.notification-item:hover { background: var(--surface2); border-color: var(--border); }
 
 /* User Identification */
 .user-chip { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 5px 12px; cursor: pointer; transition: background .15s; text-decoration: none; }
@@ -52,32 +63,69 @@ html, body { font-family: var(--sans); background: var(--bg); color: var(--text)
 .user-avatar { width: 26px; height: 26px; border-radius: 6px; background: var(--orange); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; color: #fff; text-transform: uppercase; }
 .user-name { font-size: 12px; font-weight: 600; color: #e2e8f0; line-height: 1; text-transform: capitalize; }
 .user-role { font-size: 10px; color: #64748b; margin-top: 1px; text-transform: uppercase; }
-.logout-btn { color: #fca5a5; font-size: 12px; font-weight: 700; text-decoration: none; margin-left: 10px; padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(248, 113, 113, 0.2); transition: 0.2s;}
+.logout-btn { color: #fca5a5; font-size: 12px; font-weight: 700; text-decoration: none; margin-left: 10px; padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(248, 113, 113, 0.2); transition: 0.2s; background: transparent; cursor: pointer; font-family: var(--sans);}
 .logout-btn:hover { background: rgba(248, 113, 113, 0.1); color: #f87171;}
 
 /* Sidebar Navigation */
-.sidebar { background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; position: sticky; top: 56px; height: calc(100vh - 56px); }
-.nav-section { padding: 16px 14px 5px; font-size: 10px; font-weight: 700; color: var(--text4); letter-spacing: .07em; text-transform: uppercase; }
-.nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: var(--r); margin: 1px 8px; cursor: pointer; color: var(--text2); font-size: 13.5px; font-weight: 600; transition: background .12s, color .12s; text-decoration: none; }
+.sidebar-backdrop { display: none; position: fixed; inset: 56px 0 0 0; background: rgba(15, 23, 42, 0.45); z-index: 80; }
+.sidebar { background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; position: sticky; top: 56px; height: calc(100vh - 56px); padding: 14px 10px; gap: 8px; }
+.sidebar-head { padding: 0 6px 6px; }
+.sidebar-kicker { font-size: 11px; font-weight: 800; color: var(--text4); letter-spacing: .08em; text-transform: uppercase; }
+.sidebar-subtitle { font-size: 11.5px; color: var(--text3); margin-top: 5px; line-height: 1.4; }
+.sidebar-group { border: 1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,0.92); overflow: hidden; }
+.sidebar-group.is-open { border-color: #cbd5e1; box-shadow: 0 8px 28px rgba(15,45,74,.05); }
+.sidebar-group-toggle { width: 100%; display: flex; align-items: center; gap: 10px; padding: 11px 12px; border: 0; background: transparent; cursor: pointer; text-align: left; }
+.sidebar-group-toggle:hover { background: #f8fafc; }
+.sidebar-group-icon { width: 30px; height: 30px; border-radius: 9px; background: #e2e8f0; color: var(--navy); font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.sidebar-group-body { flex: 1; }
+.sidebar-group-label { font-size: 13px; font-weight: 800; color: var(--navy); }
+.sidebar-group-meta { font-size: 11px; color: var(--text4); margin-top: 2px; }
+.sidebar-group-chevron { color: var(--text4); font-size: 14px; transition: transform .18s ease; }
+.sidebar-group.is-open .sidebar-group-chevron { transform: rotate(180deg); }
+.sidebar-group-items { display: none; padding: 0 8px 8px; }
+.sidebar-group.is-open .sidebar-group-items { display: block; }
+.nav-item { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 10px; margin-top: 5px; cursor: pointer; color: var(--text2); font-size: 13px; font-weight: 600; transition: background .12s, color .12s; text-decoration: none; }
 .nav-item:hover { background: var(--bg); color: var(--text); }
-.nav-item.active { background: var(--navy); color: #fff; }
-.nav-icon { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+.nav-item.active { background: var(--navy); color: #fff; box-shadow: 0 10px 24px rgba(15,45,74,.18); }
+.nav-icon { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; background: #e2e8f0; color: var(--navy); flex-shrink: 0; }
 .nav-item.active .nav-icon { background: rgba(255,255,255,.12); }
-.sidebar-footer { margin-top: auto; padding: 12px 14px; border-top: 1px solid var(--border); }
-.pwa-banner { background: var(--blue-light); border: 1px solid #bfdbfe; border-radius: var(--r); padding: 12px 13px; display: flex; align-items: flex-start; gap: 9px; }
-.pwa-icon { font-size: 17px; flex-shrink: 0; margin-top: 1px; }
-.pwa-text { font-size: 11.5px; color: #1d4ed8; line-height: 1.45; }
+.sidebar-footer { margin-top: auto; padding: 10px 12px; border-top: 1px solid var(--border); }
+.pwa-banner { background: #f8fafc; border: 1px solid var(--border); border-radius: var(--r); padding: 9px 10px; display: flex; align-items: flex-start; gap: 8px; }
+.pwa-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+.pwa-text { font-size: 10.5px; color: var(--text3); line-height: 1.4; }
 .pwa-text strong { display: block; font-weight: 700; margin-bottom: 2px; }
 
 /* Content Area */
 .main-content { overflow-y: auto; background: var(--bg); }
 .main-inner { padding: 24px; max-width: 1200px; margin: 0 auto; }
+.two-col { display: grid; grid-template-columns: 1.25fr 1fr; gap: 20px; align-items: start; }
 
-/* Flash Notifications */
-.flash-msg { display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-radius: var(--r-lg); margin-bottom: 20px; font-size: 14px; font-weight: 600; }
+/* Flash Notifications / Toasts */
+.toast-stack { position: fixed; top: 72px; right: 18px; display: grid; gap: 10px; width: min(380px, calc(100vw - 24px)); z-index: 180; pointer-events: none; }
+.flash-msg { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border-radius: var(--r-lg); font-size: 13.5px; font-weight: 600; box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16); pointer-events: auto; transform: translateY(0); opacity: 1; transition: opacity .22s ease, transform .22s ease; }
+.flash-msg.is-closing { opacity: 0; transform: translateY(-8px); }
+.flash-icon { flex-shrink: 0; margin-top: 1px; }
+.flash-body { min-width: 0; display: grid; gap: 4px; }
+.flash-title { font-size: 12px; font-weight: 800; letter-spacing: .01em; }
+.flash-text { line-height: 1.45; }
+.flash-close { margin-left: auto; border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 2px; opacity: .72; }
+.flash-close:hover { opacity: 1; }
 .flash-success { background: var(--green-light); border: 1px solid var(--green-border); color: var(--green); }
 .flash-error, .flash-danger { background: var(--red-light); border: 1px solid var(--red-border); color: var(--red); }
 .flash-info { background: var(--blue-light); border: 1px solid #bfdbfe; color: var(--blue); }
+.flash-warning { background: var(--amber-light); border: 1px solid var(--amber-border); color: var(--amber); }
+
+/* Tooltip */
+.info-stack { position: relative; display: inline-flex; align-items: center; flex-shrink: 0; }
+.info-trigger { width: 22px; height: 22px; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--navy); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; font-size: 11px; font-weight: 800; line-height: 1; transition: border-color .16s ease, background .16s ease, color .16s ease, box-shadow .16s ease; }
+.info-trigger:hover,
+.info-trigger:focus-visible,
+.info-stack[data-open="true"] .info-trigger { border-color: rgba(249,115,22,.5); background: var(--orange-light); color: var(--orange); box-shadow: 0 0 0 3px rgba(249,115,22,.14); outline: none; }
+.info-popover { position: absolute; left: 50%; top: calc(100% + 10px); transform: translateX(-50%) translateY(-4px); min-width: 220px; max-width: min(300px, 72vw); padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background: #fff; color: var(--text2); font-size: 11.5px; font-weight: 600; line-height: 1.45; box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .16s ease, transform .16s ease, visibility .16s ease; z-index: 35; }
+.info-popover::before { content: ""; position: absolute; top: -7px; left: 50%; transform: translateX(-50%) rotate(45deg); width: 12px; height: 12px; background: #fff; border-left: 1px solid var(--border); border-top: 1px solid var(--border); }
+.info-stack:hover .info-popover,
+.info-stack:focus-within .info-popover,
+.info-stack[data-open="true"] .info-popover { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
 
 /* =========================================================
    ✅ GLOBAL UI COMPONENTS (BU KISIM EKSİKTİ, EKLENDİ)
@@ -96,7 +144,7 @@ html, body { font-family: var(--sans); background: var(--bg); color: var(--text)
 
 /* Evrensel Tablo Düzeni (Kullanıcılar ve İşlem Logları dahil her yeri düzeltir) */
 .table-container { width: 100%; overflow-x: auto; }
-table, .data-table { width: 100%; border-collapse: collapse; min-width: 800px; text-align: left; }
+table, .data-table { width: 100%; border-collapse: collapse; min-width: 720px; text-align: left; }
 th, .data-table th { padding: 16px; font-size: 11.5px; font-weight: 800; color: var(--text3); text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 2px solid var(--border-dark); background: var(--surface2); white-space: nowrap; }
 td, .data-table td { padding: 16px; font-size: 14px; color: var(--text); border-bottom: 1px solid var(--border); vertical-align: middle; }
 tbody tr, .data-table tbody tr { transition: background 0.15s; }
@@ -131,7 +179,9 @@ select { cursor: pointer; appearance: none; background-image: url('data:image/sv
 .tag-navy { background: var(--blue-light); color: var(--blue); border: 1px solid #bfdbfe; border-radius: 6px; font-weight: 700; }
 
 /* Satır İçi Butonlar */
-.row-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.row-actions:not(td) { display: flex; gap: 8px; justify-content: flex-end; }
+td.row-actions, .data-table td.row-actions { text-align: right; white-space: nowrap; }
+td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
 .row-btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; text-decoration: none; cursor: pointer; transition: 0.2s; border: 1px solid var(--border-dark); background: var(--surface); color: var(--text2); }
 .row-btn:hover { background: var(--surface2); color: var(--text); border-color: var(--text3); }
 
@@ -142,8 +192,42 @@ select { cursor: pointer; appearance: none; background-image: url('data:image/sv
 
 @media (max-width: 900px) {
   .app-shell { grid-template-columns: 1fr; }
-  .sidebar { display: none; }
+  .sidebar-toggle { display: inline-flex; align-items: center; justify-content: center; }
+  .sidebar-backdrop.is-open { display: block; }
+  .sidebar { display: flex; position: fixed; top: 56px; left: 0; width: min(88vw, 320px); height: calc(100vh - 56px); z-index: 90; transform: translateX(-100%); transition: transform .2s ease; }
+  .sidebar.is-open { transform: translateX(0); }
   .search-input { width: 100% !important; }
+  .topbar { padding: 10px 12px; gap: 10px; flex-wrap: wrap; position: static; }
+  .toast-stack { top: 66px; right: 12px; left: 12px; width: auto; }
+  .topbar-end { margin-left: 0; width: 100%; justify-content: space-between; }
+  .logo-text-sub { display: none; }
+  .user-chip { padding: 4px 8px; }
+  .user-role { display: none; }
+  .logout-btn { margin-left: 0; }
+  .main-inner { padding: 14px; }
+  .page-title { font-size: 20px; }
+  .page-meta { font-size: 12px; gap: 6px; }
+  .panel-header { padding: 12px 14px; }
+  .panel-body { padding: 14px; }
+  .two-col { grid-template-columns: 1fr; gap: 14px; }
+  table, .data-table { min-width: 560px; }
+  th, .data-table th { padding: 12px; font-size: 11px; }
+  td, .data-table td { padding: 12px; font-size: 13px; }
+  .row-actions:not(td) { justify-content: flex-start; flex-wrap: wrap; }
+  td.row-actions, .data-table td.row-actions { text-align: left; }
+}
+
+@media (max-width: 480px) {
+  .logo-text-main { font-size: 15px; }
+  .main-inner { padding: 10px; }
+  .page-title { font-size: 18px; }
+  .panel-title { font-size: 14px; }
+  table, .data-table { min-width: 520px; }
+  .info-popover { left: auto; right: 0; transform: translateY(-4px); max-width: min(260px, calc(100vw - 32px)); }
+  .info-popover::before { left: auto; right: 18px; transform: rotate(45deg); }
+  .info-stack:hover .info-popover,
+  .info-stack:focus-within .info-popover,
+  .info-stack[data-open="true"] .info-popover { transform: translateY(0); }
 }
 
 {% block extra_css %}{% endblock %}
@@ -154,7 +238,8 @@ select { cursor: pointer; appearance: none; background-image: url('data:image/sv
 <div class="app-shell">
 
   <header class="topbar">
-    <a href="{{ url_for('inventory.dashboard') }}" class="logo">
+    <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Menüyü Aç">☰</button>
+    <a href="{{ url_for(home_endpoint) }}" class="logo">
       <div class="logo-mark">
         <svg viewBox="0 0 24 24"><path d="M12 2L3 7v5c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7L12 2z"/><path d="M9 12l2 2 4-4"/></svg>
       </div>
@@ -165,62 +250,91 @@ select { cursor: pointer; appearance: none; background-image: url('data:image/sv
     </a>
     
     <div class="topbar-end">
+      <div class="notification-wrap">
+        <button type="button" class="notification-btn" id="notificationToggle" aria-label="Bildirimler">
+          🔔
+          {% if unread_notification_count %}
+          <span class="notification-count">{{ unread_notification_count }}</span>
+          {% endif %}
+        </button>
+        <div class="notification-panel" id="notificationPanel">
+          <div class="notification-head">
+            <strong style="font-size:13px; color:var(--navy);">Bildirimler</strong>
+            <a href="{{ url_for('admin.notifications') }}" style="font-size:11px; color:var(--blue); text-decoration:none;">Tümünü Gör</a>
+          </div>
+          {% for item in unread_notifications %}
+          <a href="{{ item.link_url or url_for('admin.notifications') }}" class="notification-item">
+            <div style="display:flex; justify-content:space-between; gap:8px;">
+              <div style="font-size:12px; font-weight:700; color:var(--navy);">{{ item.title }}</div>
+              <div style="font-size:10px; color:var(--text4);">{{ item.created_at.strftime('%H:%M') if item.created_at else '' }}</div>
+            </div>
+            <div style="font-size:11px; color:var(--text3); margin-top:4px; line-height:1.45;">{{ item.message }}</div>
+          </a>
+          {% else %}
+          <div style="padding:12px; font-size:12px; color:var(--text3);">Yeni bildirim yok.</div>
+          {% endfor %}
+        </div>
+      </div>
       <div class="user-chip">
         <div class="user-avatar">{{ kullanici_ad[0] if kullanici_ad else 'U' }}</div>
         <div>
           <div class="user-name">{{ kullanici_ad }}</div>
-          <div class="user-role">{{ rol }}</div>
+          <div class="user-role">{{ rol_etiketi or rol }}</div>
         </div>
       </div>
-      <a href="{{ url_for('auth.logout') }}" class="logout-btn">Çıkış Yap</a>
+      <form method="POST" action="{{ url_for('auth.logout') }}" style="display:inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="logout-btn">Çıkış Yap</button>
+      </form>
     </div>
   </header>
 
-  <nav class="sidebar">
-    <div class="nav-section">Operasyon</div>
-    <a href="{{ url_for('inventory.dashboard') }}" class="nav-item {% if request.endpoint == 'inventory.dashboard' %}active{% endif %}">
-      <div class="nav-icon">📊</div> Dashboard
-    </a>
-    <a href="{{ url_for('inventory.envanter') }}" class="nav-item {% if request.endpoint == 'inventory.envanter' %}active{% endif %}">
-      <div class="nav-icon">📦</div> Envanter
-    </a>
-    
-    {% if rol != 'personel' %}
-    <a href="{{ url_for('inventory.envanter_pdf') }}" class="nav-item">
-      <div class="nav-icon">📄</div> Raporlar
-    </a>
-    {% endif %}
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+  <nav class="sidebar" id="sidebarNav">
+    <div class="sidebar-head">
+      <div class="sidebar-kicker">Admin Navigation</div>
+      <div class="sidebar-subtitle">Rolünüze göre sadeleştirilmiş, operasyon odaklı modül erişimi.</div>
+    </div>
 
-    {% if rol in ['sahip', 'yetkili'] %}
-    <div class="nav-section">Yönetim</div>
-    <a href="{{ url_for('inventory.malzeme_ekle') }}" class="nav-item {% if request.endpoint == 'inventory.malzeme_ekle' %}active{% endif %}">
-      <div class="nav-icon">➕</div> Malzeme Ekle
-    </a>
+    {% for group in sidebar_groups %}
+    {% if group.single_link %}
+    {% set item = group["items"][0] %}
+    <section class="sidebar-group" data-group="{{ group.key }}" data-sidebar-direct="{{ group.key }}">
+      <a href="{{ item.url }}" class="sidebar-group-toggle nav-item {% if item.active %}active{% endif %}" style="margin-top:0;">
+        <div class="sidebar-group-icon">{{ group.icon }}</div>
+        <div class="sidebar-group-body">
+          <div class="sidebar-group-label">{{ group.label }}</div>
+          <div class="sidebar-group-meta">Ana görünüm</div>
+        </div>
+      </a>
+    </section>
+    {% else %}
+    <section class="sidebar-group {% if group.open %}is-open{% endif %}" data-group="{{ group.key }}" data-sidebar-state="{% if group.open %}open{% else %}closed{% endif %}">
+      <button type="button" class="sidebar-group-toggle" data-sidebar-group="{{ group.key }}">
+        <div class="sidebar-group-icon">{{ group.icon }}</div>
+        <div class="sidebar-group-body">
+          <div class="sidebar-group-label">{{ group.label }}</div>
+          <div class="sidebar-group-meta">{{ group["items"]|length }} modül</div>
+        </div>
+        <div class="sidebar-group-chevron">⌄</div>
+      </button>
+      <div class="sidebar-group-items">
+        {% for item in group["items"] %}
+        <a href="{{ item.url }}" class="nav-item {% if item.active %}active{% endif %}">
+          <div class="nav-icon">{{ loop.index }}</div> {{ item.label }}
+        </a>
+        {% endfor %}
+      </div>
+    </section>
     {% endif %}
-
-    {% if rol in ['sahip', 'genel_mudurluk'] %}
-    <div class="nav-section">Denetim</div>
-    <a href="{{ url_for('admin.loglari_gor') }}" class="nav-item {% if request.endpoint == 'admin.loglari_gor' %}active{% endif %}">
-      <div class="nav-icon">📜</div> İşlem Logları
-    </a>
-    {% endif %}
-
-    {% if rol == 'sahip' %}
-    <div class="nav-section">Sistem Sahibi</div>
-    <a href="{{ url_for('admin.kullanicilar') }}" class="nav-item {% if request.endpoint == 'admin.kullanicilar' %}active{% endif %}">
-      <div class="nav-icon">👥</div> Kullanıcı Yönetimi
-    </a>
-    <a href="{{ url_for('admin.site_yonetimi') }}" class="nav-item {% if request.endpoint == 'admin.site_yonetimi' %}active{% endif %}">
-      <div class="nav-icon">⚙️</div> Site Ayarları
-    </a>
-    {% endif %}
+    {% endfor %}
 
     <div class="sidebar-footer">
       <div class="pwa-banner">
         <div class="pwa-icon">📲</div>
         <div class="pwa-text">
           <strong>Saha Modu</strong>
-          Telefona ekleyerek pratik kullanın.
+          Telefona ekleyin, hızlı erişim sağlayın.
         </div>
       </div>
     </div>
@@ -231,12 +345,22 @@ select { cursor: pointer; appearance: none; background-image: url('data:image/sv
         
         {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}
+          <div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="true">
             {% for category, message in messages %}
-              <div class="flash-msg flash-{{ category }}">
-                {% if category == 'success' %}✅{% elif category in ['danger', 'error'] %}⚠️{% else %}ℹ️{% endif %}
-                {{ message }}
+              <div class="flash-msg flash-{{ category }}" data-toast data-toast-category="{{ category }}">
+                <div class="flash-icon">
+                  {% if category == 'success' %}✓{% elif category in ['danger', 'error'] %}⚠{% elif category == 'warning' %}!{% else %}i{% endif %}
+                </div>
+                <div class="flash-body">
+                  <div class="flash-title">
+                    {% if category == 'success' %}İşlem tamamlandı{% elif category in ['danger', 'error'] %}Bir sorun oluştu{% elif category == 'warning' %}Dikkat{% else %}Bilgilendirme{% endif %}
+                  </div>
+                  <div class="flash-text">{{ message }}</div>
+                </div>
+                <button type="button" class="flash-close" data-toast-close aria-label="Bildirimi kapat">×</button>
               </div>
             {% endfor %}
+          </div>
           {% endif %}
         {% endwith %}
 
@@ -247,6 +371,142 @@ select { cursor: pointer; appearance: none; background-image: url('data:image/sv
 </div>
 
 <script>
+    (function () {
+        const toastStack = document.getElementById('toastStack');
+        const scheduleToast = function (toast, delay) {
+            window.setTimeout(function () {
+                toast.classList.add('is-closing');
+                window.setTimeout(function () {
+                    toast.remove();
+                    if (toastStack && !toastStack.children.length) {
+                        toastStack.remove();
+                    }
+                }, 220);
+            }, delay);
+        };
+
+        if (toastStack) {
+            toastStack.querySelectorAll('[data-toast]').forEach(function (toast, index) {
+                const closeButton = toast.querySelector('[data-toast-close]');
+                if (closeButton) {
+                    closeButton.addEventListener('click', function () {
+                        toast.classList.add('is-closing');
+                        window.setTimeout(function () {
+                            toast.remove();
+                            if (!toastStack.children.length) {
+                                toastStack.remove();
+                            }
+                        }, 220);
+                    });
+                }
+                scheduleToast(toast, 3400 + (index * 450));
+            });
+        }
+
+        window.showToast = function (options) {
+            const config = options || {};
+            const category = String(config.type || 'info').toLowerCase();
+            const titleMap = {
+                success: 'İşlem tamamlandı',
+                warning: 'Dikkat',
+                danger: 'Bir sorun oluştu',
+                error: 'Bir sorun oluştu',
+                info: 'Bilgilendirme',
+            };
+            const iconMap = {
+                success: '✓',
+                warning: '!',
+                danger: '⚠',
+                error: '⚠',
+                info: 'i',
+            };
+            let stack = document.getElementById('toastStack');
+            if (!stack) {
+                stack = document.createElement('div');
+                stack.className = 'toast-stack';
+                stack.id = 'toastStack';
+                stack.setAttribute('aria-live', 'polite');
+                stack.setAttribute('aria-atomic', 'true');
+                document.body.appendChild(stack);
+            }
+            const toast = document.createElement('div');
+            toast.className = 'flash-msg flash-' + category;
+            toast.setAttribute('data-toast', '');
+            toast.innerHTML = [
+                '<div class="flash-icon">' + (iconMap[category] || iconMap.info) + '</div>',
+                '<div class="flash-body">',
+                '<div class="flash-title">' + (config.title || titleMap[category] || titleMap.info) + '</div>',
+                '<div class="flash-text">' + (config.message || '') + '</div>',
+                '</div>',
+                '<button type="button" class="flash-close" data-toast-close aria-label="Bildirimi kapat">×</button>'
+            ].join('');
+            stack.appendChild(toast);
+            const closeButton = toast.querySelector('[data-toast-close]');
+            if (closeButton) {
+                closeButton.addEventListener('click', function () {
+                    toast.classList.add('is-closing');
+                    window.setTimeout(function () {
+                        toast.remove();
+                        if (!stack.children.length) {
+                            stack.remove();
+                        }
+                    }, 220);
+                });
+            }
+            scheduleToast(toast, Number(config.duration || 3400));
+        };
+
+        const closeTooltips = function () {
+            document.querySelectorAll('.info-stack[data-open="true"]').forEach(function (item) {
+                item.dataset.open = 'false';
+                const trigger = item.querySelector('[data-tooltip-trigger]');
+                if (trigger) {
+                    trigger.setAttribute('aria-expanded', 'false');
+                }
+            });
+        };
+
+        document.querySelectorAll('[data-tooltip-trigger]').forEach(function (trigger) {
+            trigger.addEventListener('click', function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                const stack = trigger.closest('.info-stack');
+                if (!stack) return;
+                const willOpen = stack.dataset.open !== 'true';
+                closeTooltips();
+                stack.dataset.open = willOpen ? 'true' : 'false';
+                trigger.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+            });
+        });
+
+        document.addEventListener('click', closeTooltips);
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') {
+                closeTooltips();
+            }
+        });
+
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        const csrfToken = meta ? meta.getAttribute('content') : '';
+        if (!csrfToken || typeof window.fetch !== 'function') return;
+
+        const originalFetch = window.fetch.bind(window);
+        window.fetch = function (input, init) {
+            const cfg = init || {};
+            const method = String(cfg.method || 'GET').toUpperCase();
+            if (["GET", "HEAD", "OPTIONS", "TRACE"].includes(method)) {
+                return originalFetch(input, cfg);
+            }
+
+            const headers = new Headers(cfg.headers || {});
+            if (!headers.has('X-CSRFToken')) {
+                headers.set('X-CSRFToken', csrfToken);
+            }
+
+            return originalFetch(input, { ...cfg, headers: headers });
+        };
+    })();
+
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', function() {
             navigator.serviceWorker.register('/sw.js').then(function(registration) {
@@ -254,7 +514,56 @@ select { cursor: pointer; appearance: none; background-image: url('data:image/sv
             });
         });
     }
+
+    (function () {
+        const sidebar = document.getElementById('sidebarNav');
+        const toggle = document.getElementById('sidebarToggle');
+        const backdrop = document.getElementById('sidebarBackdrop');
+
+        if (toggle && sidebar && backdrop) {
+            const closeSidebar = () => {
+                sidebar.classList.remove('is-open');
+                backdrop.classList.remove('is-open');
+            };
+            toggle.addEventListener('click', function () {
+                sidebar.classList.toggle('is-open');
+                backdrop.classList.toggle('is-open');
+            });
+            backdrop.addEventListener('click', closeSidebar);
+        }
+
+        document.querySelectorAll('[data-sidebar-group]').forEach(function (button) {
+            button.addEventListener('click', function () {
+                const group = button.closest('.sidebar-group');
+                if (!group) return;
+                const shouldOpen = !group.classList.contains('is-open');
+                document.querySelectorAll('.sidebar-group').forEach(function (item) {
+                    item.classList.remove('is-open');
+                });
+                if (shouldOpen) {
+                    group.classList.add('is-open');
+                }
+            });
+        });
+
+        const notificationToggle = document.getElementById('notificationToggle');
+        const notificationPanel = document.getElementById('notificationPanel');
+        if (notificationToggle && notificationPanel) {
+            notificationToggle.addEventListener('click', function (event) {
+                event.stopPropagation();
+                notificationPanel.classList.toggle('is-open');
+            });
+            document.addEventListener('click', function () {
+                notificationPanel.classList.remove('is-open');
+            });
+            notificationPanel.addEventListener('click', function (event) {
+                event.stopPropagation();
+            });
+        }
+    })();
 </script>
+
+{% block extra_js %}{% endblock %}
 
 </body>
 </html>

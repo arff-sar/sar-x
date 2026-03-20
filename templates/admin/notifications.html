@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Bildirimler{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Bildirim Merkezi</div>
+        <div class="page-meta">Operasyon, approval ve güvenlik olayları</div>
+    </div>
+    <form method="POST" action="{{ url_for('admin.notifications_read_all') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-secondary" type="submit">Tümünü Okundu Yap</button>
+    </form>
+</div>
+
+<div class="panel">
+    <div class="panel-body" style="display:grid; gap:12px;">
+        {% for item in notifications %}
+        <div style="border:1px solid var(--border); border-radius:12px; padding:16px; background:{% if item.is_read %}var(--surface2){% else %}#fff{% endif %};">
+            <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+                <div>
+                    <div style="font-size:15px; font-weight:800; color:var(--navy);">{{ item.title }}</div>
+                    <div style="font-size:13px; color:var(--text2); margin-top:6px;">{{ item.message }}</div>
+                    <div style="font-size:11px; color:var(--text4); margin-top:8px;">{{ item.created_at.strftime('%d.%m.%Y %H:%M') if item.created_at else '-' }}</div>
+                </div>
+                <span class="status-pill {% if item.severity == 'critical' %}status-ariza{% elif item.severity in ['warning', 'high'] %}status-bakim{% else %}status-aktif{% endif %}">{{ item.severity|upper }}</span>
+            </div>
+            <div style="display:flex; gap:8px; margin-top:12px;">
+                {% if item.link_url %}
+                <a class="row-btn" href="{{ item.link_url }}">Aç</a>
+                {% endif %}
+                {% if not item.is_read %}
+                <form method="POST" action="{{ url_for('admin.notifications_read', id=item.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="row-btn" type="submit">Okundu</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
+        <div style="color:var(--text3);">Gösterilecek bildirim yok.</div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

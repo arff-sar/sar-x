@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Bakım Geçmişi{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Bakım Geçmişi</div>
+        <div class="page-meta">Tamamlanan bakım ve iş emirlerinin denetlenebilir geçmişi</div>
+    </div>
+    <a href="{{ url_for('maintenance.bakim_paneli') }}" class="btn btn-secondary">Bakım Paneli</a>
+</div>
+
+<div class="panel">
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Tarih</th>
+                    <th>Ekipman</th>
+                    <th>İş Emri</th>
+                    <th>Tür</th>
+                    <th>Yapan</th>
+                    <th>Sonuç</th>
+                    <th>Sonraki Bakım</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in histories %}
+                <tr>
+                    <td>{{ row.performed_at.strftime('%d.%m.%Y %H:%M') if row.performed_at else '-' }}</td>
+                    <td>{{ row.asset.equipment_template.name if row.asset and row.asset.equipment_template else '-' }}</td>
+                    <td>{% if row.work_order %}<a href="{{ url_for('maintenance.is_emri_detay', work_order_id=row.work_order.id) }}">{{ row.work_order.work_order_no }}</a>{% else %}-{% endif %}</td>
+                    <td>{{ row.maintenance_type|replace('_',' ')|upper }}</td>
+                    <td>{{ row.performed_by.tam_ad if row.performed_by else '-' }}</td>
+                    <td>{{ row.result or '-' }}</td>
+                    <td>{{ row.next_maintenance_date.strftime('%d.%m.%Y') if row.next_maintenance_date else '-' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" style="text-align:center; color:var(--text3);">Bakım geçmişi kaydı bulunmuyor.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

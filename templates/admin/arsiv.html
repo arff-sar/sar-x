@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-trash text-danger"></i> Geri Dönüşüm Kutusu</h2>
+    </div>
+    
+    <p class="text-muted">Burada yer alan kayıtlar sistemden silinmiş (arşivlenmiş) öğelerdir. Aktif listelerde görünmezler.</p>
+
+    <ul class="nav nav-tabs mb-4" id="arsivTab" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="malzeme-tab" data-bs-toggle="tab" data-bs-target="#malzeme" type="button" role="tab">📦 Malzemeler</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="kullanici-tab" data-bs-toggle="tab" data-bs-target="#kullanici" type="button" role="tab">👥 Personeller</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="havalimani-tab" data-bs-toggle="tab" data-bs-target="#havalimani" type="button" role="tab">🏢 Havalimanları</button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="arsivTabContent">
+        
+        <div class="tab-pane fade show active" id="malzeme" role="tabpanel">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Malzeme Adı</th>
+                                <th>Seri No</th>
+                                <th class="text-end">İşlemler</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for m in malzemeler %}
+                            <tr>
+                                <td>{{ m.ad }}</td>
+                                <td>{{ m.seri_no or '-' }}</td>
+                                <td class="text-end">
+                                    {# Buraya geri yükleme butonları gelecek #}
+                                    <span class="badge bg-secondary">Arşivlendi</span>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="3" class="text-center text-muted">Silinmiş malzeme bulunmuyor.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        </div>
+</div>
+{% endblock %}

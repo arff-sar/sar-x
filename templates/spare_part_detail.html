@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}{% if part %}Yedek Parça Detayı{% else %}Yeni Yedek Parça{% endif %}{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">{% if part %}{{ part.part_code }} · {{ part.title }}{% else %}Yeni Yedek Parça{% endif %}</div>
+        <div class="page-meta">Parça bilgisi, stok lokasyonları ve tüketim geçmişi</div>
+    </div>
+    <a href="{{ url_for('parts.spare_parts_list') }}" class="btn btn-secondary">Listeye Dön</a>
+</div>
+
+<div class="two-col">
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">{% if part %}Parça Bilgileri{% else %}Parça Kaydı{% endif %}</div>
+        </div>
+        <div class="panel-body">
+            <form method="POST" action="{% if part %}{{ url_for('parts.spare_part_detail', part_id=part.id) }}{% else %}{{ url_for('parts.spare_part_create') }}{% endif %}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                    <div class="form-group">
+                        <label>Parça Kodu</label>
+                        <input class="form-control" type="text" name="part_code" value="{{ part.part_code if part else '' }}" {% if part %}readonly{% endif %} required>
+                    </div>
+                    <div class="form-group">
+                        <label>Parça Adı</label>
+                        <input class="form-control" type="text" name="title" value="{{ part.title if part else '' }}" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Kategori</label>
+                        <input class="form-control" type="text" name="category" value="{{ part.category if part else '' }}">
+                    </div>
+                    <div class="form-group">
+                        <label>Uyumlu Asset Tipi</label>
+                        <input class="form-control" type="text" name="compatible_asset_type" value="{{ part.compatible_asset_type if part else '' }}">
+                    </div>
+                    <div class="form-group">
+                        <label>Üretici</label>
+                        <input class="form-control" type="text" name="manufacturer" value="{{ part.manufacturer if part else '' }}">
+                    </div>
+                    <div class="form-group">
+                        <label>Model</label>
+                        <input class="form-control" type="text" name="model" value="{{ part.model_code if part else '' }}">
+                    </div>
+                    <div class="form-group">
+                        <label>Birim</label>
+                        <input class="form-control" type="text" name="unit" value="{{ part.unit if part else 'adet' }}">
+                    </div>
+                    <div class="form-group">
+                        <label>Tedarikçi</label>
+                        <select name="supplier_id" class="form-control">
+                            <option value="">Seçiniz</option>
+                            {% for supplier in suppliers %}
+                            <option value="{{ supplier.id }}" {% if part and part.supplier_id == supplier.id %}selected{% endif %}>{{ supplier.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Minimum Stok</label>
+                        <input class="form-control" type="number" step="0.1" name="min_stock_level" value="{{ part.min_stock_level if part else 0 }}">
+                    </div>
+                    <div class="form-group">
+                        <label>Kritik Seviye</label>
+                        <input class="form-control" type="number" step="0.1" name="critical_level" value="{{ part.critical_level if part else 0 }}">
+                    </div>
+                    <div class="form-group" style="grid-column:1/-1;">
+                        <label>Açıklama</label>
+                        <textarea class="form-control" style="height:110px;" name="description">{{ part.description if part else '' }}</textarea>
+                    </div>
+                    <div class="form-group" style="grid-column:1/-1; margin-bottom:0;">
+                        <label style="display:flex; align-items:center; gap:7px; margin-bottom:12px;">
+                            <input type="checkbox" name="is_active" {% if not part or part.is_active %}checked{% endif %}>
+                            Aktif
+                        </label>
+                        <button class="btn btn-primary" style="width:100%; justify-content:center;">{% if part %}Güncelle{% else %}Kaydet{% endif %}</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div>
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">Stok Lokasyonları</div>
+            </div>
+            <div class="panel-body">
+                {% if part %}
+                    <form method="POST" action="{{ url_for('parts.spare_part_detail', part_id=part.id) }}" style="border:1px dashed var(--border-dark); border-radius:8px; padding:10px; margin-bottom:12px;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="action" value="stock_adjust">
+                        <div style="font-weight:700; color:var(--navy); margin-bottom:8px;">Lokasyon Stok Ekle/Güncelle</div>
+                        <select class="form-control" name="airport_id" required>
+                            {% for airport in airports %}
+                            <option value="{{ airport.id }}">{{ airport.kodu }} - {{ airport.ad }}</option>
+                            {% endfor %}
+                        </select>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                            <input class="form-control" type="number" step="0.1" name="quantity_on_hand" placeholder="Toplam">
+                            <input class="form-control" type="number" step="0.1" name="quantity_reserved" placeholder="Rezerve">
+                            <input class="form-control" type="number" step="0.1" name="reorder_point" placeholder="Yeniden sipariş">
+                            <input class="form-control" type="text" name="shelf_location" placeholder="Raf">
+                        </div>
+                        <button class="btn btn-secondary" style="width:100%; margin-top:10px;">Lokasyon Kaydet</button>
+                    </form>
+                    {% for stock in stocks %}
+                    <form method="POST" action="{{ url_for('parts.spare_part_detail', part_id=part.id) }}" style="border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:10px;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="action" value="stock_adjust">
+                        <input type="hidden" name="airport_id" value="{{ stock.airport_id }}">
+                        <div style="font-weight:700; color:var(--navy); margin-bottom:8px;">{{ stock.airport_stock.kodu if stock.airport_stock else stock.airport_id }}</div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                            <input class="form-control" type="number" step="0.1" name="quantity_on_hand" value="{{ stock.quantity_on_hand }}" placeholder="Toplam">
+                            <input class="form-control" type="number" step="0.1" name="quantity_reserved" value="{{ stock.quantity_reserved }}" placeholder="Rezerve">
+                            <input class="form-control" type="number" step="0.1" name="reorder_point" value="{{ stock.reorder_point }}" placeholder="Yeniden sipariş">
+                            <input class="form-control" type="text" name="shelf_location" value="{{ stock.shelf_location or '' }}" placeholder="Raf">
+                        </div>
+                        <button class="btn btn-secondary" style="width:100%; margin-top:10px;">Stok Güncelle</button>
+                    </form>
+                    {% else %}
+                    <div style="color:var(--text3); font-size:13px;">Bu parça için lokasyon stoğu bulunmuyor.</div>
+                    {% endfor %}
+                {% else %}
+                    <div style="font-size:13px; color:var(--text3); line-height:1.6;">
+                        Parçayı kaydettikten sonra bu ekrandan havalimanı bazlı stok seviyelerini, rezervasyonları ve raf bilgilerini girebilirsiniz.
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if part %}
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">Parça Tüketim Geçmişi</div>
+            </div>
+            <div class="panel-body">
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>İş Emri</th>
+                                <th>Miktar</th>
+                                <th>Not</th>
+                                <th>Tarih</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for usage in usages %}
+                            <tr>
+                                <td>{{ usage.work_order.work_order_no if usage.work_order else '-' }}</td>
+                                <td>{{ usage.quantity_used }}</td>
+                                <td>{{ usage.note or '-' }}</td>
+                                <td>{{ usage.created_at.strftime('%d.%m.%Y %H:%M') if usage.created_at else '-' }}</td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="4" style="text-align:center; color:var(--text3);">Henüz tüketim kaydı yok.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

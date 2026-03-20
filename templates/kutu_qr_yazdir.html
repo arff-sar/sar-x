@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="tr">
+<head>
+    <meta charset="utf-8">
+    <title>Kutu QR Etiketi</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 24px; color: #0f172a; }
+        .label { width: 300px; margin: 0 auto; border: 1px solid #cbd5e1; border-radius: 16px; padding: 18px; text-align: center; }
+        .qr { width: 190px; height: 190px; display: block; margin: 0 auto 14px; }
+        .code { font-size: 24px; font-weight: 800; letter-spacing: .04em; }
+        .airport { font-size: 16px; margin-top: 8px; font-weight: 700; }
+    </style>
+</head>
+<body onload="window.print()">
+    <div class="label">
+        <img class="qr" src="{{ url_for('inventory.kutu_qr_img', box_id=kutu.id) }}" alt="Kutu QR">
+        <div class="code">{{ qr_context.box_code }}</div>
+        <div class="airport">{{ qr_context.airport_name }}</div>
+    </div>
+</body>
+</html>

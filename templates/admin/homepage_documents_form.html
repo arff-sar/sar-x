@@ -1,0 +1,42 @@
+{% extends "admin/homepage_base.html" %}
+
+{% block homepage_body %}
+<div class="panel" style="max-width:920px;">
+  <div class="panel-header">
+    <div class="panel-title">{{ 'Doküman Düzenle' if document else 'Yeni Doküman Ekle' }}</div>
+  </div>
+  <div class="panel-body">
+    <div class="hp-preview-note">Dokümanı kaydetmeden önce önizleyebilir, ardından yayın durumunu belirleyebilirsiniz.</div>
+    <form method="POST" action="{% if document %}{{ url_for('content.homepage_document_edit', document_id=document.id) }}{% else %}{{ url_for('content.homepage_document_create') }}{% endif %}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Başlık</label>
+      <input type="text" name="title" class="form-control" required value="{{ document.title if document else '' }}">
+      <label>Açıklama</label>
+      <textarea name="description" class="form-control" style="height:100px;">{{ document.description if document else '' }}</textarea>
+      <label>Dosya / Link Yolu</label>
+      <input type="text" name="file_path" class="form-control" value="{{ document.file_path if document else '' }}" placeholder="/dosyalar/acil-mudahale-formu.pdf">
+      <label>Kategori</label>
+      <input type="text" name="category" class="form-control" value="{{ document.category if document else '' }}" placeholder="Form, Prosedür, Kılavuz">
+      <label>Sıralama</label>
+      <input type="number" name="order_index" class="form-control" value="{{ document.order_index if document else 0 }}">
+      <label>Workflow Durumu</label>
+      {% set current_status = workflow_status if workflow_status is defined else ('published' if document and document.is_active else 'draft') %}
+      <select name="workflow_status" class="form-control">
+        <option value="published" {% if current_status == 'published' %}selected{% endif %}>Yayında</option>
+        <option value="draft" {% if current_status == 'draft' %}selected{% endif %}>Taslak</option>
+        <option value="passive" {% if current_status == 'passive' %}selected{% endif %}>Pasif</option>
+        <option value="archived" {% if current_status == 'archived' %}selected{% endif %}>Arşiv</option>
+      </select>
+      <label style="text-transform:none;">
+        <input type="checkbox" name="is_active" {% if (document and document.is_active) or not document %}checked{% endif %}>
+        Legacy aktif bayrağı
+      </label>
+      <div style="display:flex; gap:8px; margin-top:12px;">
+        <button class="btn btn-primary" type="submit">{{ 'Güncelle' if document else 'Kaydet' }}</button>
+        <button class="btn btn-secondary" type="submit" formaction="{{ url_for('content.content_preview', content_type='document') }}" formtarget="_blank">Önizle</button>
+        <a class="btn btn-secondary" href="{{ url_for('content.homepage_documents_list') }}">Listeye Dön</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "admin/homepage_base.html" %}
+
+{% block homepage_body %}
+<div class="panel" style="max-width:900px;">
+  <div class="panel-header">
+    <div class="panel-title">{{ 'Slider Düzenle' if slider else 'Yeni Slider Ekle' }}</div>
+  </div>
+  <div class="panel-body">
+    <div class="hp-preview-note">Hero alanı artık daha sade çalışır. Kısa başlıklar, kısa üst etiketler ve tek CTA en temiz sonucu verir.</div>
+    <form method="POST" action="{% if slider %}{{ url_for('content.homepage_slider_edit', slider_id=slider.id) }}{% else %}{{ url_for('content.homepage_slider_create') }}{% endif %}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Ana Başlık</label>
+      <input type="text" name="title" class="form-control" required value="{{ slider.title if slider else '' }}">
+      <label>Kısa Üst Etiket</label>
+      <input type="text" name="subtitle" class="form-control" value="{{ slider.subtitle if slider else '' }}">
+      <label>Kısa Destek Metni</label>
+      <textarea name="description" class="form-control" style="height:90px;">{{ slider.description if slider else '' }}</textarea>
+      <label>Görsel Yolu / URL</label>
+      <input type="text" name="image_path" class="form-control" value="{{ slider.image_path if slider else '' }}">
+      <div style="margin-top:-8px; margin-bottom:10px;">
+        <a href="{{ url_for('content.media_library') }}" class="row-btn" target="_blank">Medya Kütüphanesi Aç</a>
+      </div>
+      <label>Buton Metni</label>
+      <input type="text" name="button_text" class="form-control" value="{{ slider.button_text if slider else 'Detay için tıklayınız' }}">
+      <label>Buton Linki</label>
+      <input type="text" name="button_link" class="form-control" value="{{ slider.button_link if slider else '#faaliyetlerimiz' }}">
+      <label>Sıralama</label>
+      <input type="number" name="order_index" class="form-control" value="{{ slider.order_index if slider else 0 }}">
+      <label>Workflow Durumu</label>
+      {% set current_status = workflow_status if workflow_status is defined else ('published' if slider and slider.is_active else 'draft') %}
+      <select name="workflow_status" class="form-control">
+        <option value="published" {% if current_status == 'published' %}selected{% endif %}>Yayında</option>
+        <option value="draft" {% if current_status == 'draft' %}selected{% endif %}>Taslak</option>
+        <option value="passive" {% if current_status == 'passive' %}selected{% endif %}>Pasif</option>
+        <option value="archived" {% if current_status == 'archived' %}selected{% endif %}>Arşiv</option>
+      </select>
+      <label style="text-transform:none;">
+        <input type="checkbox" name="is_active" {% if (slider and slider.is_active) or not slider %}checked{% endif %}>
+        Legacy aktif bayrağı
+      </label>
+      {% if slider and slider.image_path %}
+        <div style="margin-top:12px; padding:12px; border:1px solid var(--border); border-radius:12px; background:var(--surface2);">
+          <div style="font-size:12px; color:var(--text3); margin-bottom:8px; font-weight:700;">Mevcut Önizleme</div>
+          <img src="{{ slider.image_path }}" alt="{{ slider.title }}" style="width:100%; max-height:220px; object-fit:cover; border-radius:10px; border:1px solid var(--border);">
+        </div>
+      {% endif %}
+      <div style="display:flex; gap:8px; margin-top:12px;">
+        <button class="btn btn-primary" type="submit">{{ 'Güncelle' if slider else 'Kaydet' }}</button>
+        <button class="btn btn-secondary" type="submit" formaction="{{ url_for('content.content_preview', content_type='slider') }}" formtarget="_blank">Önizle</button>
+        <a class="btn btn-secondary" href="{{ url_for('content.homepage_slider_list') }}">Listeye Dön</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

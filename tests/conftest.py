@@ -1,6 +1,7 @@
 import pytest
+import os
 from unittest.mock import patch
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool
 from app import create_app
 from extensions import db as _db
 
@@ -14,26 +15,38 @@ def mock_external_services():
 
 @pytest.fixture
 def app():
-    app = create_app()
-    app.config.update({
-        "TESTING": True,
-        "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
-        # ✅ pool_size/max_overflow'u temizle, StaticPool koy
-        "SQLALCHEMY_ENGINE_OPTIONS": {
-            "connect_args": {"check_same_thread": False},
-            "poolclass": StaticPool,
-        },
-        "WTF_CSRF_ENABLED": False,
-        "SECRET_KEY": "test-key-for-sarx",
-    })
+    db_path = os.path.join(os.getcwd(), "instance", "test_suite.db")
+    previous_test_db = os.environ.get("TEST_DATABASE_URL")
+    os.environ["TEST_DATABASE_URL"] = f"sqlite:///{db_path}"
+    if os.path.exists(db_path):
+        os.remove(db_path)
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
-    # ✅ Engine'i config değişikliğinden SONRA yeniden oluştur
+    app = create_app("testing")
+    app.config.update(
+        {
+            "TESTING": True,
+            "SQLALCHEMY_ENGINE_OPTIONS": {
+                "connect_args": {"check_same_thread": False},
+                "poolclass": NullPool,
+            },
+            "WTF_CSRF_ENABLED": False,
+            "SECRET_KEY": "test-key-for-sarx",
+        }
+    )
+
     with app.app_context():
         _db.drop_all()
         _db.create_all()
         yield app
         _db.session.remove()
         _db.drop_all()
+    if os.path.exists(db_path):
+        os.remove(db_path)
+    if previous_test_db is None:
+        os.environ.pop("TEST_DATABASE_URL", None)
+    else:
+        os.environ["TEST_DATABASE_URL"] = previous_test_db
 
 @pytest.fixture
 def client(app):

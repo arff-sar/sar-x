@@ -1,2 +1,36 @@
-.envnode_modules/
+# Environment
+.env
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Local instance / database
+instance/
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# Test / coverage outputs
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage/
+
+# Upload / generated files
+uploads/
+media/
+static/uploads/
+tmp/
+temp/
+
+# OS files
 .DS_Store

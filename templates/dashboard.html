@@ -3,29 +3,22 @@
 
 {% block extra_css %}
 <style>
-/* Dashboard Özel Bileşenleri (CSS Variables Base'den gelir) */
 .page-header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 20px; }
 .page-title { font-size: 22px; font-weight: 800; color: var(--navy); letter-spacing: -.02em; }
 .page-meta { font-size: 12.5px; color: var(--text3); margin-top: 4px; display: flex; align-items: center; gap: 6px; }
-
-/* Butonlar */
 .btn-primary { background: var(--orange); color: #fff; border: none; padding: 10px 20px; border-radius: var(--r); font-family: var(--sans); font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 10px rgba(249,115,22,.28); text-decoration: none; transition: transform .1s, box-shadow .1s; }
 .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(249,115,22,.38); }
-
-/* Alarm Şeridi */
 .alarm-strip { background: var(--red-light); border: 1.5px solid var(--red-border); border-radius: var(--r-lg); padding: 14px 18px; display: flex; align-items: center; gap: 14px; margin-bottom: 20px; cursor: pointer; transition: background .15s; text-decoration: none; }
 .alarm-strip:hover { background: #fee2e2; }
-.alarm-strip-icon { width: 40px; height: 40px; border-radius: 10px; background: var(--red); display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; animation: shake 4s ease-in-out infinite; }
-@keyframes shake { 0%, 88%, 100% { transform: translateX(0); } 91% { transform: translateX(-3px); } 94% { transform: translateX(3px); } 97% { transform: translateX(-2px); } }
+.alarm-strip-icon { width: 40px; height: 40px; border-radius: 10px; background: var(--red); display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
 .alarm-strip-body { flex: 1; }
 .alarm-strip-title { font-size: 14px; font-weight: 700; color: var(--red); }
 .alarm-strip-desc { font-size: 12px; color: #991b1b; margin-top: 2px; }
 .warn-strip { background: var(--amber-light); border-color: var(--amber-border); }
 .warn-strip .alarm-strip-icon { background: var(--amber); }
 .warn-strip .alarm-strip-title { color: var(--amber); }
-
-/* Stats Grid */
-.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+.secondary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px; transition: transform .15s, box-shadow .15s; }
 .stat-card:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.07); }
 .stat-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
@@ -33,8 +26,10 @@
 .stat-trend { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px; }
 .stat-value { font-size: 32px; font-weight: 800; color: var(--navy); line-height: 1; letter-spacing: -.03em; }
 .stat-label { font-size: 13px; font-weight: 600; color: var(--text2); margin-top: 5px; }
-
-/* Panels & Rows */
+.stat-trend-line { font-size: 11px; color: var(--text3); margin-top: 10px; font-weight: 700; }
+.trend-up { color: var(--green); }
+.trend-down { color: var(--red); }
+.trend-flat { color: var(--text3); }
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; margin-bottom: 20px; }
 .panel-header { padding: 15px 18px 13px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
 .panel-title { font-size: 14px; font-weight: 700; color: var(--navy); display: flex; align-items: center; gap: 8px; }
@@ -44,17 +39,19 @@
 .alarm-row-info { flex: 1; }
 .alarm-row-name { font-size: 13.5px; font-weight: 600; color: var(--text); }
 .alarm-row-meta { font-size: 11px; color: var(--text3); margin-top: 2px; font-family: var(--mono); }
-
-/* Status Tags */
 .status-tag { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 5px; white-space: nowrap; flex-shrink: 0; }
 .tag-red { background: var(--red-light); color: var(--red); }
 .tag-amber { background: var(--amber-light); color: var(--amber); }
-
-/* Quick Actions */
-.quick-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 16px; }
+.quick-grid { display: grid; grid-template-columns: 1fr; gap: 10px; padding: 16px; }
 .quick-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r); padding: 16px 10px; text-align: center; cursor: pointer; text-decoration: none; transition: transform .12s; }
 .quick-btn:hover { background: var(--surface); border-color: var(--orange); transform: translateY(-2px); box-shadow: 0 4px 14px rgba(249,115,22,.12); }
 .quick-label { font-size: 12px; font-weight: 700; color: var(--navy); margin-top: 7px; }
+@media (max-width: 980px) { .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+  .stats-grid { grid-template-columns: 1fr; }
+  .kutu-bul-form { flex-direction: column; }
+  .kutu-bul-form .btn { width: 100%; padding: 12px; }
+}
 </style>
 {% endblock %}
 
@@ -66,19 +63,29 @@
             <span>{{ bugun.strftime('%d.%m.%Y') }}</span>
             <div class="meta-dot" style="width: 3px; height: 3px; background: var(--text4); border-radius: 50%;"></div>
             <span>{{ havalimani_ad }}</span>
+            <div class="meta-dot" style="width: 3px; height: 3px; background: var(--text4); border-radius: 50%;"></div>
+            <span>{{ trend_days }} günlük trend</span>
         </div>
     </div>
-    {% if rol in ['sahip', 'yetkili'] %}
-    <a href="{{ url_for('inventory.malzeme_ekle') }}" class="btn-primary">＋ Yeni Kayıt</a>
-    {% endif %}
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        {% if has_permission('reports.view') %}
+        <a href="{{ url_for('reports.index') }}" class="btn btn-secondary">Rapor Merkezi</a>
+        {% endif %}
+        <a href="{{ url_for('inventory.dashboard', trend_days=7) }}" class="btn btn-secondary {% if trend_days == 7 %}tag-navy{% endif %}">7G</a>
+        <a href="{{ url_for('inventory.dashboard', trend_days=30) }}" class="btn btn-secondary {% if trend_days == 30 %}tag-navy{% endif %}">30G</a>
+        <a href="{{ url_for('inventory.dashboard', trend_days=90) }}" class="btn btn-secondary {% if trend_days == 90 %}tag-navy{% endif %}">90G</a>
+        {% if rol in ['sahip', 'yetkili'] %}
+        <a href="{{ url_for('inventory.malzeme_ekle') }}" class="btn-primary">＋ Yeni Kayıt</a>
+        {% endif %}
+    </div>
 </div>
 
 {% if arizali_malzemeler %}
 <a href="{{ url_for('inventory.envanter') }}" class="alarm-strip">
     <div class="alarm-strip-icon">⚠️</div>
     <div class="alarm-strip-body">
-        <div class="alarm-strip-title">{{ arizali_malzemeler|length }} Kritik Arıza — Acil Müdahale Gerekiyor</div>
-        <div class="alarm-strip-desc">Sisteme kayıtlı arızalı malzemeler bulunmaktadır. Envanterden kontrol ediniz.</div>
+        <div class="alarm-strip-title">{{ arizali_malzemeler|length }} Kritik Arıza</div>
+        <div class="alarm-strip-desc">Sistemde acil takip gerektiren arızalı malzemeler var.</div>
     </div>
 </a>
 {% endif %}
@@ -88,42 +95,158 @@
     <div class="alarm-strip-icon">🔧</div>
     <div class="alarm-strip-body">
         <div class="alarm-strip-title">{{ bakim_uyarilari|length }} Yaklaşan Bakım</div>
-        <div class="alarm-strip-desc">Önümüzdeki 15 gün içerisinde bakımı yapılacak ekipmanlar var.</div>
+        <div class="alarm-strip-desc">Önümüzdeki 15 gün içinde bakım planı bulunan ekipmanlar mevcut.</div>
     </div>
 </a>
 {% endif %}
 
 <div class="stats-grid">
-    <div class="stat-card">
+    <div class="stat-card" data-kpi-tier="primary">
         <div class="stat-card-top">
             <div class="stat-icon" style="background:#e8f0f7;">📦</div>
             <span class="stat-trend" style="background: var(--navy); color: white;">BİRİM</span>
         </div>
-        <div class="stat-value">{{ arizali_malzemeler|length + bakim_uyarilari|length + 20 }}</div>
+        <div class="stat-value">{{ toplam_ekipman_sayi if toplam_ekipman_sayi is defined else 0 }}</div>
         <div class="stat-label">Toplam Ekipman</div>
+        {% set trend = dashboard_trends["total_assets"]["trend"] %}
+        <div class="stat-trend-line trend-{{ trend.direction }}">{{ trend_days }}g: {% if trend.available %}{{ trend.percent }}%{% else %}- · veri yok{% endif %}</div>
     </div>
-
-    <div class="stat-card">
+    <div class="stat-card" data-kpi-tier="primary">
         <div class="stat-card-top">
             <div class="stat-icon" style="background:var(--red-light);">🔴</div>
             <span class="stat-trend" style="background: var(--red-light); color: var(--red);">ARIZA</span>
         </div>
         <div class="stat-value" style="color: var(--red);">{{ arizali_malzemeler|length }}</div>
         <div class="stat-label">Arızalı Malzeme</div>
+        {% set trend = dashboard_trends["faulty_assets"]["trend"] %}
+        <div class="stat-trend-line trend-{{ trend.direction }}">{{ trend_days }}g: {% if trend.available %}{{ trend.percent }}%{% else %}- · veri yok{% endif %}</div>
     </div>
-
-    <div class="stat-card">
+    <div class="stat-card" data-kpi-tier="primary">
         <div class="stat-card-top">
-            <div class="stat-icon" style="background:var(--amber-light);">🔧</div>
-            <span class="stat-trend" style="background: var(--amber-light); color: var(--amber);">YAKIN</span>
+            <div class="stat-icon" style="background:var(--red-light);">⏱️</div>
+            <span class="stat-trend" style="background: var(--red-light); color: var(--red);">GECİKEN</span>
         </div>
-        <div class="stat-value" style="color: var(--amber);">{{ bakim_uyarilari|length }}</div>
-        <div class="stat-label">Bakım Bekleyen</div>
+        <div class="stat-value" style="color: var(--red);">{{ geciken_bakim_sayi if geciken_bakim_sayi is defined else 0 }}</div>
+        <div class="stat-label">Geciken Bakım</div>
+        {% set trend = dashboard_trends["overdue_maintenance"]["trend"] %}
+        <div class="stat-trend-line trend-{{ trend.direction }}">{{ trend_days }}g: {% if trend.available %}{{ trend.percent }}%{% else %}- · veri yok{% endif %}</div>
+    </div>
+    <div class="stat-card" data-kpi-tier="primary">
+        <div class="stat-card-top">
+            <div class="stat-icon" style="background:var(--blue-light);">🧾</div>
+            <span class="stat-trend" style="background: var(--blue-light); color: var(--blue);">İŞ EMRİ</span>
+        </div>
+        <div class="stat-value" style="color: var(--blue);">{{ acik_is_emri_sayi if acik_is_emri_sayi is defined else 0 }}</div>
+        <div class="stat-label">Açık İş Emri</div>
+        {% set trend = dashboard_trends["open_work_orders"]["trend"] %}
+        <div class="stat-trend-line trend-{{ trend.direction }}">{{ trend_days }}g: {% if trend.available %}{{ trend.percent }}%{% else %}- · veri yok{% endif %}</div>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <div class="panel-title">
+            <div class="panel-title-icon" style="background: var(--surface2); color: var(--navy);">ÖZ</div>
+            Operasyon Özeti
+        </div>
+    </div>
+    <div class="panel-body" style="padding:16px;">
+        <div class="secondary-grid">
+            <div class="stat-card" data-kpi-tier="operational">
+                <div class="stat-card-top">
+                    <div class="stat-icon" style="background:var(--red-light);">🧰</div>
+                    <span class="stat-trend" style="background: var(--red-light); color: var(--red);">STOK</span>
+                </div>
+                <div class="stat-value" style="color: var(--red);">{{ dusuk_stok_parca_sayi if dusuk_stok_parca_sayi is defined else 0 }}</div>
+                <div class="stat-label">Düşük Stok Parça</div>
+                {% set trend = dashboard_trends["low_stock"]["trend"] %}
+                <div class="stat-trend-line trend-{{ trend.direction }}">{{ trend_days }}g: {% if trend.available %}{{ trend.percent }}%{% else %}- · veri yok{% endif %}</div>
+            </div>
+            <div class="stat-card" data-kpi-tier="operational">
+                <div class="stat-card-top">
+                    <div class="stat-icon" style="background:var(--amber-light);">⏲️</div>
+                    <span class="stat-trend" style="background: var(--amber-light); color: var(--amber);">SAYAÇ</span>
+                </div>
+                <div class="stat-value" style="color: var(--amber);">{{ sayac_yaklasan_bakim_sayi if sayac_yaklasan_bakim_sayi is defined else 0 }}</div>
+                <div class="stat-label">Sayaç Yaklaşan Bakım</div>
+                {% set trend = dashboard_trends["meter_upcoming"]["trend"] %}
+                <div class="stat-trend-line trend-{{ trend.direction }}">{{ trend_days }}g: {% if trend.available %}{{ trend.percent }}%{% else %}- · veri yok{% endif %}</div>
+            </div>
+            <div class="stat-card" data-kpi-tier="operational">
+                <div class="stat-card-top">
+                    <div class="stat-icon" style="background:var(--blue-light);">🤖</div>
+                    <span class="stat-trend" style="background: var(--blue-light); color: var(--blue);">OTOMATİK</span>
+                </div>
+                <div class="stat-value" style="color: var(--blue);">{{ otomatik_is_emri_sayi if otomatik_is_emri_sayi is defined else 0 }}</div>
+                <div class="stat-label">Otomatik İş Emri</div>
+                {% set trend = dashboard_trends["auto_work_orders"]["trend"] %}
+                <div class="stat-trend-line trend-{{ trend.direction }}">{{ trend_days }}g: {% if trend.available %}{{ trend.percent }}%{% else %}- · veri yok{% endif %}</div>
+            </div>
+            <div class="stat-card" data-kpi-tier="operational">
+                <div class="stat-card-top">
+                    <div class="stat-icon" style="background:var(--red-light);">🧩</div>
+                    <span class="stat-trend" style="background: var(--red-light); color: var(--red);">CHILD</span>
+                </div>
+                <div class="stat-value" style="color: var(--red);">{{ child_asset_ariza_sayi if child_asset_ariza_sayi is defined else 0 }}</div>
+                <div class="stat-label">Alt Bileşen Arızası</div>
+                {% set trend = dashboard_trends["child_faults"]["trend"] %}
+                <div class="stat-trend-line trend-{{ trend.direction }}">{{ trend_days }}g: {% if trend.available %}{{ trend.percent }}%{% else %}- · veri yok{% endif %}</div>
+            </div>
+            <div class="stat-card" data-kpi-tier="secondary">
+                <div class="stat-card-top">
+                    <div class="stat-icon" style="background:var(--amber-light);">🧪</div>
+                    <span class="stat-trend" style="background: var(--amber-light); color: var(--amber);">KALİBRASYON</span>
+                </div>
+                <div class="stat-value" style="color: var(--amber);">{{ kalibrasyon_gecikme_sayi if kalibrasyon_gecikme_sayi is defined else 0 }}</div>
+                <div class="stat-label">Kalibrasyon Gecikmesi</div>
+                {% set trend = dashboard_trends["calibration_overdue"]["trend"] %}
+                <div class="stat-trend-line trend-{{ trend.direction }}">{{ trend_days }}g: {% if trend.available %}{{ trend.percent }}%{% else %}- · veri yok{% endif %}</div>
+            </div>
+            <div class="stat-card" data-kpi-tier="secondary">
+                <div class="stat-card-top">
+                    <div class="stat-icon" style="background:var(--blue-light);">🧫</div>
+                    <span class="stat-trend" style="background: var(--blue-light); color: var(--blue);">YAKLAŞAN</span>
+                </div>
+                <div class="stat-value" style="color: var(--blue);">{{ yaklasan_kalibrasyon_sayi if yaklasan_kalibrasyon_sayi is defined else 0 }}</div>
+                <div class="stat-label">Yaklaşan Kalibrasyon</div>
+                {% set trend = dashboard_trends["calibration_upcoming"]["trend"] %}
+                <div class="stat-trend-line trend-{{ trend.direction }}">{{ trend_days }}g: {% if trend.available %}{{ trend.percent }}%{% else %}- · veri yok{% endif %}</div>
+            </div>
+            <div class="stat-card" data-kpi-tier="secondary">
+                <div class="stat-card-top">
+                    <div class="stat-icon" style="background:var(--amber-light);">🛡️</div>
+                    <span class="stat-trend" style="background: var(--amber-light); color: var(--amber);">GARANTİ</span>
+                </div>
+                <div class="stat-value" style="color: var(--amber);">{{ garanti_yaklasan_sayi if garanti_yaklasan_sayi is defined else 0 }}</div>
+                <div class="stat-label">Garanti Bitişi Yaklaşan</div>
+                {% set trend = dashboard_trends["warranty_expiring"]["trend"] %}
+                <div class="stat-trend-line trend-{{ trend.direction }}">{{ trend_days }}g: {% if trend.available %}{{ trend.percent }}%{% else %}- · veri yok{% endif %}</div>
+            </div>
+            <div class="stat-card" data-kpi-tier="secondary">
+                <div class="stat-card-top">
+                    <div class="stat-icon" style="background:var(--red-light);">🧴</div>
+                    <span class="stat-trend" style="background: var(--red-light); color: var(--red);">SARF</span>
+                </div>
+                <div class="stat-value" style="color: var(--red);">{{ dusuk_sarf_sayi if dusuk_sarf_sayi is defined else 0 }}</div>
+                <div class="stat-label">Düşük Sarf Stoğu</div>
+                {% set trend = dashboard_trends["low_consumables"]["trend"] %}
+                <div class="stat-trend-line trend-{{ trend.direction }}">{{ trend_days }}g: {% if trend.available %}{{ trend.percent }}%{% else %}- · veri yok{% endif %}</div>
+            </div>
+            <div class="stat-card" data-kpi-tier="secondary">
+                <div class="stat-card-top">
+                    <div class="stat-icon" style="background:var(--red-light);">🚫</div>
+                    <span class="stat-trend" style="background: var(--red-light); color: var(--red);">SERVİS DIŞI</span>
+                </div>
+                <div class="stat-value" style="color: var(--red);">{{ kritik_servis_disi_sayi if kritik_servis_disi_sayi is defined else 0 }}</div>
+                <div class="stat-label">Kritik Servis Dışı</div>
+                {% set trend = dashboard_trends["out_of_service_critical"]["trend"] %}
+                <div class="stat-trend-line trend-{{ trend.direction }}">{{ trend_days }}g: {% if trend.available %}{{ trend.percent }}%{% else %}- · veri yok{% endif %}</div>
+            </div>
+        </div>
     </div>
 </div>
 
 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
-    
     <div class="panel">
         <div class="panel-header">
             <div class="panel-title">
@@ -131,17 +254,17 @@
                 Acil Aksiyon Listesi
             </div>
         </div>
-        {% for m in bakim_uyarilari[:4] %}
-        <a href="{{ url_for('inventory.kutu_detay', kodu=m.kutu.kodu) }}" class="alarm-row">
+        {% for action in acil_aksiyonlar %}
+        <a href="{{ action.url }}" class="alarm-row">
             <div class="alarm-row-info">
-                <div class="alarm-row-name">{{ m.ad }}</div>
-                <div class="alarm-row-meta">Kutu: {{ m.kutu.kodu }} · Tarih: {{ m.gelecek_bakim_tarihi.strftime('%d.%m.%Y') }}</div>
+                <div class="alarm-row-name">{{ action.name }}</div>
+                <div class="alarm-row-meta">{{ action.meta }}</div>
             </div>
-            <div class="status-tag tag-amber">BAKIM</div>
+            <div class="status-tag {{ action.tag_class }}">{{ action.tag }}</div>
         </a>
         {% else %}
         <div style="padding: 20px; text-align: center; color: var(--text3); font-size: 13px;">
-            Yakın zamanda planlı bir bakım görünmüyor.
+            Şu an acil aksiyon gerektiren kritik bir kayıt görünmüyor. Operasyon akışı stabil ilerliyor.
         </div>
         {% endfor %}
     </div>
@@ -151,19 +274,14 @@
             <div class="panel-header">
                 <div class="panel-title">
                     <div class="panel-title-icon" style="background: var(--blue-light); color: var(--blue);">🔎</div>
-                    Kutu / Ünite Bul (B Planı)
+                    Kutu / Ünite Bul
                 </div>
             </div>
-            <div style="padding: 20px;">
-                <p style="font-size: 12.5px; color: var(--text3); margin-bottom: 15px; line-height: 1.5;">Kameranız çalışmıyorsa veya QR kod yıpranmışsa, etiketin altındaki numarayı buraya girerek işleme devam edebilirsiniz.</p>
-                
-                <form method="POST" action="{{ url_for('inventory.kutu_bul') }}" style="display: flex; gap: 10px;">
+            <div style="padding: 16px;">
+                <p style="font-size: 12px; color: var(--text3); margin-bottom: 12px; line-height: 1.45;">QR okunmuyorsa etiket kodunu girin.</p>
+                <form method="POST" action="{{ url_for('inventory.kutu_bul') }}" class="kutu-bul-form" style="display: flex; gap: 10px;">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    
-                    <input type="text" name="kutu_kodu" placeholder="Örn: KUTU-01" 
-                           class="form-control" 
-                           style="margin-bottom: 0; text-transform: uppercase; font-family: var(--mono); font-weight: 800; font-size: 15px;" required autocomplete="off">
-                           
+                    <input type="text" name="kutu_kodu" placeholder="Örn: KUTU-01" class="form-control" style="margin-bottom: 0; text-transform: uppercase; font-family: var(--mono); font-weight: 800; font-size: 14px;" required autocomplete="off">
                     <button type="submit" class="btn btn-navy" style="flex-shrink: 0; padding: 0 24px;">Bul</button>
                 </form>
             </div>
@@ -177,27 +295,53 @@
                 </div>
             </div>
             <div class="quick-grid">
-                <a href="{{ url_for('inventory.envanter_excel') }}" class="quick-btn">
-                    <div style="font-size: 24px;">📊</div>
-                    <div class="quick-label">Excel İndir</div>
+                <a href="{{ url_for('inventory.envanter') }}" class="quick-btn">
+                    <div style="font-size: 24px;">📦</div>
+                    <div class="quick-label">Envanter</div>
                 </a>
-                <a href="{{ url_for('inventory.envanter_pdf') }}" class="quick-btn">
-                    <div style="font-size: 24px;">📄</div>
-                    <div class="quick-label">PDF Rapor</div>
+                <a href="{{ url_for('maintenance.bakim_paneli') }}" class="quick-btn">
+                    <div style="font-size: 24px;">🛠️</div>
+                    <div class="quick-label">Bakım</div>
                 </a>
-                {% if rol in ['sahip', 'yetkili'] %}
-                <a href="{{ url_for('inventory.malzeme_ekle') }}" class="quick-btn">
-                    <div style="font-size: 24px;">➕</div>
-                    <div class="quick-label">Kayıt Ekle</div>
+                <a href="{{ url_for('parts.spare_parts_list') }}" class="quick-btn">
+                    <div style="font-size: 24px;">🧰</div>
+                    <div class="quick-label">Yedek Parça</div>
                 </a>
-                <a href="{{ url_for('admin.site_yonetimi') }}" class="quick-btn">
-                    <div style="font-size: 24px;">🌐</div>
-                    <div class="quick-label">Site Yönetimi</div>
+                <a href="{{ url_for('inventory.kutular') }}" class="quick-btn">
+                    <div style="font-size: 24px;">🗂️</div>
+                    <div class="quick-label">Kutu / Ünite</div>
+                </a>
+                <a href="{{ url_for('inventory.consumables') }}" class="quick-btn">
+                    <div style="font-size: 24px;">🧴</div>
+                    <div class="quick-label">Sarf</div>
+                </a>
+                <a href="{{ url_for('inventory.calibration_records') }}" class="quick-btn">
+                    <div style="font-size: 24px;">🧪</div>
+                    <div class="quick-label">Kalibrasyon</div>
+                </a>
+                <a href="{{ url_for('inventory.asset_lifecycle') }}" class="quick-btn">
+                    <div style="font-size: 24px;">♻️</div>
+                    <div class="quick-label">Lifecycle</div>
+                </a>
+                {% if has_permission('reports.view') %}
+                <a href="{{ url_for('reports.index') }}" class="quick-btn">
+                    <div style="font-size: 24px;">📈</div>
+                    <div class="quick-label">Rapor Merkezi</div>
                 </a>
                 {% endif %}
             </div>
         </div>
     </div>
-    
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+  fetch('{{ url_for("inventory.dashboard_alert_sync") }}', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: csrfToken ? { 'X-CSRFToken': csrfToken } : {}
+  }).catch(() => {});
+});
+</script>
 {% endblock %}

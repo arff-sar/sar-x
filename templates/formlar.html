@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Formlar ve Dokümanlar</title>
+  <style>
+    body { margin: 0; font-family: 'Plus Jakarta Sans', Arial, sans-serif; background: #f3f6fb; color: #0f233a; }
+    .container { width: min(1120px, 92vw); margin: 0 auto; }
+    .top { background: #0f233a; color: #fff; padding: 14px 0; }
+    .top a { color: #fff; text-decoration: none; font-weight: 700; }
+    .head { padding: 28px 0 10px; }
+    h1 { margin: 0 0 8px; font-size: 34px; }
+    .lead { color: #51647b; line-height: 1.7; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; padding: 12px 0 38px; }
+    .card { background: #fff; border: 1px solid #dce4ee; border-radius: 12px; padding: 18px; box-shadow: 0 10px 24px rgba(15,35,58,.06); }
+    .title { font-size: 18px; font-weight: 800; }
+    .cat { font-size: 12px; color: #6c7f95; margin-top: 4px; text-transform: uppercase; letter-spacing: .05em; }
+    .desc { margin-top: 8px; color: #3f536b; line-height: 1.7; font-size: 14px; }
+    .link { margin-top: 12px; display: inline-block; color: #0f4c84; text-decoration: none; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div class="container"><a href="{{ url_for('ana_sayfa') }}">← Ana Sayfaya Dön</a></div>
+  </div>
+  <div class="container">
+    <div class="head">
+      <h1>Formlar ve Dokümanlar</h1>
+      <p class="lead">Operasyonel süreçlerde kullanılan güncel form, prosedür ve bilgilendirme dokümanları.</p>
+    </div>
+    <div class="grid">
+      {% for doc in documents %}
+      <article class="card">
+        <div class="title">{{ doc.title }}</div>
+        <div class="cat">{{ doc.category or 'Doküman' }}</div>
+        <div class="desc">{{ doc.description or 'Açıklama bulunmuyor.' }}</div>
+        {% if doc.file_path %}
+        <a class="link" href="{{ doc.file_path }}" target="_blank">Dokümana Git</a>
+        {% endif %}
+      </article>
+      {% else %}
+      <article class="card"><div class="title">Henüz aktif doküman yok</div><div class="desc">Yönetim panelinden yeni dokümanlar eklenebilir.</div></article>
+      {% endfor %}
+    </div>
+  </div>
+</body>
+</html>

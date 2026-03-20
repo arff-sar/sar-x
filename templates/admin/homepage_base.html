@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block extra_css %}
+{{ super() }}
+<style>
+  .hp-breadcrumb {
+    font-size: 12px;
+    color: var(--text3);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .hp-breadcrumb a { color: var(--text3); text-decoration: none; font-weight: 600; }
+  .hp-breadcrumb a:hover { color: var(--navy); }
+
+  .hp-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .hp-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 12px;
+    border-radius: 9px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text2);
+    text-decoration: none;
+    font-size: 12.5px;
+    font-weight: 700;
+  }
+  .hp-tab.active { background: var(--navy); color: #fff; border-color: var(--navy); }
+
+  .hp-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 12px; }
+  .hp-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  .hp-kpi .label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: .04em; }
+  .hp-kpi .value { font-size: 28px; font-weight: 800; color: var(--navy); margin-top: 3px; }
+
+  .hp-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+  .hp-toolbar-left, .hp-toolbar-right {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .hp-toolbar input[type="search"],
+  .hp-toolbar select {
+    border: 1px solid var(--border-dark);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 13px;
+    background: var(--surface);
+    color: var(--text);
+  }
+  .hp-toolbar input[type="search"] { min-width: 230px; }
+  .hp-bulk {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .hp-empty {
+    border: 1px dashed var(--border-dark);
+    border-radius: 12px;
+    background: var(--surface2);
+    color: var(--text3);
+    padding: 22px;
+    text-align: center;
+  }
+  .hp-status-pill {
+    padding: 4px 10px;
+    border-radius: 14px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .02em;
+    display: inline-flex;
+    align-items: center;
+  }
+  .hp-status-published { background: var(--green-light); color: var(--green); border: 1px solid var(--green-border); }
+  .hp-status-draft { background: var(--amber-light); color: var(--amber); border: 1px solid var(--amber-border); }
+  .hp-status-passive { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
+  .hp-status-archived { background: var(--red-light); color: var(--red); border: 1px solid var(--red-border); }
+  .hp-preview-note {
+    font-size: 12px;
+    color: var(--text3);
+    background: var(--blue-light);
+    border: 1px solid #bfdbfe;
+    padding: 8px 10px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="hp-breadcrumb">
+  <a href="{{ url_for('inventory.dashboard') }}">Panel</a>
+  <span>/</span>
+  <span>Anasayfa CMS</span>
+  {% block hp_crumb %}{% endblock %}
+</div>
+
+<div class="page-header">
+  <div>
+    <div class="page-title">Anasayfa İçerik Yönetimi</div>
+    <div class="page-meta">Slider, public sayfalar, faaliyet modülleri, duyurular ve sayısal özet alanlarını tek yerden yönetin.</div>
+  </div>
+  <div style="display:flex; gap:8px;">
+    <a class="btn btn-secondary" href="{{ url_for('content.media_library') }}">Medya Kütüphanesi</a>
+    <a class="btn btn-secondary" href="{{ url_for('ana_sayfa') }}" target="_blank">Canlı Önizleme</a>
+  </div>
+</div>
+
+<div class="hp-tabs">
+  <a href="{{ url_for('content.homepage_dashboard') }}" class="hp-tab {% if request.endpoint == 'content.homepage_dashboard' %}active{% endif %}">🏠 Özet</a>
+  <a href="{{ url_for('content.homepage_slider_list') }}" class="hp-tab {% if request.endpoint in ['content.homepage_slider_list', 'content.homepage_slider_create', 'content.homepage_slider_edit'] %}active{% endif %}">🎞️ Slider</a>
+  <a href="{{ url_for('content.homepage_section_list') }}" class="hp-tab {% if request.endpoint in ['content.homepage_section_list', 'content.homepage_section_create', 'content.homepage_section_edit'] %}active{% endif %}">🤝 Public İçerik Modülleri</a>
+  <a href="{{ url_for('content.homepage_announcements_list') }}" class="hp-tab {% if request.endpoint in ['content.homepage_announcements_list', 'content.homepage_announcement_create', 'content.homepage_announcement_edit'] %}active{% endif %}">📢 Duyurular</a>
+  <a href="{{ url_for('content.homepage_stats_list') }}" class="hp-tab {% if request.endpoint == 'content.homepage_stats_list' %}active{% endif %}">📈 İstatistikler</a>
+  <a href="{{ url_for('content.media_library') }}" class="hp-tab {% if request.endpoint == 'content.media_library' %}active{% endif %}">🖼️ Medya</a>
+</div>
+
+{% block homepage_body %}{% endblock %}
+{% endblock %}

@@ -1,147 +1,482 @@
-from flask import render_template, request, redirect, url_for, flash, abort
+import json
+
+from flask import current_app, render_template, request, redirect, url_for, flash, abort
 from flask_login import login_required, current_user
-from extensions import db, log_kaydet, guvenli_metin
+
+from extensions import db, limiter, log_kaydet, guvenli_metin
+from homepage_demo import (
+    clear_homepage_demo_data,
+    format_homepage_demo_summary,
+    get_homepage_demo_status,
+    seed_homepage_demo_data,
+)
 from models import Havalimani, Haber, NavMenu, SliderResim, SiteAyarlari
 from . import admin_bp
+from decorators import DEFAULT_ROLE_LABELS, permission_required
 
-# --- HAVALİMANI YÖNETİMİ ---
+
+def _load_site_meta(ayarlar):
+    """SiteAyarlari.iletisim_notu alanından JSON metadata okur."""
+    if not ayarlar or not ayarlar.iletisim_notu:
+        return {}
+
+    try:
+        data = json.loads(ayarlar.iletisim_notu)
+        return data if isinstance(data, dict) else {}
+    except (TypeError, ValueError):
+        # Eski düz metin kullanımları bozulmasın diye migrate ediyoruz.
+        legacy_note = str(ayarlar.iletisim_notu).strip()
+        return {"site_notu": legacy_note} if legacy_note else {}
+
+
+def _save_site_meta(ayarlar, meta):
+    ayarlar.iletisim_notu = json.dumps(meta, ensure_ascii=False)
+
+
+def _clean_role_label(value, fallback):
+    temiz = guvenli_metin(value or "").strip()
+    legacy_map = {
+        "Havalimani Yoneticisi": "Havalimanı Yöneticisi",
+        "Genel Mudurluk": "Genel Müdürlük",
+    }
+    temiz = legacy_map.get(temiz, temiz)
+    return temiz if temiz else fallback
+
+
+def _resolve_role_labels(ayarlar):
+    labels = DEFAULT_ROLE_LABELS.copy()
+    meta = _load_site_meta(ayarlar)
+    raw_labels = meta.get("role_labels", {})
+
+    if isinstance(raw_labels, dict):
+        for role_key in labels:
+            labels[role_key] = _clean_role_label(raw_labels.get(role_key), labels[role_key])
+
+    return labels
+
+
+# --- HAVALİMANI YÖNETİMİ (SİTE AYARLARI İÇİNE TAŞINDI) ---
 
 @admin_bp.route('/havalimanlari', methods=['GET', 'POST'])
 @login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+@permission_required('settings.manage')
 def havalimanlari():
-    """Birimleri (Havalimanlarını) yönetir."""
+    """Eski endpoint uyumluluğu için korundu, yönetim artık Site Ayarları içinde."""
     if not current_user.is_sahip:
         abort(403)
-        
-    if request.method == 'POST':
-        islem = request.form.get('islem')
-        
-        # ✅ GÜVENLİK: Input temizleme
-        ad = guvenli_metin(request.form.get('ad'))
-        kodu = guvenli_metin(request.form.get('kodu')).upper()
 
-        if islem == 'ekle':
-            # ✅ SOFT DELETE: Sadece aktif olanlar içinde mükerrer kontrolü
-            if Havalimani.query.filter_by(kodu=kodu, is_deleted=False).first():
-                flash(f'Hata: {kodu} kodlu bir birim zaten mevcut!', 'danger')
-            else:
-                yeni_h = Havalimani(ad=ad, kodu=kodu)
-                db.session.add(yeni_h)
-                db.session.commit()
-                log_kaydet('Sistem', f'Yeni birim eklendi: {kodu}')
-                flash('Yeni birim başarıyla tanımlandı.', 'success')
-                
-        elif islem == 'guncelle':
-            h_id = request.form.get('id')
-            h = db.session.get(Havalimani, h_id)
-            if h and not h.is_deleted:
-                eski_ad = h.ad
-                h.ad = ad
-                h.kodu = kodu
-                db.session.commit()
-                log_kaydet('Sistem', f'Birim güncellendi: {eski_ad} -> {h.ad}')
-                flash('Birim bilgileri güncellendi.', 'success')
-        
-        return redirect(url_for('admin.havalimanlari'))
+    if request.method == 'GET':
+        return redirect(url_for('admin.site_yonetimi', tab='organizasyon'))
 
-    # ✅ SOFT DELETE: Sadece silinmemiş birimleri listele
-    liste = Havalimani.query.filter_by(is_deleted=False).all()
-    return render_template('admin/havalimanlari.html', havalimanlari=liste)
+    islem = request.form.get('islem')
+    ad = guvenli_metin(request.form.get('ad')).strip()
+    kodu = guvenli_metin(request.form.get('kodu')).strip().upper()
 
-@admin_bp.route('/havalimani-sil/<int:id>')
+    if not ad or not kodu:
+        flash("Havalimanı adı ve kodu zorunludur.", "danger")
+        return redirect(url_for('admin.site_yonetimi', tab='organizasyon'))
+
+    if islem == 'ekle':
+        if Havalimani.query.filter_by(kodu=kodu, is_deleted=False).first():
+            flash(f'Hata: {kodu} kodlu bir birim zaten mevcut!', 'danger')
+        else:
+            yeni_h = Havalimani(ad=ad, kodu=kodu)
+            db.session.add(yeni_h)
+            db.session.commit()
+            log_kaydet('Sistem', f'Yeni birim eklendi: {kodu}')
+            flash('Yeni birim başarıyla tanımlandı.', 'success')
+
+    elif islem == 'guncelle':
+        h_id = request.form.get('id', type=int)
+        h = db.session.get(Havalimani, h_id)
+        if not h or h.is_deleted:
+            flash("Güncellenecek havalimanı bulunamadı.", "danger")
+            return redirect(url_for('admin.site_yonetimi', tab='organizasyon'))
+
+        kod_cakisiyor = Havalimani.query.filter(
+            Havalimani.kodu == kodu,
+            Havalimani.id != h.id,
+            Havalimani.is_deleted.is_(False),
+        ).first()
+        if kod_cakisiyor:
+            flash(f'Hata: {kodu} kodu başka bir birimde kullanılıyor.', 'danger')
+            return redirect(url_for('admin.site_yonetimi', tab='organizasyon'))
+
+        eski_ad = h.ad
+        eski_kod = h.kodu
+        h.ad = ad
+        h.kodu = kodu
+        db.session.commit()
+        log_kaydet('Sistem', f'Birim güncellendi: {eski_kod}/{eski_ad} -> {kodu}/{ad}')
+        flash('Birim bilgileri güncellendi.', 'success')
+
+    else:
+        flash("Geçersiz havalimanı işlemi.", "danger")
+
+    return redirect(url_for('admin.site_yonetimi', tab='organizasyon'))
+
+
+@admin_bp.route('/havalimani-sil/<int:id>', methods=['GET'], endpoint='havalimani_sil_legacy')
 @login_required
+@permission_required('settings.manage')
+def havalimani_sil_legacy(id):
+    flash("Bu işlem yalnızca form gönderimi ile yapılabilir.", "warning")
+    return redirect(url_for('admin.site_yonetimi', tab='organizasyon'))
+
+
+@admin_bp.route('/havalimani-sil/<int:id>', methods=['POST'])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+@permission_required('settings.manage')
 def havalimani_sil(id):
     """Birimi fiziksel olarak silmez, arşivler (Soft Delete)."""
     if not current_user.is_sahip:
         abort(403)
-        
+
     h = db.session.get(Havalimani, id)
     if h and not h.is_deleted:
         kod = h.kodu
-        # ✅ SOFT DELETE: db.session.delete yerine kullanıyoruz
         h.soft_delete()
+        db.session.commit()
         log_kaydet('Sistem', f'Birim arşivlendi: {kod}')
-        flash(f"{kod} birimi ve bağlı kayıtlar arşivlendi.", "info")
+        flash(f"{kod} birimi arşive taşındı.", "info")
     else:
         flash("Birim bulunamadı.", "danger")
-        
-    return redirect(url_for('admin.havalimanlari'))
+
+    return redirect(url_for('admin.site_yonetimi', tab='organizasyon'))
+
+
+@admin_bp.route('/yetki-isimlerini-guncelle', methods=['POST'])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required('roles.manage')
+def yetki_isimlerini_guncelle():
+    """Rol isimlerinin görünüm etiketlerini günceller."""
+    if not current_user.is_sahip:
+        abort(403)
+
+    ayarlar = SiteAyarlari.query.first() or SiteAyarlari()
+    if not ayarlar.id:
+        db.session.add(ayarlar)
+
+    meta = _load_site_meta(ayarlar)
+    mevcut_labels = _resolve_role_labels(ayarlar)
+
+    yeni_labels = {
+        "sahip": _clean_role_label(request.form.get("rol_sahip"), mevcut_labels["sahip"]),
+        "yetkili": _clean_role_label(request.form.get("rol_yetkili"), mevcut_labels["yetkili"]),
+        "personel": _clean_role_label(request.form.get("rol_personel"), mevcut_labels["personel"]),
+        "genel_mudurluk": _clean_role_label(request.form.get("rol_genel_mudurluk"), mevcut_labels["genel_mudurluk"]),
+    }
+
+    meta["role_labels"] = yeni_labels
+    _save_site_meta(ayarlar, meta)
+    db.session.commit()
+
+    log_kaydet("Sistem", "Rol etiketleri güncellendi.")
+    flash("Yetki isimleri başarıyla güncellendi.", "success")
+    return redirect(url_for('admin.site_yonetimi', tab='organizasyon'))
+
 
 # --- SİTE YÖNETİMİ VE CMS ---
 
 @admin_bp.route('/site-yonetimi')
 @login_required
+@permission_required('settings.manage')
 def site_yonetimi():
-    """Genel site ayarları, slider ve menü yönetimi."""
+    """Site ayarları, organizasyon ve içerik yönetimi."""
     if not current_user.is_sahip:
         abort(403)
-    return render_template('admin/site_yonetimi.html', 
-                           menuler=NavMenu.query.all(), 
-                           sliderlar=SliderResim.query.all(), 
-                           ayarlar=SiteAyarlari.query.first())
+
+    ayarlar = SiteAyarlari.query.first()
+    meta = _load_site_meta(ayarlar)
+    rol_etiketleri = _resolve_role_labels(ayarlar)
+    aktif_sekme = request.args.get('tab', 'genel')
+    if aktif_sekme not in ['genel', 'organizasyon', 'icerik']:
+        aktif_sekme = 'genel'
+    homepage_demo_status = get_homepage_demo_status() if current_app.config.get("DEMO_TOOLS_ENABLED", False) else None
+
+    return render_template(
+        'admin/site_yonetimi.html',
+        menuler=NavMenu.query.all(),
+        sliderlar=SliderResim.query.all(),
+        ayarlar=ayarlar,
+        site_notu=meta.get("site_notu", ""),
+        public_contact_note=meta.get("public_contact_note", meta.get("site_notu", "")),
+        public_logo_url=meta.get("public_logo_url", ""),
+        rol_etiketleri=rol_etiketleri,
+        havalimanlari=Havalimani.query.filter_by(is_deleted=False).all(),
+        aktif_sekme=aktif_sekme,
+        demo_tools_enabled=current_app.config.get("DEMO_TOOLS_ENABLED", False),
+        homepage_demo_status=homepage_demo_status,
+    )
+
+
+@admin_bp.route('/demo-veri/olustur', methods=['POST'])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required('settings.manage')
+def demo_veri_olustur():
+    if not current_user.is_sahip:
+        abort(403)
+    if not current_app.config.get("DEMO_TOOLS_ENABLED", False):
+        abort(404)
+    if guvenli_metin(request.form.get("confirm_demo_seed")).strip().upper() != "DEMO":
+        flash("Demo veri üretimi için onay alanına DEMO yazmalısınız.", "danger")
+        return redirect(url_for('admin.site_yonetimi', tab='genel'))
+
+    from demo_data import format_demo_summary, seed_demo_data
+
+    summary = seed_demo_data(reset=request.form.get("demo_reset") == "1")
+    log_kaydet("Demo Veri", f"Demo verisi üretildi.\n{format_demo_summary(summary)}", event_key="demo.seed.create")
+    flash("Demo verileri hazırlandı.", "success")
+    return redirect(url_for('admin.site_yonetimi', tab='genel'))
+
+
+@admin_bp.route('/demo-veri/temizle', methods=['POST'])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required('settings.manage')
+def demo_veri_temizle():
+    if not current_user.is_sahip:
+        abort(403)
+    if not current_app.config.get("DEMO_TOOLS_ENABLED", False):
+        abort(404)
+    if guvenli_metin(request.form.get("confirm_demo_clear")).strip().upper() != "DEMO-SIL":
+        flash("Demo veri temizliği için onay alanına DEMO-SIL yazmalısınız.", "danger")
+        return redirect(url_for('admin.site_yonetimi', tab='genel'))
+
+    from demo_data import clear_demo_data
+
+    result = clear_demo_data()
+    log_kaydet("Demo Veri", f"Demo verileri temizlendi. Silinen kayıt: {result['deleted']}", event_key="demo.seed.clear")
+    flash("Demo verileri temizlendi.", "info")
+    return redirect(url_for('admin.site_yonetimi', tab='genel'))
+
+
+@admin_bp.route('/demo-veri/anasayfa/olustur', methods=['POST'])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required('settings.manage')
+def anasayfa_demo_olustur():
+    if not current_user.is_sahip:
+        abort(403)
+    if not current_app.config.get("DEMO_TOOLS_ENABLED", False):
+        abort(404)
+
+    try:
+        result = seed_homepage_demo_data()
+    except RuntimeError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for('admin.site_yonetimi', tab='genel'))
+
+    summary = result["summary"]
+    event_key = "demo.homepage.seed.create" if result["created"] else "demo.homepage.seed.skip"
+    outcome = "success" if result["created"] else "info"
+    log_kaydet(
+        "Anasayfa Demo",
+        f"{result['message']}\n{format_homepage_demo_summary(summary)}",
+        event_key=event_key,
+        outcome=outcome,
+    )
+    flash(result["message"], "success" if result["created"] else "info")
+    return redirect(url_for('admin.site_yonetimi', tab='genel'))
+
+
+@admin_bp.route('/demo-veri/anasayfa/temizle', methods=['POST'])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required('settings.manage')
+def anasayfa_demo_temizle():
+    if not current_user.is_sahip:
+        abort(403)
+    if not current_app.config.get("DEMO_TOOLS_ENABLED", False):
+        abort(404)
+
+    try:
+        result = clear_homepage_demo_data()
+    except RuntimeError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for('admin.site_yonetimi', tab='genel'))
+
+    event_key = "demo.homepage.seed.clear"
+    log_kaydet(
+        "Anasayfa Demo",
+        f"{result['message']}\nSilinen kayit: {result['deleted']}",
+        event_key=event_key,
+        outcome="success" if result["deleted"] else "info",
+    )
+    flash(
+        result["message"] if result["deleted"] else "Temizlenecek anasayfa demo kaydi bulunamadi.",
+        "info" if result["deleted"] == 0 else "success",
+    )
+    return redirect(url_for('admin.site_yonetimi', tab='genel'))
+
 
 @admin_bp.route('/haber-ekle', methods=['POST'])
 @login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required('settings.manage')
 def haber_ekle():
     """Site ana sayfasına haber ekler."""
-    if not current_user.can_edit:
+    if not current_user.is_sahip:
         abort(403)
-        
+
     baslik = guvenli_metin(request.form.get('haber_baslik'))
     icerik = guvenli_metin(request.form.get('haber_icerik'))
-    
+
     yeni_haber = Haber(baslik=baslik, icerik=icerik)
     db.session.add(yeni_haber)
     db.session.commit()
-    
+
     log_kaydet("İçerik", f"Yeni haber: {baslik}")
     flash("Haber başarıyla yayınlandı.", "success")
-    return redirect(url_for('inventory.dashboard' if current_user.rol == 'yetkili' else 'admin.site_yonetimi'))
+    return redirect(url_for('admin.site_yonetimi', tab='icerik'))
+
 
 @admin_bp.route('/site-ayarlarini-guncelle', methods=['POST'])
 @login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required('settings.manage')
 def site_ayarlarini_guncelle():
-    """Global site başlık ve alt metinlerini günceller."""
-    if not current_user.is_sahip: abort(403)
-    
+    """Global site başlık ve açıklama metinlerini günceller."""
+    if not current_user.is_sahip:
+        abort(403)
+
     ayarlar = SiteAyarlari.query.first() or SiteAyarlari()
-    if not ayarlar.id: db.session.add(ayarlar)
-    
+    if not ayarlar.id:
+        db.session.add(ayarlar)
+
     ayarlar.baslik = guvenli_metin(request.form.get('baslik'))
     ayarlar.alt_metin = guvenli_metin(request.form.get('alt_metin'))
-    
+
+    meta = _load_site_meta(ayarlar)
+    logo_url = guvenli_metin(request.form.get("logo_url") or "").strip()
+    lowered_logo = logo_url.lower()
+    if logo_url and lowered_logo.startswith(("javascript:", "data:", "vbscript:")):
+        flash("Logo görsel yolu güvenlik doğrulamasını geçemedi.", "danger")
+        return redirect(url_for('admin.site_yonetimi', tab='genel'))
+
+    meta["public_logo_url"] = logo_url
+    meta["public_contact_note"] = guvenli_metin(request.form.get("public_contact_note") or request.form.get("iletisim_notu"))
+    if "role_labels" not in meta:
+        meta["role_labels"] = _resolve_role_labels(ayarlar)
+    _save_site_meta(ayarlar, meta)
+
     db.session.commit()
     log_kaydet("Sistem", "Site ayarları güncellendi.")
     flash("Site ayarları güncellendi.", "success")
-    return redirect(url_for('admin.site_yonetimi'))
+    return redirect(url_for('admin.site_yonetimi', tab='genel'))
 
-# --- SLIDER VE MENÜ (CMS ALT BİLEŞENLERİ) ---
+
+# --- SLIDER VE MENÜ ---
 
 @admin_bp.route('/slider-ekle', methods=['POST'])
 @login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required('settings.manage')
 def slider_ekle():
-    if not current_user.is_sahip: abort(403)
+    if not current_user.is_sahip:
+        abort(403)
+
     yeni = SliderResim(
-        resim_url=guvenli_metin(request.form.get('resim_url')), 
+        resim_url=guvenli_metin(request.form.get('resim_url')),
         baslik=guvenli_metin(request.form.get('slider_baslik'))
     )
     db.session.add(yeni)
     db.session.commit()
     flash("Slider eklendi.", "success")
-    return redirect(url_for('admin.site_yonetimi'))
+    return redirect(url_for('admin.site_yonetimi', tab='icerik'))
+
+
+@admin_bp.route('/slider-guncelle/<int:id>', methods=['POST'])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required('settings.manage')
+def slider_guncelle(id):
+    if not current_user.is_sahip:
+        abort(403)
+
+    slider = db.session.get(SliderResim, id)
+    if not slider:
+        flash("Güncellenecek slider bulunamadı.", "danger")
+        return redirect(url_for('admin.site_yonetimi', tab='icerik'))
+
+    slider.resim_url = guvenli_metin(request.form.get('resim_url'))
+    slider.baslik = guvenli_metin(request.form.get('slider_baslik'))
+    db.session.commit()
+    flash("Slider güncellendi.", "success")
+    return redirect(url_for('admin.site_yonetimi', tab='icerik'))
+
+
+@admin_bp.route('/slider-sil/<int:id>', methods=['GET'], endpoint='slider_sil_legacy')
+@login_required
+@permission_required('settings.manage')
+def slider_sil_legacy(id):
+    flash("Bu işlem yalnızca form gönderimi ile yapılabilir.", "warning")
+    return redirect(url_for('admin.site_yonetimi', tab='icerik'))
+
+
+@admin_bp.route('/slider-sil/<int:id>', methods=['POST'])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+@permission_required('settings.manage')
+def slider_sil(id):
+    if not current_user.is_sahip:
+        abort(403)
+
+    slider = db.session.get(SliderResim, id)
+    if slider:
+        db.session.delete(slider)
+        db.session.commit()
+        flash("Slider silindi.", "info")
+    else:
+        flash("Silinecek slider bulunamadı.", "danger")
+
+    return redirect(url_for('admin.site_yonetimi', tab='icerik'))
+
 
 @admin_bp.route('/menu-ekle', methods=['POST'])
 @login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required('settings.manage')
 def menu_ekle():
-    if not current_user.is_sahip: abort(403)
+    if not current_user.is_sahip:
+        abort(403)
+
     yeni = NavMenu(
-        ad=guvenli_metin(request.form.get('menu_ad')), 
+        ad=guvenli_metin(request.form.get('menu_ad')),
         link=guvenli_metin(request.form.get('menu_link'))
     )
     db.session.add(yeni)
     db.session.commit()
     flash("Menü eklendi.", "success")
-    return redirect(url_for('admin.site_yonetimi'))
+    return redirect(url_for('admin.site_yonetimi', tab='icerik'))
 
-# Slider/Menu silme işlemleri CMS olduğu için genelde hard-delete kalabilir 
-# ancak istersen onları da soft-delete yapabiliriz.
+
+@admin_bp.route('/menu-sil/<int:id>', methods=['GET'], endpoint='menu_sil_legacy')
+@login_required
+@permission_required('settings.manage')
+def menu_sil_legacy(id):
+    flash("Bu işlem yalnızca form gönderimi ile yapılabilir.", "warning")
+    return redirect(url_for('admin.site_yonetimi', tab='icerik'))
+
+
+@admin_bp.route('/menu-sil/<int:id>', methods=['POST'])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+@permission_required('settings.manage')
+def menu_sil(id):
+    if not current_user.is_sahip:
+        abort(403)
+
+    menu = db.session.get(NavMenu, id)
+    if menu:
+        db.session.delete(menu)
+        db.session.commit()
+        flash("Menü silindi.", "info")
+    else:
+        flash("Silinecek menü bulunamadı.", "danger")
+
+    return redirect(url_for('admin.site_yonetimi', tab='icerik'))

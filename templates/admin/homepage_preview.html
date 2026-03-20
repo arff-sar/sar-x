@@ -1,0 +1,50 @@
+{% extends "admin/homepage_base.html" %}
+
+{% block homepage_body %}
+<div class="panel" style="max-width:980px;">
+  <div class="panel-header">
+    <div class="panel-title">İçerik Önizleme</div>
+  </div>
+  <div class="panel-body">
+    <div class="hp-preview-note">Bu ekran kaydetme yapmaz. İçeriğin yayına çıkmadan önce görsel özetini gösterir.</div>
+
+    <div class="public-card" style="padding:18px; border:1px solid var(--border); border-radius:12px;">
+      {% if preview.content_type == 'slider' %}
+        <h2 style="margin:0 0 8px;">{{ preview.title or 'Slider Başlığı' }}</h2>
+        <p style="margin:0 0 8px; color:var(--text3);">{{ preview.subtitle or '-' }}</p>
+        <p style="margin:0 0 12px; color:var(--text2);">{{ preview.description or '-' }}</p>
+        {% if preview.image_path %}
+          <img src="{{ preview.image_path }}" alt="{{ preview.title }}" style="max-width:100%; border:1px solid var(--border); border-radius:10px;">
+        {% endif %}
+      {% elif preview.content_type == 'section' %}
+        <div style="font-family:var(--mono); color:var(--text3); margin-bottom:8px;">Section</div>
+        <h2 style="margin:0 0 8px;">{{ preview.title or 'Bölüm Başlığı' }}</h2>
+        <p style="margin:0 0 8px; color:var(--text3);">{{ preview.subtitle or '-' }}</p>
+        <p style="margin:0; color:var(--text2);">{{ preview.content or '-' }}</p>
+      {% elif preview.content_type == 'announcement' %}
+        <div style="font-family:var(--mono); color:var(--text3); margin-bottom:8px;">Duyuru</div>
+        <h2 style="margin:0 0 8px;">{{ preview.title or 'Duyuru Başlığı' }}</h2>
+        <p style="margin:0 0 8px; color:var(--text3);">{{ preview.summary or '-' }}</p>
+        <p style="margin:0; color:var(--text2);">{{ preview.content or '-' }}</p>
+      {% elif preview.content_type == 'stat' %}
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:22px;">{{ preview.icon or '●' }}</span>
+          <strong>{{ preview.title or 'İstatistik Başlığı' }}</strong>
+        </div>
+        <div style="font-size:38px; font-weight:800; margin:8px 0;">{{ preview.value_text or '0' }}</div>
+        <p style="margin:0; color:var(--text3);">{{ preview.subtitle or '-' }}</p>
+      {% elif preview.content_type == 'quicklink' %}
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:20px;">{{ preview.icon or '🔗' }}</span>
+          <strong>{{ preview.title or 'Hızlı Bağlantı' }}</strong>
+        </div>
+        <p style="margin:8px 0 0; color:var(--text2);">{{ preview.description or '-' }}</p>
+        <p style="margin:8px 0 0; font-family:var(--mono); color:var(--text3);">{{ preview.link_url or '#' }}</p>
+      {% else %}
+        <h2 style="margin:0 0 8px;">{{ preview.title or 'Doküman' }}</h2>
+        <p style="margin:0; color:var(--text2);">{{ preview.description or preview.content or '-' }}</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

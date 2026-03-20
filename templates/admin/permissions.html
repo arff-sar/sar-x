@@ -1,0 +1,510 @@
+{% extends "base.html" %}
+{% block title %}Yetki Matrisi{% endblock %}
+
+{% block extra_css %}
+<style>
+  .matrix-shell { display:grid; grid-template-columns:minmax(0, 1.25fr) minmax(320px, .75fr); gap:20px; align-items:start; }
+  .matrix-form { display:grid; gap:18px; }
+  .matrix-toolbar { display:flex; flex-wrap:wrap; align-items:end; justify-content:space-between; gap:14px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+  .matrix-toolbar-main { flex:1; min-width:260px; }
+  .matrix-toolbar-actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+  .matrix-role-select { max-width:360px; margin-bottom:0 !important; }
+  .matrix-help { font-size:12px; color:var(--text3); line-height:1.55; margin-top:8px; }
+  .matrix-action-note { font-size:11px; color:var(--text4); }
+  .matrix-stack { display:grid; gap:14px; }
+  .matrix-accordion { border:1px solid var(--border); border-radius:16px; background:var(--surface2); overflow:hidden; box-shadow:0 4px 18px rgba(15, 23, 42, 0.04); }
+  .matrix-accordion.is-open { border-color:#cbd5e1; box-shadow:0 14px 28px rgba(15, 23, 42, 0.08); }
+  .matrix-accordion-toggle { width:100%; border:0; background:transparent; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:16px 18px; text-align:left; }
+  .matrix-accordion-toggle:hover { background:rgba(255,255,255,.5); }
+  .matrix-accordion-main { min-width:0; }
+  .matrix-accordion-title { display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:15px; font-weight:800; color:var(--navy); }
+  .matrix-count-badge { display:inline-flex; align-items:center; justify-content:center; min-width:34px; padding:4px 10px; border-radius:999px; background:var(--orange-light); color:var(--orange); font-size:11px; font-weight:800; border:1px solid var(--orange-border); }
+  .matrix-accordion-meta { margin-top:6px; font-size:12px; color:var(--text3); }
+  .matrix-accordion-chevron { font-size:16px; color:var(--text4); transition:transform .18s ease; }
+  .matrix-accordion.is-open .matrix-accordion-chevron { transform:rotate(180deg); }
+  .matrix-accordion-body { display:none; padding:0 18px 18px; border-top:1px solid rgba(226,232,240,.85); background:linear-gradient(180deg, rgba(255,255,255,.78), rgba(248,250,252,.92)); }
+  .matrix-accordion.is-open .matrix-accordion-body { display:grid; gap:14px; }
+  .matrix-selected-panel { display:grid; gap:8px; padding-top:14px; }
+  .matrix-selected-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .matrix-selected-title { font-size:12px; font-weight:800; color:var(--navy); text-transform:uppercase; letter-spacing:.04em; }
+  .matrix-selected-hint { font-size:11px; color:var(--text4); }
+  .matrix-selected-chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .matrix-chip { display:inline-flex; align-items:center; gap:8px; padding:8px 10px; border-radius:999px; background:#fff; border:1px solid var(--border); font-size:11.5px; line-height:1.2; color:var(--navy); box-shadow:0 4px 14px rgba(15, 23, 42, 0.05); }
+  .matrix-chip-label { font-weight:800; }
+  .matrix-chip-key { font-family:var(--mono); font-size:10px; color:var(--text4); }
+  .matrix-empty { padding:10px 12px; border:1px dashed var(--border-dark); border-radius:12px; font-size:12px; color:var(--text3); background:rgba(255,255,255,.65); }
+  .matrix-permission-list { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:10px 12px; }
+  .matrix-permission-option { display:flex; align-items:flex-start; gap:10px; padding:12px 13px; border:1px solid var(--border); border-radius:14px; background:#fff; cursor:pointer; transition:border-color .16s ease, box-shadow .16s ease, transform .16s ease; min-height:80px; }
+  .matrix-permission-option:hover { border-color:#cbd5e1; transform:translateY(-1px); }
+  .matrix-permission-option.is-selected { border-color:rgba(249,115,22,.55); box-shadow:0 10px 22px rgba(249,115,22,.12); background:linear-gradient(180deg, #fff 0%, #fff7ed 100%); }
+  .matrix-permission-option input { margin-top:5px; accent-color:var(--orange); width:16px; height:16px; flex-shrink:0; }
+  .matrix-permission-option .permission-meta { gap:5px; min-width:0; }
+  .matrix-permission-option .permission-meta-head { align-items:flex-start; gap:8px; }
+  .matrix-permission-option .permission-meta-label { font-size:13px; font-weight:800; color:var(--navy); line-height:1.35; }
+  .matrix-permission-option .permission-meta-key { font-family:var(--mono); font-size:10.5px; color:var(--text4); }
+  .matrix-summary-card { position:sticky; top:20px; display:grid; gap:16px; }
+  .matrix-summary-top { padding:18px; border:1px solid var(--border); border-radius:16px; background:linear-gradient(180deg, #ffffff, #f8fafc); box-shadow:0 10px 28px rgba(15, 23, 42, 0.06); }
+  .matrix-summary-kicker { font-size:11px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.08em; }
+  .matrix-summary-role { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-top:10px; }
+  .matrix-summary-role-name { font-size:21px; font-weight:800; color:var(--navy); line-height:1.1; }
+  .matrix-summary-role-desc { margin-top:8px; font-size:12px; color:var(--text3); line-height:1.55; }
+  .matrix-summary-total { min-width:90px; padding:10px 12px; border-radius:14px; background:var(--orange-light); border:1px solid var(--orange-border); text-align:center; color:var(--orange); }
+  .matrix-summary-total strong { display:block; font-size:24px; font-weight:800; line-height:1; }
+  .matrix-summary-total span { display:block; margin-top:4px; font-size:11px; font-weight:700; color:var(--text3); }
+  .matrix-summary-body { display:grid; gap:10px; }
+  .matrix-summary-row { padding:14px; border:1px solid var(--border); border-radius:14px; background:#fff; }
+  .matrix-summary-row-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .matrix-summary-row-title { font-size:13px; font-weight:800; color:var(--navy); }
+  .matrix-summary-row-count { font-size:11px; font-weight:800; color:var(--text4); }
+  .matrix-summary-row-list { margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; }
+  .matrix-summary-row-list .matrix-chip { background:var(--surface2); box-shadow:none; }
+  .matrix-summary-empty { padding:18px; border:1px dashed var(--border-dark); border-radius:14px; background:rgba(255,255,255,.72); font-size:12px; color:var(--text3); line-height:1.6; }
+  .matrix-live-note { font-size:11px; color:var(--text4); padding-top:2px; }
+  .matrix-divider { height:1px; background:var(--border); margin:4px 0; }
+  .matrix-submit-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding-top:4px; }
+  .matrix-submit-actions { display:flex; flex-wrap:wrap; gap:10px; }
+
+  @media (max-width: 1100px) {
+    .matrix-shell { grid-template-columns:1fr; }
+    .matrix-summary-card { position:static; }
+  }
+
+  @media (max-width: 720px) {
+    .matrix-toolbar,
+    .matrix-submit-row,
+    .matrix-summary-role,
+    .matrix-selected-head { align-items:flex-start; }
+    .matrix-toolbar-actions,
+    .matrix-submit-actions { width:100%; }
+    .matrix-toolbar-actions .btn,
+    .matrix-submit-actions .btn { flex:1 1 180px; }
+    .matrix-permission-list { grid-template-columns:1fr; }
+    .matrix-summary-total { min-width:0; width:100%; }
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Yetki Matrisi</div>
+        <div class="page-meta">Rol bazlı yetki seçimini kategori akordiyonları içinde yönetin, aktif özeti canlı izleyin ve PDF olarak dışa aktarın.</div>
+    </div>
+    <a href="{{ url_for('admin.roles') }}" class="btn btn-secondary">Roller</a>
+</div>
+
+<div class="matrix-shell">
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Rol Yetkilerini Düzenle</div>
+        </div>
+        <div class="panel-body">
+            <form method="POST" action="{{ url_for('admin.permissions') }}" class="matrix-form" id="permissionMatrixForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="matrix-toolbar">
+                    <div class="matrix-toolbar-main">
+                        <label for="roleKey">Rol</label>
+                        <select
+                            id="roleKey"
+                            name="role_key"
+                            class="form-control matrix-role-select"
+                            data-role-select
+                        >
+                            {% for role in role_options %}
+                            <option
+                                value="{{ role.key }}"
+                                data-role-label="{{ role.label }}"
+                                data-role-description="{{ role.description }}"
+                                {% if role.key == selected_role_key %}selected{% endif %}
+                            >
+                                {{ role.label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <div class="matrix-help">Rol değiştirildiğinde kayıtlı yetkiler aynı ekranda yüklenir. Seçili izinler kategori içinde rozet olarak görünür.</div>
+                    </div>
+                    <div class="matrix-toolbar-actions">
+                        <button type="submit" class="btn btn-primary" data-save-matrix>Yetki Matrisini Kaydet</button>
+                        <button
+                            type="submit"
+                            class="btn btn-secondary"
+                            formaction="{{ url_for('admin.permissions_export_pdf') }}"
+                            formmethod="POST"
+                            data-export-pdf
+                        >
+                            PDF Olarak Dışa Aktar
+                        </button>
+                    </div>
+                </div>
+
+                <div class="matrix-stack" data-matrix-accordion-root>
+                    {% for module in summary_modules %}
+                    <section
+                        class="matrix-accordion {% if module.active_count or loop.first %}is-open{% endif %}"
+                        data-module-card="{{ module.key }}"
+                        data-module-label="{{ module.label }}"
+                    >
+                        <button
+                            type="button"
+                            class="matrix-accordion-toggle"
+                            data-accordion-trigger
+                            aria-expanded="{% if module.active_count or loop.first %}true{% else %}false{% endif %}"
+                        >
+                            <div class="matrix-accordion-main">
+                                <div class="matrix-accordion-title">
+                                    <span>{{ module.label }}</span>
+                                    <span class="matrix-count-badge" data-module-count="{{ module.key }}">{{ module.active_count }}</span>
+                                </div>
+                                <div class="matrix-accordion-meta">Bu kategorideki izinler yalnız kendi bloğunda kalır ve aktif rozetler olarak aşağıda görünür.</div>
+                            </div>
+                            <span class="matrix-accordion-chevron" aria-hidden="true">⌄</span>
+                        </button>
+                        <div class="matrix-accordion-body">
+                            <div class="matrix-selected-panel">
+                                <div class="matrix-selected-head">
+                                    <div class="matrix-selected-title">Seçili Yetkiler</div>
+                                    <div class="matrix-selected-hint">Rol veya seçim değiştiğinde bu alan canlı güncellenir.</div>
+                                </div>
+                                <div class="matrix-selected-chips" data-selected-chip-group="{{ module.key }}">
+                                    {% if module.active_permissions %}
+                                        {% for permission in module.active_permissions %}
+                                        <span class="matrix-chip" data-active-chip="{{ permission.key }}">
+                                            <span class="matrix-chip-label">{{ permission.label }}</span>
+                                            <span class="matrix-chip-key">{{ permission.key }}</span>
+                                        </span>
+                                        {% endfor %}
+                                    {% else %}
+                                        <div class="matrix-empty" data-empty-chip-state>Bu kategoride henüz aktif bir yetki seçilmedi.</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <div class="matrix-permission-list">
+                                {% for permission in module.all_permissions %}
+                                <label
+                                    class="matrix-permission-option {% if permission.key in selected_permissions %}is-selected{% endif %}"
+                                    data-permission-option
+                                    data-module-key="{{ module.key }}"
+                                    data-permission-key="{{ permission.key }}"
+                                    data-permission-label="{{ permission.label }}"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        name="selected_permissions"
+                                        value="{{ permission.key }}"
+                                        data-permission-checkbox
+                                        {% if permission.key in selected_permissions %}checked{% endif %}
+                                    >
+                                    {% include "admin/_permission_meta.html" %}
+                                </label>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </section>
+                    {% endfor %}
+                </div>
+
+                <div class="matrix-divider"></div>
+                <div class="matrix-submit-row">
+                    <div class="matrix-action-note">Kaydetmeden önce canlı özetten seçilen rolün güncel görünümünü kontrol edebilirsiniz.</div>
+                    <div class="matrix-submit-actions">
+                        <button type="submit" class="btn btn-primary">Değişiklikleri Kaydet</button>
+                        <button
+                            type="submit"
+                            class="btn btn-secondary"
+                            formaction="{{ url_for('admin.permissions_export_pdf') }}"
+                            formmethod="POST"
+                            data-export-pdf
+                        >
+                            Yetki Özetini PDF İndir
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <aside class="matrix-summary-card" data-matrix-summary>
+        <div class="matrix-summary-top">
+            <div class="matrix-summary-kicker">Aktif Matrix Özeti</div>
+            <div class="matrix-summary-role">
+                <div>
+                    <div class="matrix-summary-role-name" id="matrixSummaryRoleName">{{ selected_role.label if selected_role else 'Rol seçilmedi' }}</div>
+                    <div class="matrix-summary-role-desc" id="matrixSummaryRoleDescription">{{ selected_role.description if selected_role else 'Bir rol seçtiğinizde yetki özeti burada görünür.' }}</div>
+                </div>
+                <div class="matrix-summary-total">
+                    <strong id="matrixSummaryTotal">{{ selected_permissions|length }}</strong>
+                    <span>aktif yetki</span>
+                </div>
+            </div>
+            <div class="matrix-live-note">Yetki eklendikçe veya kaldırıldıkça aşağıdaki özet anında yenilenir.</div>
+        </div>
+
+        <div class="matrix-summary-body" id="matrixSummaryBody">
+            {% for module in summary_modules %}
+                {% if module.active_permissions %}
+                <section class="matrix-summary-row">
+                    <div class="matrix-summary-row-head">
+                        <div class="matrix-summary-row-title">{{ module.label }}</div>
+                        <div class="matrix-summary-row-count">{{ module.active_count }} aktif</div>
+                    </div>
+                    <div class="matrix-summary-row-list">
+                        {% for permission in module.active_permissions %}
+                        <span class="matrix-chip">
+                            <span class="matrix-chip-label">{{ permission.label }}</span>
+                            <span class="matrix-chip-key">{{ permission.key }}</span>
+                        </span>
+                        {% endfor %}
+                    </div>
+                </section>
+                {% endif %}
+            {% endfor %}
+            {% if not selected_permissions %}
+            <div class="matrix-summary-empty" id="matrixSummaryEmpty">Bu rol için henüz aktif bir yetki görünmüyor. Soldaki akordiyon bloklarından seçim yaparak özeti güncelleyin.</div>
+            {% endif %}
+        </div>
+    </aside>
+</div>
+
+<script id="rolePermissionMapData" type="application/json">{{ role_permission_map_json|safe }}</script>
+
+<script>
+  (function () {
+    const form = document.getElementById('permissionMatrixForm');
+    const roleSelect = document.querySelector('[data-role-select]');
+    const summaryName = document.getElementById('matrixSummaryRoleName');
+    const summaryDescription = document.getElementById('matrixSummaryRoleDescription');
+    const summaryTotal = document.getElementById('matrixSummaryTotal');
+    const summaryBody = document.getElementById('matrixSummaryBody');
+    const rolePermissionMapNode = document.getElementById('rolePermissionMapData');
+    if (!form || !roleSelect || !summaryName || !summaryDescription || !summaryTotal || !summaryBody || !rolePermissionMapNode) {
+      return;
+    }
+
+    let rolePermissionMap = {};
+    try {
+      rolePermissionMap = JSON.parse(rolePermissionMapNode.textContent || '{}');
+    } catch (error) {
+      rolePermissionMap = {};
+      if (window.showToast) {
+        window.showToast({ type: 'error', message: 'Yetki verileri yüklenemedi. Sayfayı yenileyip tekrar deneyin.' });
+      }
+    }
+
+    const accordions = Array.from(document.querySelectorAll('[data-module-card]'));
+    const checkboxes = Array.from(document.querySelectorAll('[data-permission-checkbox]'));
+    const exportButtons = Array.from(document.querySelectorAll('[data-export-pdf]'));
+
+    const escapeHtml = function (value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    };
+
+    const getSelectedRoleOption = function () {
+      return roleSelect.options[roleSelect.selectedIndex] || null;
+    };
+
+    const getCheckedPermissions = function () {
+      return checkboxes.filter(function (checkbox) {
+        return checkbox.checked;
+      });
+    };
+
+    const syncPermissionCardState = function (checkbox) {
+      const option = checkbox.closest('[data-permission-option]');
+      if (option) {
+        option.classList.toggle('is-selected', checkbox.checked);
+      }
+    };
+
+    const renderModuleChips = function (moduleCard) {
+      const moduleKey = moduleCard.getAttribute('data-module-card');
+      const chipWrap = moduleCard.querySelector('[data-selected-chip-group="' + moduleKey + '"]');
+      const moduleCheckboxes = Array.from(moduleCard.querySelectorAll('[data-permission-checkbox]')).filter(function (checkbox) {
+        return checkbox.checked;
+      });
+      const countBadge = moduleCard.querySelector('[data-module-count="' + moduleKey + '"]');
+
+      if (countBadge) {
+        countBadge.textContent = String(moduleCheckboxes.length);
+      }
+
+      if (!chipWrap) return;
+
+      if (!moduleCheckboxes.length) {
+        chipWrap.innerHTML = '<div class="matrix-empty" data-empty-chip-state>Bu kategoride henüz aktif bir yetki seçilmedi.</div>';
+        return;
+      }
+
+      chipWrap.innerHTML = moduleCheckboxes.map(function (checkbox) {
+        const option = checkbox.closest('[data-permission-option]');
+        const label = option ? option.getAttribute('data-permission-label') : checkbox.value;
+        return [
+          '<span class="matrix-chip" data-active-chip="', escapeHtml(checkbox.value), '">',
+          '<span class="matrix-chip-label">', escapeHtml(label), '</span>',
+          '<span class="matrix-chip-key">', escapeHtml(checkbox.value), '</span>',
+          '</span>'
+        ].join('');
+      }).join('');
+    };
+
+    const renderSummary = function () {
+      const selectedRoleOption = getSelectedRoleOption();
+      const checkedPermissions = getCheckedPermissions();
+      const activeModules = [];
+
+      accordions.forEach(function (moduleCard) {
+        const moduleTitle = moduleCard.getAttribute('data-module-label') || '';
+        const moduleChecked = Array.from(moduleCard.querySelectorAll('[data-permission-checkbox]')).filter(function (checkbox) {
+          return checkbox.checked;
+        });
+        if (!moduleChecked.length) return;
+
+        activeModules.push({
+          label: moduleTitle,
+          permissions: moduleChecked.map(function (checkbox) {
+            const option = checkbox.closest('[data-permission-option]');
+            return {
+              key: checkbox.value,
+              label: option ? option.getAttribute('data-permission-label') : checkbox.value,
+            };
+          }),
+        });
+      });
+
+      summaryName.textContent = selectedRoleOption ? (selectedRoleOption.dataset.roleLabel || selectedRoleOption.textContent.trim()) : 'Rol seçilmedi';
+      summaryDescription.textContent = selectedRoleOption ? (selectedRoleOption.dataset.roleDescription || 'Rol açıklaması bulunmuyor.') : 'Bir rol seçtiğinizde yetki özeti burada görünür.';
+      summaryTotal.textContent = String(checkedPermissions.length);
+
+      if (!activeModules.length) {
+        summaryBody.innerHTML = '<div class="matrix-summary-empty" id="matrixSummaryEmpty">Bu rol için henüz aktif bir yetki görünmüyor. Soldaki akordiyon bloklarından seçim yaparak özeti güncelleyin.</div>';
+        return;
+      }
+
+      summaryBody.innerHTML = activeModules.map(function (module) {
+        return [
+          '<section class="matrix-summary-row">',
+          '<div class="matrix-summary-row-head">',
+          '<div class="matrix-summary-row-title">', escapeHtml(module.label), '</div>',
+          '<div class="matrix-summary-row-count">', String(module.permissions.length), ' aktif</div>',
+          '</div>',
+          '<div class="matrix-summary-row-list">',
+          module.permissions.map(function (permission) {
+            return [
+              '<span class="matrix-chip">',
+              '<span class="matrix-chip-label">', escapeHtml(permission.label), '</span>',
+              '<span class="matrix-chip-key">', escapeHtml(permission.key), '</span>',
+              '</span>'
+            ].join('');
+          }).join(''),
+          '</div>',
+          '</section>'
+        ].join('');
+      }).join('');
+    };
+
+    const openRelevantAccordions = function () {
+      let openCount = 0;
+      accordions.forEach(function (moduleCard, index) {
+        const checkedCount = moduleCard.querySelectorAll('[data-permission-checkbox]:checked').length;
+        const shouldOpen = checkedCount > 0 || (!openCount && index === 0);
+        const trigger = moduleCard.querySelector('[data-accordion-trigger]');
+        moduleCard.classList.toggle('is-open', shouldOpen);
+        if (trigger) {
+          trigger.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+        }
+        if (shouldOpen) {
+          openCount += 1;
+        }
+      });
+    };
+
+    const syncAll = function () {
+      checkboxes.forEach(syncPermissionCardState);
+      accordions.forEach(renderModuleChips);
+      renderSummary();
+    };
+
+    const applyRole = function (roleKey, showFeedback) {
+      const permissionSet = new Set(rolePermissionMap[roleKey] || []);
+      checkboxes.forEach(function (checkbox) {
+        checkbox.checked = permissionSet.has(checkbox.value);
+        syncPermissionCardState(checkbox);
+      });
+      accordions.forEach(renderModuleChips);
+      openRelevantAccordions();
+      renderSummary();
+
+      if (showFeedback && window.showToast) {
+        const selectedRoleOption = getSelectedRoleOption();
+        window.showToast({
+          type: 'info',
+          title: 'Rol yüklendi',
+          message: (selectedRoleOption ? selectedRoleOption.textContent.trim() : 'Seçili rol') + ' için kayıtlı yetkiler ve matrix özeti güncellendi.',
+          duration: 2200
+        });
+      }
+    };
+
+    accordions.forEach(function (moduleCard) {
+      const trigger = moduleCard.querySelector('[data-accordion-trigger]');
+      if (!trigger) return;
+      trigger.addEventListener('click', function () {
+        const willOpen = !moduleCard.classList.contains('is-open');
+        moduleCard.classList.toggle('is-open', willOpen);
+        trigger.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+      });
+    });
+
+    roleSelect.addEventListener('change', function () {
+      applyRole(roleSelect.value, true);
+    });
+
+    checkboxes.forEach(function (checkbox) {
+      checkbox.addEventListener('change', function () {
+        const option = checkbox.closest('[data-permission-option]');
+        const moduleCard = checkbox.closest('[data-module-card]');
+        const permissionLabel = option ? option.getAttribute('data-permission-label') : checkbox.value;
+        syncPermissionCardState(checkbox);
+        if (moduleCard) {
+          moduleCard.classList.add('is-open');
+          const trigger = moduleCard.querySelector('[data-accordion-trigger]');
+          if (trigger) {
+            trigger.setAttribute('aria-expanded', 'true');
+          }
+          renderModuleChips(moduleCard);
+        }
+        renderSummary();
+        if (window.showToast) {
+          window.showToast({
+            type: checkbox.checked ? 'success' : 'warning',
+            title: checkbox.checked ? 'Yetki eklendi' : 'Yetki kaldırıldı',
+            message: escapeHtml(permissionLabel) + ' seçimi güncellendi. Aktif matrix özeti yenilendi.',
+            duration: 2200
+          });
+        }
+      });
+    });
+
+    exportButtons.forEach(function (button) {
+      button.addEventListener('click', function () {
+        if (window.showToast) {
+          window.showToast({
+            type: 'info',
+            title: 'PDF hazırlanıyor',
+            message: 'Seçili rolün güncel yetki özeti indirilmeye hazırlanıyor.',
+            duration: 2200
+          });
+        }
+      });
+    });
+
+    syncAll();
+    openRelevantAccordions();
+  })();
+</script>
+{% endblock %}

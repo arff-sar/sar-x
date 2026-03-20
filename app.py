@@ -1,109 +1,897 @@
+import json
+import logging
 import os
+from datetime import datetime
+from types import SimpleNamespace
+from urllib.parse import urlsplit, urlunsplit
+
 from dotenv import load_dotenv
-from flask import Flask, render_template, send_file
+from flask import Flask, jsonify, make_response, redirect, render_template, request, send_file, url_for
+from flask_wtf.csrf import CSRFError
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
-# ✅ Eklentiler (migrate eklendi)
-from extensions import db, login_manager, csrf, limiter, executor, migrate 
-
-from routes.auth import auth_bp
-from routes.inventory import inventory_bp
+from config import DevelopmentConfig, config_by_name
+from extensions import csrf, db, executor, limiter, login_manager, migrate
 from routes.admin import admin_bp
 from routes.api import api_bp
+from routes.auth import auth_bp
+from routes.content import content_bp
+from routes.inventory import inventory_bp
+from routes.maintenance import maintenance_bp
+from routes.parts import parts_bp
+from routes.reports import reports_bp
 from scheduler import start_scheduler
+from decorators import (
+    build_sidebar_groups,
+    get_effective_permissions,
+    get_role_descriptions,
+    get_role_labels,
+    has_permission,
+    is_editor_only,
+    role_home_endpoint,
+    sync_authorization_registry,
+)
+from extensions import table_exists
 
-# .env dosyasını yükle
 load_dotenv()
 
-def create_app():
-    app = Flask(__name__)
-    
-    # --- VERİTABANI VE PERFORMANS AYARLARI ---
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///sar_veritabani.db')
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-    # ✅ PROFESYONEL BAĞLANTI HAVUZU (Connection Pooling)
-    # Canlı ortamda (PostgreSQL vb.) veritabanı kilitlenmelerini önler.
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        "pool_size": 10,           # Ana bağlantı havuzu kapasitesi
-        "max_overflow": 20,        # Trafik anında açılacak ek kapasite
-        "pool_recycle": 3600,      # Bağlantıları saat başı tazele
-        "pool_pre_ping": True,     # Kopuk bağlantıları otomatik temizle
+def _configure_logging(app):
+    log_level = getattr(logging, str(app.config.get("LOG_LEVEL", "INFO")).upper(), logging.INFO)
+    formatter = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+    )
+
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(formatter)
+        root_logger.addHandler(handler)
+    else:
+        for handler in root_logger.handlers:
+            handler.setFormatter(formatter)
+
+    root_logger.setLevel(log_level)
+    app.logger.setLevel(log_level)
+
+
+def _is_secret_key_strong(secret_key):
+    if not secret_key or not isinstance(secret_key, str):
+        return False
+    if len(secret_key.strip()) < 32:
+        return False
+    weak_values = {"changeme", "secret", "default", "123456", "password"}
+    return secret_key.strip().lower() not in weak_values
+
+
+def _is_sqlite_url(database_url):
+    return bool(database_url and str(database_url).startswith("sqlite:"))
+
+
+def _bool_env(name):
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _redact_runtime_value(value):
+    if value in [None, ""]:
+        return value
+
+    text = str(value)
+    if "://" not in text:
+        return text
+
+    try:
+        parsed = urlsplit(text)
+    except Exception:
+        return text
+
+    if parsed.username is None and parsed.password is None:
+        return text
+
+    netloc = parsed.hostname or ""
+    if parsed.port:
+        netloc = f"{netloc}:{parsed.port}"
+    if parsed.username:
+        auth = parsed.username
+        if parsed.password is not None:
+            auth = f"{auth}:***"
+        netloc = f"{auth}@{netloc}" if netloc else f"{auth}@"
+
+    return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
+
+
+def _log_production_runtime_risks(app):
+    if str(app.config.get("ENV") or "").lower() != "production":
+        return
+
+    if str(app.config.get("STORAGE_BACKEND") or "local").strip().lower() == "local":
+        app.logger.warning(
+            "Production ortamında local storage backend aktif. "
+            "Cloud Run dosya sistemi kalıcı değildir; medya dosyaları için Cloud Storage tercih edilmelidir."
+        )
+    elif not (app.config.get("GCS_BUCKET_NAME") or "").strip():
+        app.logger.warning(
+            "Production ortamında GCS storage backend seçilmiş ancak GCS_BUCKET_NAME tanımlı değil."
+        )
+
+    if app.config.get("DEMO_TOOLS_ENABLED"):
+        app.logger.warning("Production ortamında demo araçları aktif. DEMO_TOOLS_ENABLED kapatılmalıdır.")
+
+    if app.config.get("ALLOW_SQLITE_IN_PRODUCTION"):
+        app.logger.warning(
+            "Production ortamında sqlite override aktif. "
+            "Bu ayar sadece geçici smoke/kurtarma senaryoları için kullanılmalıdır."
+        )
+
+    if app.config.get("ENABLE_SCHEDULER"):
+        app.logger.warning(
+            "Production ortamında web servis içinde scheduler aktif. "
+            "Cloud Run web serviste scheduler yerine Cloud Run Jobs/Cloud Scheduler önerilir."
+        )
+
+
+def _apply_runtime_env_overrides(app):
+    # SECRET_KEY değerini her create_app çağrısında çalışma zamanı env'den al.
+    app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")
+
+    runtime_database_url = os.getenv("DATABASE_URL")
+    if runtime_database_url is not None:
+        app.config["DATABASE_URL"] = runtime_database_url
+        app.config["SQLALCHEMY_DATABASE_URI"] = runtime_database_url
+
+    testing_database_url = os.getenv("TEST_DATABASE_URL")
+    if app.config.get("ENV") == "testing" and testing_database_url:
+        app.config["SQLALCHEMY_DATABASE_URI"] = testing_database_url
+
+    direct_keys = [
+        "MAIL_HOST",
+        "MAIL_USERNAME",
+        "MAIL_FROM_EMAIL",
+        "MAIL_REPLY_TO",
+        "MAIL_SECRET_PROJECT_ID",
+        "MAIL_PASSWORD_SECRET_NAME",
+        "MAIL_PASSWORD_SECRET_VERSION",
+        "SMTP_PASSWORD",
+        "REDIS_URL",
+        "LOG_LEVEL",
+        "STORAGE_BACKEND",
+        "LOCAL_UPLOAD_ROOT",
+        "LOCAL_UPLOAD_URL_PREFIX",
+        "GCS_BUCKET_NAME",
+        "GCS_PROJECT_ID",
+        "GCS_UPLOAD_PREFIX",
+        "GCS_PUBLIC_BASE_URL",
+        "GCS_CACHE_CONTROL",
+    ]
+    for key in direct_keys:
+        value = os.getenv(key)
+        if value is None:
+            continue
+        app.config[key] = value
+
+    int_keys = {
+        "MAIL_PORT": 587,
+        "PERMANENT_SESSION_LIFETIME_MINUTES": 120,
+        "MAX_CONTENT_LENGTH": 16 * 1024 * 1024,
+        "MAX_FORM_MEMORY_SIZE": 2 * 1024 * 1024,
+        "MAX_FORM_PARTS": 200,
+        "AUTH_LOCKOUT_ATTEMPTS": 5,
+        "AUTH_LOCKOUT_MINUTES": 15,
     }
-    
-    # --- GÜVENLİK AYARLARI ---
-    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'cok_gizli_sar_anahtari')
-    app.config['SESSION_COOKIE_HTTPONLY'] = True 
-    app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FLASK_ENV') == 'production'
-    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    for env_key, default in int_keys.items():
+        raw = os.getenv(env_key)
+        if raw is None:
+            continue
+        try:
+            parsed = int(raw)
+        except ValueError:
+            parsed = default
+        if env_key == "PERMANENT_SESSION_LIFETIME_MINUTES":
+            from datetime import timedelta
 
-    # --- BİLEŞENLERİ BAŞLATMA ---
+            app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=parsed)
+        else:
+            app.config[env_key] = parsed
+
+    bool_keys = [
+        "SESSION_COOKIE_SECURE",
+        "SESSION_COOKIE_HTTPONLY",
+        "REMEMBER_COOKIE_SECURE",
+        "REMEMBER_COOKIE_HTTPONLY",
+        "ENABLE_SCHEDULER",
+        "AUTO_CREATE_TABLES",
+        "ALLOW_SQLITE_IN_PRODUCTION",
+        "MAIL_USE_TLS",
+        "HOMEPAGE_EDITOR_CAN_PUBLISH",
+        "DEMO_TOOLS_ENABLED",
+        "GCS_MAKE_UPLOADS_PUBLIC",
+        "ALLOW_CLOUD_RUN_WEB_SCHEDULER",
+    ]
+    for key in bool_keys:
+        parsed = _bool_env(key)
+        if parsed is not None:
+            app.config[key] = parsed
+
+    if app.config.get("REDIS_URL"):
+        app.config["RATELIMIT_STORAGE_URI"] = app.config.get("REDIS_URL")
+
+
+def _wants_json_response():
+    if request.path.startswith("/api/"):
+        return True
+    best = request.accept_mimetypes.best_match(["application/json", "text/html"])
+    return best == "application/json" and request.accept_mimetypes[best] > request.accept_mimetypes["text/html"]
+
+
+def _error_response(status_code, message):
+    if _wants_json_response():
+        return jsonify({"status": "error", "message": message, "code": status_code}), status_code
+    return render_template("hata.html", kod=status_code, mesaj=message), status_code
+
+
+def _sqlite_column_names(table_name):
+    if not table_exists(table_name):
+        return set()
+    try:
+        rows = db.session.execute(text(f"PRAGMA table_info({table_name})")).mappings().all()
+    except SQLAlchemyError:
+        return set()
+    return {row.get("name") for row in rows if row.get("name")}
+
+
+def _ensure_runtime_schema_compatibility(app):
+    database_url = app.config.get("SQLALCHEMY_DATABASE_URI") or ""
+    if not _is_sqlite_url(database_url):
+        return
+    if not table_exists("kullanici"):
+        return
+
+    mevcut_kolonlar = _sqlite_column_names("kullanici")
+    if "telefon_numarasi" in mevcut_kolonlar:
+        return
+
+    db.session.execute(text("ALTER TABLE kullanici ADD COLUMN telefon_numarasi VARCHAR(32)"))
+    db.session.commit()
+    app.logger.warning("Legacy sqlite şeması güncellendi: kullanici.telefon_numarasi eklendi.")
+
+
+def create_app(config_name=None):
+    app = Flask(__name__)
+
+    selected_env = (
+        config_name
+        or os.getenv("APP_ENV")
+        or os.getenv("FLASK_ENV")
+        or "development"
+    ).lower()
+    config_class = config_by_name.get(selected_env, DevelopmentConfig)
+    app.config.from_object(config_class)
+    _apply_runtime_env_overrides(app)
+
+    _configure_logging(app)
+
+    if selected_env == "testing" and not app.config.get("SECRET_KEY"):
+        app.config["SECRET_KEY"] = "test-secret-key-only"
+
+    if selected_env != "testing" and not _is_secret_key_strong(app.config.get("SECRET_KEY")):
+        raise RuntimeError(
+            "Güçlü bir SECRET_KEY zorunludur. "
+            "Lütfen en az 32 karakterlik SECRET_KEY tanımlayın."
+        )
+
+    database_url = app.config.get("SQLALCHEMY_DATABASE_URI")
+    if not database_url:
+        raise RuntimeError("SQLALCHEMY_DATABASE_URI/DATABASE_URL tanımlı olmalıdır.")
+
+    if (
+        selected_env == "production"
+        and _is_sqlite_url(database_url)
+        and not app.config.get("ALLOW_SQLITE_IN_PRODUCTION", False)
+    ):
+        raise RuntimeError(
+            "Production ortamında sqlite kullanılamaz. "
+            "Cloud SQL/PostgreSQL için DATABASE_URL tanımlayın."
+        )
+
+    rate_limit_storage = str(app.config.get("RATELIMIT_STORAGE_URI", ""))
+    if rate_limit_storage.startswith("memory://"):
+        if selected_env == "production":
+            app.logger.warning(
+                "Production ortamında memory rate-limit storage kullanılıyor. REDIS_URL tanımlanması zorunlu olmalı."
+            )
+        elif selected_env != "testing":
+            app.logger.warning(
+                "REDIS_URL tanımlı değil. Development ortamında memory rate-limit storage ile devam ediliyor."
+            )
+
     db.init_app(app)
-    migrate.init_app(app, db) # ✅ Migration sistemi aktif edildi
+    migrate.init_app(app, db)
     login_manager.init_app(app)
-    csrf.init_app(app)      
-    limiter.init_app(app)   
-    executor.init_app(app)  
+    csrf.init_app(app)
+    limiter.init_app(app)
+    executor.init_app(app)
 
     @login_manager.user_loader
     def load_user(user_id):
         from models import Kullanici
-        # ✅ HATA KORUMASI: user_id 'None' veya boşsa int() çevrimi yapmadan None dön
-        if user_id is None or str(user_id) == 'None':
+
+        if user_id is None or str(user_id) == "None":
             return None
         try:
             return db.session.get(Kullanici, int(user_id))
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, SQLAlchemyError):
             return None
+
+    def _load_public_site_meta():
+        if not table_exists("site_ayarlari"):
+            return None, {}
+        try:
+            from models import SiteAyarlari
+
+            ayarlar = SiteAyarlari.query.first()
+        except Exception:
+            return None, {}
+
+        raw_value = getattr(ayarlar, "iletisim_notu", "") if ayarlar else ""
+        if not raw_value:
+            return ayarlar, {}
+
+        try:
+            parsed = json.loads(raw_value)
+            if isinstance(parsed, dict):
+                return ayarlar, parsed
+        except (TypeError, ValueError):
+            pass
+
+        legacy_note = str(raw_value).strip()
+        return ayarlar, {"public_contact_note": legacy_note} if legacy_note else {}
 
     @app.context_processor
     def inject_user_info():
         from flask_login import current_user
-        if current_user.is_authenticated:
-            return {'rol': current_user.rol, 'kullanici_ad': current_user.tam_ad, 'giren_user': current_user}
-        return {'rol': None, 'kullanici_ad': None, 'giren_user': None}
+        unread_notifications = []
+        unread_notification_count = 0
+        rol_etiketleri = get_role_labels()
+        rol_aciklamalari = get_role_descriptions()
+        ayarlar, site_meta = _load_public_site_meta()
+        public_logo = str(site_meta.get("public_logo_url") or "").strip()
+        demo_logo = str(site_meta.get("homepage_demo_logo_url") or "").strip()
+        public_contact_note = str(site_meta.get("public_contact_note") or site_meta.get("site_notu") or "").strip()
+        demo_contact_note = str(site_meta.get("homepage_demo_contact_note") or "").strip()
+        shared_context = {
+            "public_site_settings": ayarlar,
+            "site_meta": site_meta,
+            "site_logo_url": public_logo or demo_logo,
+            "homepage_demo_logo_url": demo_logo,
+            "site_contact_note": public_contact_note or demo_contact_note,
+            "homepage_demo_contact_note": demo_contact_note,
+        }
 
-    # --- BLUEPRINT KAYITLARI ---
+        if current_user.is_authenticated:
+            if table_exists("notification"):
+                try:
+                    from models import Notification
+
+                    unread_notifications = (
+                        Notification.query.filter_by(user_id=current_user.id, is_read=False)
+                        .order_by(Notification.created_at.desc())
+                        .limit(5)
+                        .all()
+                    )
+                    unread_notification_count = Notification.query.filter_by(
+                        user_id=current_user.id,
+                        is_read=False,
+                    ).count()
+                except Exception:
+                    unread_notifications = []
+                    unread_notification_count = 0
+            permissions = sorted(get_effective_permissions(current_user))
+            return {
+                "rol": current_user.rol,
+                "rol_etiketi": rol_etiketleri.get(current_user.rol, current_user.rol),
+                "rol_etiketleri": rol_etiketleri,
+                "rol_aciklamalari": rol_aciklamalari,
+                "kullanici_ad": current_user.tam_ad,
+                "giren_user": current_user,
+                "effective_permissions": permissions,
+                "sidebar_groups": build_sidebar_groups(current_user),
+                "has_permission": has_permission,
+                "home_endpoint": role_home_endpoint(current_user),
+                "unread_notifications": unread_notifications,
+                "unread_notification_count": unread_notification_count,
+                **shared_context,
+            }
+        return {
+            "rol": None,
+            "rol_etiketi": None,
+            "rol_etiketleri": rol_etiketleri,
+            "rol_aciklamalari": rol_aciklamalari,
+            "kullanici_ad": None,
+            "giren_user": None,
+            "effective_permissions": [],
+            "sidebar_groups": [],
+            "has_permission": has_permission,
+            "home_endpoint": "inventory.dashboard",
+            "unread_notifications": [],
+            "unread_notification_count": 0,
+            **shared_context,
+        }
+
     app.register_blueprint(auth_bp)
     app.register_blueprint(inventory_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(api_bp)
+    app.register_blueprint(maintenance_bp)
+    app.register_blueprint(content_bp)
+    app.register_blueprint(parts_bp)
+    app.register_blueprint(reports_bp)
 
-    # --- GLOBAL HATA YÖNETİMİ ---
-    @app.errorhandler(404)
-    def sayfa_bulunamadi(e):
-        return render_template('hata.html', kod=404, mesaj="Aradığınız sayfa mevcut değil veya taşınmış olabilir."), 404
+    @app.before_request
+    def hydrate_authorization_registry():
+        if table_exists("role") and table_exists("permission"):
+            state = app.extensions.setdefault("authorization_registry_state", {"hydrated": False})
+            if state.get("hydrated"):
+                return None
+            try:
+                sync_result = sync_authorization_registry()
+                if sync_result is None:
+                    return None
+                if sync_result:
+                    db.session.commit()
+                state["hydrated"] = True
+            except Exception:
+                db.session.rollback()
+        return None
+
+    @app.before_request
+    def restrict_editor_scope():
+        from flask_login import current_user
+
+        if not current_user.is_authenticated or not is_editor_only(current_user):
+            return None
+
+        endpoint = request.endpoint or ""
+        if (
+            endpoint.startswith("content.")
+            or endpoint.startswith("auth.")
+            or endpoint in ["ana_sayfa", "serve_manifest", "serve_sw", "static", "health", "ready"]
+        ):
+            return None
+        return redirect(url_for("content.homepage_dashboard"))
+
+    @app.after_request
+    def apply_security_headers(response):
+        response.headers.setdefault("Content-Security-Policy", app.config.get("CSP_POLICY"))
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if app.config.get("SESSION_COOKIE_SECURE"):
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return response
+
+    @app.errorhandler(400)
+    def bad_request(_):
+        return _error_response(400, "Geçersiz istek. Lütfen form alanlarını kontrol edin.")
+
+    @app.errorhandler(401)
+    def unauthorized(_):
+        return _error_response(401, "Bu işlem için kimlik doğrulaması gereklidir.")
 
     @app.errorhandler(403)
-    def yetkisiz_erisim(e):
-        return render_template('hata.html', kod=403, mesaj="Bu sayfayı veya işlemi görüntüleme yetkiniz bulunmuyor."), 403
+    def forbidden(_):
+        return _error_response(403, "Bu sayfayı veya işlemi görüntüleme yetkiniz bulunmuyor.")
+
+    @app.errorhandler(404)
+    def not_found(_):
+        return _error_response(404, "Aradığınız sayfa mevcut değil veya taşınmış olabilir.")
+
+    @app.errorhandler(413)
+    def request_too_large(_):
+        if _wants_json_response():
+            return jsonify(
+                {
+                    "status": "error",
+                    "code": 413,
+                    "message": "Yüklenen içerik boyutu izin verilen sınırı aşıyor.",
+                }
+            ), 413
+        return render_template(
+            "413.html",
+            kod=413,
+            mesaj="Gönderdiğiniz dosya veya form verisi sistem limitini aşıyor.",
+        ), 413
+
+    @app.errorhandler(429)
+    def too_many_requests(error):
+        retry_after = getattr(error, "retry_after", None)
+        message = "Çok fazla istek gönderdiniz. Lütfen kısa süre sonra tekrar deneyin."
+        if retry_after:
+            message = f"Çok fazla istek gönderdiniz. Yaklaşık {int(retry_after)} saniye sonra tekrar deneyin."
+        if _wants_json_response():
+            payload = {"status": "error", "code": 429, "message": message}
+            response = jsonify(payload)
+            if retry_after:
+                response.headers["Retry-After"] = str(int(retry_after))
+            return response, 429
+        response = make_response(render_template("429.html", kod=429, mesaj=message), 429)
+        if retry_after:
+            response.headers["Retry-After"] = str(int(retry_after))
+        return response
 
     @app.errorhandler(500)
-    def sunucu_hatasi(e):
-        return render_template('hata.html', kod=500, mesaj="Sunucu kaynaklı beklenmedik bir hata oluştu. Lütfen yöneticinize başvurun."), 500
+    def internal_server_error(_):
+        return _error_response(500, "Sunucu kaynaklı beklenmedik bir hata oluştu.")
 
-    # --- ANA ROTALAR ---
-    @app.route('/')
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(e):
+        if _wants_json_response():
+            return jsonify({"status": "error", "message": "CSRF doğrulaması başarısız.", "detail": str(e)}), 400
+        return render_template("csrf_hata.html", mesaj="Güvenlik doğrulaması başarısız oldu. Lütfen tekrar deneyin."), 400
+
+    @app.route("/")
     def ana_sayfa():
-        # ✅ KESİN ÇÖZÜM: Eksik olan modelleri buraya ekledik (Döngüsel import hatası vermemesi için fonksiyon içinde)
-        from models import SiteAyarlari, Haber, SliderResim, NavMenu
-        
-        return render_template('index.html',
-                           ayarlar=SiteAyarlari.query.first(),
-                           haberler=Haber.query.order_by(Haber.tarih.desc()).all(),
-                           sliderlar=SliderResim.query.all(),
-                           menuler=NavMenu.query.order_by(NavMenu.sira).all())
+        from models import (
+            Announcement,
+            ContentWorkflow,
+            DocumentResource,
+            Havalimani,
+            Haber,
+            HomeQuickLink,
+            HomeSection,
+            HomeSlider,
+            HomeStatCard,
+            InventoryAsset,
+            Kullanici,
+            NavMenu,
+            SiteAyarlari,
+            SliderResim,
+        )
+        from homepage_demo import filter_homepage_demo_items, homepage_demo_is_active
 
-    @app.route('/manifest.json')
-    def serve_manifest(): 
-        return send_file('static/manifest.json')
+        def _workflow_status_map(entity_type):
+            rows = ContentWorkflow.query.filter_by(entity_type=entity_type).all()
+            return {row.entity_id: row.status for row in rows}
 
-    @app.route('/sw.js')
-    def serve_sw(): 
-        return send_file('static/sw.js', mimetype='application/javascript')
-        
+        def _filter_by_workflow(items, entity_type):
+            status_map = _workflow_status_map(entity_type)
+            if not status_map:
+                return items
+            filtered = []
+            for item in items:
+                status = status_map.get(item.id)
+                if status is None or status == "published":
+                    filtered.append(item)
+            return filtered
+
+        def _format_public_count(value):
+            return f"{int(value):,}".replace(",", ".")
+
+        def _build_public_stats(configured_cards, metric_registry):
+            metrics = list(metric_registry.values())
+            unused_keys = [metric["key"] for metric in metrics]
+
+            def _resolve_metric(card):
+                text = f"{card.title or ''} {card.subtitle or ''}".lower()
+                keyword_map = [
+                    ("total_assets", ("malzeme", "ekipman", "envanter", "varlik", "varlık")),
+                    ("total_personnel", ("personel", "kullanici", "kullanıcı", "gonullu", "gönüllü", "ekip")),
+                    ("total_airports", ("havalimani", "havalimanı", "lokasyon", "birim")),
+                    ("published_announcements", ("duyuru", "guncel", "güncel", "haber", "paylasim", "paylaşım")),
+                    ("training_modules", ("egitim", "eğitim", "gelisim", "gelişim")),
+                    ("exercise_modules", ("tatbikat", "senaryo", "operasyon")),
+                ]
+                for key, keywords in keyword_map:
+                    if any(keyword in text for keyword in keywords):
+                        return key
+                return unused_keys[0] if unused_keys else metrics[0]["key"]
+
+            resolved = []
+            for index, card in enumerate(configured_cards):
+                metric_key = _resolve_metric(card)
+                if metric_key in unused_keys:
+                    unused_keys.remove(metric_key)
+                metric = metric_registry[metric_key]
+                resolved.append(
+                    SimpleNamespace(
+                        metric_key=metric_key,
+                        title=card.title or metric["label"],
+                        value_text=_format_public_count(metric["value"]),
+                        subtitle=card.subtitle or metric["subtitle"],
+                        icon=card.icon or metric["icon"],
+                        order_index=index,
+                    )
+                )
+
+            if resolved:
+                return resolved
+
+            return [
+                SimpleNamespace(
+                    metric_key=metric["key"],
+                    title=metric["label"],
+                    value_text=_format_public_count(metric["value"]),
+                    subtitle=metric["subtitle"],
+                    icon=metric["icon"],
+                    order_index=index,
+                )
+                for index, metric in enumerate(metrics)
+            ]
+
+        ayarlar = SiteAyarlari.query.first()
+        menuler = NavMenu.query.order_by(NavMenu.sira.asc()).all()
+        homepage_demo_active = homepage_demo_is_active()
+
+        sliders = HomeSlider.query.filter_by(is_active=True).order_by(
+            HomeSlider.order_index.asc(), HomeSlider.id.asc()
+        ).all()
+        sliders = _filter_by_workflow(sliders, "slider")
+        sliders = filter_homepage_demo_items(sliders)
+        if not sliders and not homepage_demo_active:
+            legacy_sliders = SliderResim.query.all()
+            sliders = [
+                SimpleNamespace(
+                    title=slider.baslik or "Operasyonel Hazırlık",
+                    subtitle=slider.alt_yazi or "Kurumsal acil müdahale koordinasyonu",
+                    description=slider.alt_yazi or "",
+                    image_url=slider.resim_url,
+                    button_text="Detaylı Bilgi",
+                    button_link="#hakkimizda",
+                )
+                for slider in legacy_sliders
+            ]
+
+        sections = HomeSection.query.filter_by(is_active=True).order_by(
+            HomeSection.order_index.asc(), HomeSection.id.asc()
+        ).all()
+        sections = _filter_by_workflow(sections, "section")
+        sections = filter_homepage_demo_items(sections)
+
+        about_card_defaults = [
+            {
+                "key": "about",
+                "anchor_id": "biz-kimiz",
+                "menu_label": "Ekip Yapısı",
+                "title": "Biz Kimiz",
+                "description": "ARFF özel arama kurtarma gönüllülerinin birlikte hareket ettiği, sahaya yakın bir ekip yapısı.",
+            },
+            {
+                "key": "mission",
+                "anchor_id": "misyon",
+                "menu_label": "Odak",
+                "title": "Misyon",
+                "description": "Hazırlığı canlı tutmak, sahada birbirimize destek olmak ve ihtiyaç anında hızlıca organize olmak.",
+            },
+            {
+                "key": "vision",
+                "anchor_id": "vizyon",
+                "menu_label": "Bakış",
+                "title": "Vizyon",
+                "description": "Güven, gönüllülük, şeffaflık ve ekip dayanışmasını koruyarak güçlü bir saha kültürü oluşturmak.",
+            },
+            {
+                "key": "ethics",
+                "anchor_id": "etik-degerler",
+                "menu_label": "İlke",
+                "title": "Etik Değerler",
+                "description": "Sahada saygı, sorumluluk, güven ve gönüllülük çizgisini birlikte korumak.",
+            },
+        ]
+
+        assigned_section_ids = set()
+
+        def _pick_about_section(preferred_key):
+            for item in sections:
+                if item.section_key == preferred_key and item.id not in assigned_section_ids:
+                    assigned_section_ids.add(item.id)
+                    return item
+            for item in sections:
+                if item.id not in assigned_section_ids:
+                    assigned_section_ids.add(item.id)
+                    return item
+            return None
+
+        about_cards = []
+        for config in about_card_defaults:
+            source = _pick_about_section(config["key"])
+            about_cards.append(
+                SimpleNamespace(
+                    anchor_id=config["anchor_id"],
+                    menu_label=config["menu_label"],
+                    title=config["title"],
+                    description=(
+                        source.subtitle
+                        if source and source.subtitle
+                        else source.content
+                        if source and source.content
+                        else config["description"]
+                    ),
+                )
+            )
+
+        announcement_pool = Announcement.query.filter_by(is_published=True).order_by(
+            Announcement.published_at.desc(), Announcement.id.desc()
+        ).all()
+        announcement_pool = _filter_by_workflow(announcement_pool, "announcement")
+        announcement_pool = filter_homepage_demo_items(announcement_pool)
+        announcement_count = len(announcement_pool)
+        announcements = announcement_pool[:6]
+        if not announcement_pool and not homepage_demo_active:
+            legacy_news = Haber.query.order_by(Haber.tarih.desc()).limit(6).all()
+            announcement_pool = [
+                SimpleNamespace(
+                    title=item.baslik,
+                    slug="",
+                    summary=(item.icerik[:160] + "...") if item.icerik and len(item.icerik) > 160 else item.icerik,
+                    content=item.icerik,
+                    cover_image="",
+                    published_at=item.tarih,
+                )
+                for item in legacy_news
+            ]
+            announcement_count = len(announcement_pool)
+            announcements = announcement_pool[:6]
+
+        documents = DocumentResource.query.filter_by(is_active=True).order_by(
+            DocumentResource.order_index.asc(), DocumentResource.id.asc()
+        ).all()
+        documents = _filter_by_workflow(documents, "document")
+        configured_stats = HomeStatCard.query.filter_by(is_active=True).order_by(
+            HomeStatCard.order_index.asc(), HomeStatCard.id.asc()
+        ).all()
+        configured_stats = _filter_by_workflow(configured_stats, "stat")
+        configured_stats = filter_homepage_demo_items(configured_stats)
+        quick_links = HomeQuickLink.query.filter_by(is_active=True).order_by(
+            HomeQuickLink.order_index.asc(), HomeQuickLink.id.asc()
+        ).all()
+        quick_links = _filter_by_workflow(quick_links, "quicklink")
+
+        live_stat_metrics = {
+            "total_assets": {
+                "key": "total_assets",
+                "label": "Toplam Malzeme",
+                "value": InventoryAsset.query.filter_by(is_deleted=False).count(),
+                "subtitle": "Tüm havalimanlarında kayıtlı ekipman ve varlık sayısı.",
+                "icon": "●",
+            },
+            "total_personnel": {
+                "key": "total_personnel",
+                "label": "Toplam Personel",
+                "value": Kullanici.query.filter_by(is_deleted=False).count(),
+                "subtitle": "Sistemde görevli ARFF personeli ve ekip üyeleri.",
+                "icon": "●",
+            },
+            "total_airports": {
+                "key": "total_airports",
+                "label": "Aktif Havalimanı",
+                "value": Havalimani.query.filter_by(is_deleted=False).count(),
+                "subtitle": "Envanter ve operasyon takibi yapılan lokasyon sayısı.",
+                "icon": "●",
+            },
+            "published_announcements": {
+                "key": "published_announcements",
+                "label": "Yayındaki Duyuru",
+                "value": announcement_count,
+                "subtitle": "Güncel saha paylaşımları ve ekip duyuruları.",
+                "icon": "●",
+            },
+            "training_modules": {
+                "key": "training_modules",
+                "label": "Eğitim Modülü",
+                "value": sum(1 for item in sections if item.section_key == "training"),
+                "subtitle": "Faaliyetlerimiz sayfasında yayındaki eğitim içerikleri.",
+                "icon": "●",
+            },
+            "exercise_modules": {
+                "key": "exercise_modules",
+                "label": "Tatbikat Modülü",
+                "value": sum(1 for item in sections if item.section_key == "exercise"),
+                "subtitle": "Faaliyetlerimiz sayfasında yayındaki tatbikat içerikleri.",
+                "icon": "●",
+            },
+        }
+        stats = _build_public_stats(configured_stats, live_stat_metrics)
+
+        return render_template(
+            "index.html",
+            ayarlar=ayarlar,
+            menuler=menuler,
+            sliders=sliders,
+            sections=sections,
+            about_cards=about_cards,
+            announcements=announcements,
+            announcement_carousel_items=[
+                {
+                    "title": item.title,
+                    "date_label": item.published_at.strftime("%d.%m.%Y") if item.published_at else "Yakında",
+                    "summary": (
+                        item.summary
+                        or ((item.content[:190] + "...") if item.content and len(item.content) > 190 else item.content)
+                        or "Yeni paylaşımlar eklendiğinde bu kartta kısa özet görünür."
+                    ),
+                    "image_url": item.cover_image or "",
+                    "link_url": url_for("content.public_announcement_detail", slug=item.slug)
+                    if getattr(item, "slug", None)
+                    else url_for("content.public_announcements"),
+                }
+                for item in announcements
+            ],
+            documents=documents,
+            stats=stats,
+            quick_links=quick_links,
+        )
+
+    @app.route("/health")
+    def health():
+        return jsonify(
+            {
+                "status": "ok",
+                "time": datetime.utcnow().isoformat() + "Z",
+                "service": "sar-x",
+            }
+        ), 200
+
+    @app.route("/ready")
+    def ready():
+        try:
+            db.session.execute(text("SELECT 1"))
+            db_status = "ok"
+            http_status = 200
+        except Exception:
+            db_status = "error"
+            http_status = 503
+            app.logger.exception("Ready check sırasında veritabanı doğrulaması başarısız.")
+        return jsonify(
+            {
+                "status": "ready" if db_status == "ok" else "degraded",
+                "database": db_status,
+                "scheduler_enabled": bool(app.config.get("ENABLE_SCHEDULER")),
+            }
+        ), http_status
+
+    @app.route("/manifest.json")
+    def serve_manifest():
+        return send_file("static/manifest.json")
+
+    @app.route("/sw.js")
+    def serve_sw():
+        return send_file("static/sw.js", mimetype="application/javascript")
+
+    if app.config.get("AUTO_CREATE_TABLES", False):
+        with app.app_context():
+            try:
+                db.create_all()
+                _ensure_runtime_schema_compatibility(app)
+                sync_authorization_registry()
+                db.session.commit()
+                app.logger.info("AUTO_CREATE_TABLES etkin: tablolar kontrol edilip oluşturuldu.")
+            except SQLAlchemyError:
+                app.logger.exception("Veritabanı tabloları hazırlanırken hata oluştu.")
+    else:
+        app.logger.info("AUTO_CREATE_TABLES devre dışı: migration tabanlı akış bekleniyor.")
+
+    _log_production_runtime_risks(app)
     start_scheduler(app)
+
+    app.logger.info(
+        "Uygulama başlatıldı | env=%s | config=%s | db=%s | rate_limit_storage=%s | scheduler=%s",
+        selected_env,
+        config_class.__name__,
+        _redact_runtime_value(app.config.get("SQLALCHEMY_DATABASE_URI")),
+        _redact_runtime_value(app.config.get("RATELIMIT_STORAGE_URI")),
+        app.config.get("ENABLE_SCHEDULER"),
+    )
     return app
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     app = create_app()
-    app.run(debug=True)
+    app.run(
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "8080")),
+        debug=bool(app.config.get("DEBUG", False)),
+    )

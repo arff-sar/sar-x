@@ -1,165 +1,1231 @@
 {% extends "base.html" %}
 {% block title %}Kullanıcı Yönetimi{% endblock %}
 
+{% block extra_css %}
+<style>
+  .panel-kicker { display:inline-flex; align-items:center; padding:6px 10px; border-radius:999px; background:var(--blue-light); border:1px solid #bfdbfe; color:var(--blue); font-size:10.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+  .panel-subtitle { margin-top: 8px; font-size: 12.75px; color: var(--text3); line-height: 1.65; max-width: 78ch; }
+  .user-admin-shell { display:grid; gap:22px; }
+  .user-admin-shell > .panel,
+  .user-secondary-stack > .panel { margin-bottom:0; }
+  .user-secondary-stack { display:grid; gap:16px; }
+  .filter-panel .panel-body,
+  .user-directory-panel .panel-body,
+  .user-editor-panel .panel-body,
+  .new-user-panel .panel-body { padding: 22px; }
+  .workflow-strip { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; margin-bottom:22px; }
+  .workflow-step { display:flex; gap:12px; align-items:flex-start; padding:14px 16px; border:1px solid var(--border); border-radius:18px; background:linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,250,252,.98) 100%); }
+  .workflow-step-index { flex-shrink:0; width:30px; height:30px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; background:var(--navy); color:#fff; font-size:12px; font-weight:900; }
+  .workflow-step strong { display:block; font-size:13px; font-weight:800; color:var(--navy); }
+  .workflow-step span { display:block; margin-top:4px; font-size:11.75px; color:var(--text3); line-height:1.5; }
+  .user-filter-form,
+  .editor-shell,
+  .section-stack,
+  .directory-controls { display:grid; gap:18px; }
+  .user-filter-form .form-group,
+  .editor-form-grid .form-group,
+  .directory-utility-card .form-group { margin-bottom:0; }
+  .user-filter-form .form-control,
+  .editor-form-grid .form-control,
+  .directory-utility-card .form-control { margin-bottom:0; }
+  .filter-stage-layout { display:grid; grid-template-columns:minmax(0, 1.18fr) minmax(290px, .82fr); gap:18px; align-items:start; }
+  .filter-stage-main { display:grid; gap:18px; }
+  .filter-grid { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:14px; }
+  .filter-actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+  .filter-actions .btn { min-width: 124px; }
+  .filter-panel-note { padding:14px 16px; border-radius:16px; border:1px solid var(--border); background:linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(248,250,252,0.96) 100%); color:var(--text3); font-size:12px; line-height:1.6; }
+  .results-overview { display:grid; gap:14px; padding:20px; border:1px solid var(--border); border-radius:20px; background:linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.98) 100%); height:100%; }
+  .results-overview-head { display:flex; justify-content:space-between; gap:14px; align-items:flex-start; }
+  .results-overview-label { font-size:11px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
+  .results-overview-value { margin-top:4px; font-size:30px; font-weight:900; color:var(--navy); letter-spacing:-.03em; line-height:1; }
+  .results-overview-note { margin-top:6px; font-size:12.5px; color:var(--text3); line-height:1.6; }
+  .results-status-pill { display:inline-flex; align-items:center; gap:6px; padding:8px 12px; border-radius:999px; border:1px solid rgba(249,115,22,.18); background:rgba(249,115,22,.08); color:var(--orange); font-size:11px; font-weight:800; }
+  .active-filter-bar { display:flex; flex-wrap:wrap; gap:8px; }
+  .active-filter-pill { display:inline-flex; align-items:center; gap:6px; padding:7px 11px; border-radius:999px; background:var(--blue-light); border:1px solid #bfdbfe; color:var(--blue); font-size:11px; font-weight:800; }
+  .active-filter-pill.is-muted { background:var(--surface2); border-color:var(--border); color:var(--text3); }
+  .active-filter-pill.is-result { background:rgba(249,115,22,.08); border-color:rgba(249,115,22,.18); color:var(--orange); }
+  .user-directory-panel .panel-header,
+  .user-editor-panel .panel-header,
+  .new-user-panel .panel-header,
+  .bulk-import-panel .panel-header { align-items:flex-start; }
+  .user-secondary-action { white-space:nowrap; }
+  .user-directory-panel .panel-body { display:grid; gap:18px; }
+  .selection-overview-row { display:grid; grid-template-columns:minmax(0, 1fr) minmax(220px, .54fr); gap:16px; align-items:stretch; }
+  .selected-user-banner { display:grid; gap:7px; padding:18px; border:1px solid var(--border); border-radius:18px; background:linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.98) 100%); min-height:100%; }
+  .selected-user-banner.is-empty { color:var(--text3); }
+  .selected-user-banner-label { font-size:11px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
+  .selected-user-banner strong { font-size:16px; color:var(--navy); }
+  .selected-user-banner-meta { font-size:12.5px; color:var(--text3); line-height:1.55; }
+  .directory-count-card { display:grid; gap:6px; padding:18px; border:1px solid var(--border); border-radius:18px; background:linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,250,252,.98) 100%); }
+  .directory-count-card-label { font-size:11px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
+  .directory-count-card-value { font-size:28px; font-weight:900; color:var(--navy); line-height:1; letter-spacing:-.03em; }
+  .directory-count-card-note { font-size:12.5px; color:var(--text3); line-height:1.55; }
+  .directory-utility-strip { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:14px; }
+  .directory-utility-card { padding:16px; border:1px solid var(--border); border-radius:18px; background:var(--surface2); }
+  .quick-select-help { margin-top:8px; font-size:11.5px; color:var(--text3); line-height:1.5; }
+  .directory-count-row { display:flex; justify-content:space-between; gap:12px; align-items:center; font-size:12.5px; color:var(--text3); }
+  .directory-count-row strong { color:var(--navy); font-size:14px; }
+  .directory-count-row span:last-child { white-space:nowrap; }
+  .user-directory { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; }
+  .user-option { display:grid; gap:14px; text-decoration:none; color:inherit; padding:18px; border:1px solid var(--border); border-radius:18px; background:var(--surface); transition:border-color .18s ease, box-shadow .18s ease, transform .18s ease, background .18s ease; min-height:100%; }
+  .user-option:hover { border-color:#cbd5e1; box-shadow:0 14px 32px rgba(15,23,42,.06); transform:translateY(-1px); }
+  .user-option.is-active { border-color:rgba(249,115,22,.42); background:linear-gradient(180deg, rgba(255,247,237,.96) 0%, rgba(255,255,255,.98) 100%); box-shadow:0 18px 36px rgba(249,115,22,.14); }
+  .user-option[hidden] { display:none; }
+  .user-option-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+  .user-option-eyebrow { font-size:10.5px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.06em; }
+  .user-option-name { margin-top:5px; font-size:15px; font-weight:800; color:var(--navy); line-height:1.35; }
+  .user-option-mail { font-size:11.5px; color:var(--text3); margin-top:7px; word-break:break-word; line-height:1.45; }
+  .user-option-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+  .user-option-data { display:grid; gap:4px; padding:12px; border:1px solid var(--border); border-radius:14px; background:var(--surface2); }
+  .user-option-label { font-size:10.5px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
+  .user-option-value { font-size:12.5px; font-weight:700; color:var(--text2); line-height:1.45; }
+  .user-list-empty { display:grid; gap:8px; padding:30px 20px; border:1px dashed var(--border-dark); border-radius:18px; text-align:center; color:var(--text3); background:linear-gradient(180deg, rgba(248,250,252,0.92) 0%, rgba(255,255,255,0.98) 100%); }
+  .user-list-empty strong { color:var(--navy); font-size:15px; }
+  .new-user-panel { overflow:hidden; }
+  .bulk-import-panel { overflow:hidden; }
+  .new-user-summary,
+  .bulk-import-summary { list-style:none; cursor:pointer; display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+  .new-user-summary::-webkit-details-marker,
+  .bulk-import-summary::-webkit-details-marker { display:none; }
+  .summary-action-label { display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border-radius:999px; background:var(--surface2); border:1px solid var(--border); color:var(--text2); font-size:11px; font-weight:800; white-space:nowrap; }
+  .new-user-panel[open] .summary-action-label { background:var(--orange-light); border-color:rgba(249,115,22,.24); color:var(--orange); }
+  .bulk-import-panel[open] .summary-action-label { background:var(--blue-light); border-color:#bfdbfe; color:var(--blue); }
+  .new-user-intro { margin-bottom:16px; padding:16px; border-radius:16px; border:1px solid var(--border); background:linear-gradient(180deg, rgba(248,250,252,.96) 0%, rgba(255,255,255,.99) 100%); font-size:12.5px; color:var(--text3); line-height:1.6; }
+  .form-help-inline,
+  .phone-privacy-note { margin-top:8px; font-size:11.5px; color:var(--text3); line-height:1.5; }
+  .bulk-import-layout { display:grid; gap:16px; }
+  .bulk-import-steps { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:12px; }
+  .bulk-step { border:1px solid var(--border); border-radius:16px; padding:16px; background:var(--surface2); display:grid; gap:10px; align-content:start; }
+  .bulk-step-index { width:28px; height:28px; border-radius:999px; display:flex; align-items:center; justify-content:center; background:var(--navy); color:#fff; font-size:11px; font-weight:800; }
+  .bulk-step-title { font-size:13px; font-weight:800; color:var(--navy); }
+  .bulk-step-note { font-size:11.5px; color:var(--text3); line-height:1.5; }
+  .bulk-upload-form { display:grid; gap:12px; padding:16px; border:1px solid var(--border); border-radius:16px; background:#fff; }
+  .bulk-preview-shell { display:grid; gap:14px; }
+  .bulk-preview-summary { display:flex; flex-wrap:wrap; gap:8px; }
+  .bulk-preview-pill { display:inline-flex; align-items:center; gap:6px; padding:7px 10px; border-radius:999px; border:1px solid var(--border); background:var(--surface2); color:var(--text2); font-size:11px; font-weight:800; }
+  .bulk-preview-pill.success { border-color:var(--green-border); background:var(--green-light); color:var(--green); }
+  .bulk-preview-pill.warning { border-color:var(--amber-border); background:var(--amber-light); color:var(--amber); }
+  .bulk-preview-card { border:1px solid var(--border); border-radius:16px; background:#fff; overflow:hidden; }
+  .bulk-preview-card-head { padding:14px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+  .bulk-preview-card-title { font-size:12.5px; font-weight:800; color:var(--navy); }
+  .bulk-preview-card-note { margin-top:4px; font-size:11.5px; color:var(--text3); line-height:1.45; }
+  .bulk-preview-table { width:100%; min-width:660px; border-collapse:collapse; }
+  .bulk-preview-table th,
+  .bulk-preview-table td { padding:12px 14px; border-bottom:1px solid var(--border); vertical-align:top; font-size:12.5px; }
+  .bulk-preview-table th { background:var(--surface2); font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--text4); }
+  .bulk-preview-actions { display:flex; flex-wrap:wrap; gap:10px; }
+  .bulk-empty { padding:18px; border:1px dashed var(--border-dark); border-radius:16px; background:linear-gradient(180deg, rgba(248,250,252,.92) 0%, rgba(255,255,255,.98) 100%); color:var(--text3); font-size:12px; line-height:1.55; }
+  .selection-summary { display:grid; gap:14px; padding:22px; border:1px solid var(--border); border-radius:20px; background:linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.98) 100%); }
+  .selection-summary-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+  .selection-title { font-size:22px; font-weight:800; color:var(--navy); letter-spacing:-.02em; }
+  .selection-subtitle { font-size:12.75px; color:var(--text3); margin-top:6px; word-break:break-word; line-height:1.55; }
+  .selection-meta { display:flex; flex-wrap:wrap; gap:8px; }
+  .selection-pill { display:inline-flex; align-items:center; gap:6px; padding:8px 11px; border-radius:999px; border:1px solid var(--border); background:var(--surface); color:var(--text2); font-size:11px; font-weight:800; }
+  .selection-pill strong { color:var(--navy); }
+  .section-stack { display:grid; gap:16px; }
+  .section-split-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; }
+  .section-card { border:1px solid var(--border); border-radius:20px; background:linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,250,252,.98) 100%); padding:20px; }
+  .section-card-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:14px; }
+  .section-step-line { display:flex; align-items:center; gap:10px; }
+  .section-step-chip { flex-shrink:0; width:28px; height:28px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; background:var(--navy); color:#fff; font-size:11px; font-weight:900; }
+  .section-card-title { font-size:15px; font-weight:800; color:var(--navy); }
+  .section-card-note { font-size:12px; color:var(--text3); line-height:1.55; margin-top:5px; }
+  .editor-form-grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:14px; }
+  .editor-form-grid .form-group.full { grid-column:1 / -1; }
+  .role-select-help { display:flex; align-items:center; gap:8px; margin-top:8px; color:var(--text3); font-size:11.5px; line-height:1.5; }
+  .override-summary-grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:14px; }
+  .override-summary-card { border-radius:16px; border:1px solid var(--border); padding:16px; background:#fff; display:grid; gap:12px; }
+  .override-summary-card.allow { border-color: var(--green-border); background: linear-gradient(180deg, rgba(240,253,244,.98) 0%, rgba(255,255,255,.98) 100%); }
+  .override-summary-card.deny { border-color: var(--amber-border); background: linear-gradient(180deg, rgba(255,251,235,.98) 0%, rgba(255,255,255,.98) 100%); }
+  .override-summary-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+  .override-summary-title { font-size:12px; font-weight:800; color:var(--navy); }
+  .override-count-pill { display:inline-flex; align-items:center; justify-content:center; min-width:34px; padding:6px 10px; border-radius:999px; background:#fff; border:1px solid rgba(15,23,42,.08); font-size:11px; font-weight:800; color:var(--navy); }
+  .override-summary-note { font-size:11.5px; color:var(--text3); line-height:1.5; }
+  .override-pill-list { display:flex; flex-wrap:wrap; gap:8px; }
+  .override-pill { display:inline-flex; align-items:center; padding:7px 10px; border-radius:999px; font-size:11px; font-weight:800; border:1px solid transparent; }
+  .override-pill.allow { background:#fff; color:var(--green); border-color:var(--green-border); }
+  .override-pill.deny { background:#fff; color:var(--amber); border-color:var(--amber-border); }
+  .override-empty { padding:12px 14px; border-radius:14px; border:1px dashed rgba(15,23,42,.14); background:rgba(255,255,255,.72); font-size:11.5px; color:var(--text3); }
+  .permissions-stack { display:grid; gap:16px; }
+  .permission-section { border:1px solid var(--border); border-radius:20px; background:#fff; padding:20px; display:grid; gap:12px; }
+  .permission-section.allow { border-color: var(--green-border); background:linear-gradient(180deg, rgba(240,253,244,.95) 0%, rgba(255,255,255,.99) 100%); }
+  .permission-section.deny { border-color: var(--amber-border); background:linear-gradient(180deg, rgba(255,251,235,.95) 0%, rgba(255,255,255,.99) 100%); }
+  .permission-section-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+  .permission-count-pill { display:inline-flex; align-items:center; padding:7px 11px; border-radius:999px; background:#fff; border:1px solid rgba(15,23,42,.08); font-size:11px; font-weight:800; color:var(--navy); white-space:nowrap; }
+  .permission-accordion { border:1px solid var(--border); border-radius:16px; background:#fff; overflow:hidden; }
+  .permission-accordion + .permission-accordion { margin-top:12px; }
+  .permission-accordion summary { list-style:none; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 18px; cursor:pointer; color:var(--navy); }
+  .permission-accordion summary::-webkit-details-marker { display:none; }
+  .permission-accordion-meta { display:grid; gap:5px; min-width:0; }
+  .permission-accordion-title { font-size:12.75px; font-weight:800; color:var(--navy); }
+  .permission-module-count { font-size:11.5px; color:var(--text3); line-height:1.45; }
+  .permission-accordion-body { padding:0 16px 16px; }
+  .permission-checks { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px; }
+  .permission-checks label { display:flex; align-items:flex-start; gap:12px; padding:14px; margin:0; border:1px solid var(--border); border-radius:16px; background:var(--surface2); text-transform:none; transition:border-color .18s ease, background .18s ease, box-shadow .18s ease; min-height:94px; }
+  .permission-checks label:hover { border-color:#cbd5e1; background:#fff; box-shadow:0 10px 20px rgba(15,23,42,.04); }
+  .permission-checks input[type="checkbox"] { margin-top:3px; width:16px; height:16px; flex-shrink:0; }
+  .permission-meta { display:flex; flex-direction:column; gap:7px; min-width:0; }
+  .permission-meta-head { display:flex; align-items:flex-start; gap:8px; }
+  .permission-meta-label { font-size:13px; font-weight:800; color:var(--navy); line-height:1.4; }
+  .permission-meta-key { font-family:var(--mono); font-size:11px; color:var(--text4); word-break:break-word; line-height:1.45; }
+  .editor-actions { display:flex; flex-wrap:wrap; justify-content:space-between; gap:10px; }
+  .archived-notice { display:grid; gap:12px; padding:18px; border:1px solid var(--amber-border); border-radius:18px; background:var(--amber-light); color:var(--text2); }
+  .archived-notice strong { color:var(--navy); }
+  .empty-selection { display:grid; gap:12px; place-items:center; text-align:center; padding:36px 28px; border:1px dashed var(--border-dark); border-radius:20px; background:linear-gradient(180deg, rgba(248,250,252,0.92) 0%, rgba(255,255,255,0.98) 100%); color:var(--text3); min-height:200px; }
+  .empty-selection strong { color:var(--navy); font-size:16px; }
+  .empty-selection small { font-size:12px; color:var(--text4); line-height:1.55; max-width:560px; }
+
+  @media (max-width: 1180px) {
+    .workflow-strip,
+    .filter-stage-layout,
+    .selection-overview-row { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 900px) {
+    .filter-grid,
+    .directory-utility-strip,
+    .editor-form-grid,
+    .section-split-grid,
+    .override-summary-grid,
+    .bulk-import-steps { grid-template-columns: 1fr; }
+    .user-directory { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 760px) {
+    .workflow-strip { grid-template-columns: 1fr; }
+    .panel-header,
+    .selection-summary-head,
+    .section-card-head,
+    .editor-actions,
+    .new-user-summary,
+    .bulk-import-summary { display:grid; grid-template-columns: 1fr; }
+    .summary-action-label,
+    .user-secondary-action { width:100%; justify-content:center; }
+    .directory-count-row,
+    .permission-section-head { display:grid; grid-template-columns:1fr; }
+    .user-option-grid { grid-template-columns:1fr; }
+  }
+</style>
+{% endblock %}
+
 {% block body %}
 <div class="page-header">
     <div>
-        <div class="page-title">Kullanıcı & Personel Yönetimi</div>
+        <div class="page-title">Kullanıcı Yönetimi</div>
         <div class="page-meta">
-            <span>Saha personeli ve yöneticilerin yetkilerini düzenleyin</span>
-            <div class="meta-dot" style="width: 3px; height: 3px; background: var(--text4); border-radius: 50%;"></div>
-            <span>Toplam: {{ kullanicilar|length }} Kayıt</span>
+            <span>Kullanıcı seçimi, rol kapsamı ve özel yetki override akışı</span>
+            <div class="meta-dot" style="width:3px; height:3px; background:var(--text4); border-radius:50%;"></div>
+            <span>{% if has_active_filters %}{{ filter_result_count }} kayıt filtreyle listeleniyor{% else %}{{ filter_result_count }} kayıt listeleniyor{% endif %}</span>
         </div>
     </div>
 </div>
 
-<div class="two-col">
-    <div class="panel">
-        <div class="panel-header">
-            <div class="panel-title">
-                <div class="panel-title-icon pi-navy">👥</div>
-                Kayıtlı Kullanıcılar
-            </div>
-        </div>
-        
-        <div class="table-container" style="overflow-x: auto;">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>AD SOYAD</th>
-                        <th>ROL</th>
-                        <th>BİRİM / LİMAN</th>
-                        <th>İŞLEMLER</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for user in kullanicilar %}
-                    <tr>
-                        <td>
-                            <div class="item-name-cell">{{ user.tam_ad }}</div>
-                            <div class="item-serial">{{ user.kullanici_adi }}</div>
-                        </td>
-                        <td>
-                            <span class="status-pill {% if user.rol == 'sahip' %}status-ariza{% elif user.rol == 'genel_mudurluk' %}status-bakim{% else %}status-aktif{% endif %}">
-                                {{ user.rol | replace('_', ' ') | upper }}
-                            </span>
-                        </td>
-                        <td>
-                            {% if user.rol == 'sahip' or user.rol == 'genel_mudurluk' %}
-                                <span class="tag-navy" style="padding: 4px 8px; border-radius: 6px; font-family: var(--mono); font-size: 11px; background: var(--blue-light); color: var(--blue); font-weight: 700;">
-                                    🌐 GLOBAL / MERKEZ
-                                </span>
-                            {% elif user.havalimani %}
-                                <span class="tag-navy" style="padding: 4px 8px; border-radius: 6px; font-family: var(--mono); font-size: 11px; background: #f1f5f9; color: var(--text2);">
-                                    ✈️ {{ user.havalimani.kodu }}
-                                </span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <div class="row-actions">
-                                {% if user.kullanici_adi != 'mehmet' %}
-                                <a href="{{ url_for('admin.kullanici_sil', id=user.id) }}" 
-                                   class="row-btn" 
-                                   style="color: var(--red); border-color: var(--red-border);"
-                                   onclick="return confirm('Bu kullanıcıyı silmek istediğinize emin misiniz?')">
-                                    🗑️ Sil
-                                </a>
-                                {% else %}
-                                <span class="text-muted" style="font-size: 10px; font-weight: 700;">🔒 SİSTEM SAHİBİ</span>
-                                {% endif %}
-                            </div>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+<div class="workflow-strip" aria-label="Kullanıcı yönetimi akışı">
+    <div class="workflow-step">
+        <span class="workflow-step-index">1</span>
+        <div>
+            <strong>Filtrele ve kullanıcıyı bul</strong>
+            <span>Arama, rol, havalimanı ve durum kırılımlarıyla görünür listeyi daraltın.</span>
         </div>
     </div>
+    <div class="workflow-step">
+        <span class="workflow-step-index">2</span>
+        <div>
+            <strong>Kullanıcıyı seç</strong>
+            <span>Liste kartlarından bir kayıt seçin; hızlı seçim araçları yalnızca yardımcı akış olarak çalışsın.</span>
+        </div>
+    </div>
+    <div class="workflow-step">
+        <span class="workflow-step-index">3</span>
+        <div>
+            <strong>Detayı düzenle</strong>
+            <span>Seçilen kullanıcı için temel bilgiler, kapsam ve yetki override alanlarını aşağıda yönetin.</span>
+        </div>
+    </div>
+</div>
 
-    <div class="panel">
+<div
+    class="user-admin-shell"
+    id="userManagementPage"
+    data-result-count="{{ filter_result_count }}"
+    data-has-active-filters="{{ 'true' if has_active_filters else 'false' }}"
+    data-selected-user-name="{{ selected_user.tam_ad if selected_user else '' }}"
+    data-selected-status-label="{{ selected_status_label }}"
+>
+    <div class="panel filter-panel" data-admin-stage="filter">
         <div class="panel-header">
-            <div class="panel-title">
-                <div class="panel-title-icon pi-orange">➕</div>
-                Yeni Personel Ekle
+            <div>
+                <div class="panel-kicker">Aşama 1</div>
+                <div class="panel-title">Filtrele ve kullanıcıyı bul</div>
+                <div class="panel-subtitle">Arama, rol, havalimanı ve durum filtrelerini birlikte kullanarak kullanıcı listesini daraltın. Sonuç özeti bu panel içinde anında güncellenir.</div>
             </div>
         </div>
-        <div style="padding: 24px;">
-            <form action="{{ url_for('admin.kullanici_ekle') }}" method="POST">
-                <div class="mb-16">
-                    <label class="fw-700 text-small" style="display: block; margin-bottom: 8px;">TAM AD SOYAD</label>
-                    <input type="text" name="tam_ad" required class="search-input" style="width: 100%; padding-left: 12px;" placeholder="Örn: Ahmet Yılmaz">
-                </div>
+        <div class="panel-body">
+            <div class="filter-stage-layout">
+                <div class="filter-stage-main">
+                    <form method="GET" action="{{ url_for('admin.kullanicilar') }}" class="user-filter-form" id="userFilterForm">
+                        {% if selected_user %}
+                        <input type="hidden" name="user_id" value="{{ selected_user.id }}">
+                        {% endif %}
 
-                <div class="mb-16">
-                    <label class="fw-700 text-small" style="display: block; margin-bottom: 8px;">KULLANICI ADI (Giriş İçin)</label>
-                    <input type="text" name="k_adi" required class="search-input" style="width: 100%; padding-left: 12px;" placeholder="ahmet_y">
-                </div>
+                        <div class="form-group">
+                            <label for="userDirectorySearch">Ad / e-posta / havalimanı ara</label>
+                            <div class="search-wrap">
+                                <span class="search-icon">⌕</span>
+                                <input
+                                    type="search"
+                                    id="userDirectorySearch"
+                                    name="q"
+                                    class="search-input"
+                                    value="{{ search_term or '' }}"
+                                    placeholder="Ad, e-posta veya havalimanına göre ara"
+                                    aria-label="Kullanıcı ara"
+                                >
+                            </div>
+                        </div>
 
-                <div class="mb-16">
-                    <label class="fw-700 text-small" style="display: block; margin-bottom: 8px;">ŞİFRE</label>
-                    <input type="password" name="sifre" required class="search-input" style="width: 100%; padding-left: 12px;" placeholder="••••••">
-                </div>
+                        <div class="filter-grid">
+                            <div class="form-group">
+                                <label for="userRoleFilter">Rol</label>
+                                <select id="userRoleFilter" name="role" class="form-control" aria-label="Role göre filtrele">
+                                    <option value="">Tüm roller</option>
+                                    {% for role in role_options %}
+                                    <option value="{{ role.key }}" {% if selected_role_key == role.key %}selected{% endif %}>{{ role.label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="userAirportFilter">Havalimanı</label>
+                                <select id="userAirportFilter" name="airport_id" class="form-control" aria-label="Havalimanına göre filtrele">
+                                    <option value="">Tüm görünür havalimanları</option>
+                                    {% if current_user.is_sahip or current_user.havalimani_id is none %}
+                                    <option value="global" {% if selected_airport_key == 'global' %}selected{% endif %}>Global erişim</option>
+                                    {% endif %}
+                                    {% for h in havalimanlari %}
+                                    <option value="{{ h.id }}" {% if selected_airport_key == h.id|string %}selected{% endif %}>{{ h.kodu }} - {{ h.ad }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="userStatusFilter">Durum</label>
+                                <select id="userStatusFilter" name="status" class="form-control" aria-label="Duruma göre filtrele">
+                                    {% for status in status_options %}
+                                    <option value="{{ status.key }}" {% if selected_status_key == status.key %}selected{% endif %}>{{ status.label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
 
-                <div class="mb-16">
-                    <label class="fw-700 text-small" style="display: block; margin-bottom: 8px;">YETKİ ROLÜ</label>
-                    <select name="rol" id="rol-select" class="search-input" style="width: 100%; padding-left: 12px; appearance: auto;" onchange="toggleAirportSelect()">
-                        <option value="personel">Personel (Saha Ekibi)</option>
-                        <option value="yetkili">Yetkili (Birim Sorumlusu)</option>
-                        <option value="genel_mudurluk">Genel Müdürlük (Sadece İzleyici)</option>
-                        <option value="sahip">Ekstra Sistem Sahibi (Tam Yetki)</option>
-                    </select>
-                </div>
+                        <div class="filter-actions">
+                            <button type="submit" class="btn btn-navy" data-filter-submit>Filtrele</button>
+                            {% if has_active_filters %}
+                            <a
+                                href="{% if selected_user and selected_user.is_deleted %}{{ url_for('admin.kullanicilar', user_id=selected_user.id, status='archived') }}{% elif selected_user %}{{ url_for('admin.kullanicilar', user_id=selected_user.id) }}{% else %}{{ url_for('admin.kullanicilar') }}{% endif %}"
+                                class="btn btn-secondary"
+                                data-filter-clear
+                            >
+                                Temizle
+                            </a>
+                            {% endif %}
+                        </div>
+                    </form>
 
-                <div id="gm-info-box" style="display: none; padding: 12px; background: var(--blue-light); border-radius: var(--r); border: 1px solid #bfdbfe; margin-bottom: 16px;">
-                    <div style="font-size: 12px; color: #1d4ed8; line-height: 1.4;">
-                        <strong>ℹ️ Genel Müdürlük Yetkisi:</strong><br>
-                        Bu kullanıcı tüm havalimanlarını görebilir ve rapor alabilir ancak <u>hiçbir veri girişi veya silme işlemi yapamaz.</u>
+                    <div class="filter-panel-note">
+                        Filtre sonucu doğrudan aşağıdaki kullanıcı seçimi alanını etkiler. Aynı görünüm içinde önce kayıtları daraltıp ardından doğru kullanıcıyı seçmeniz amaçlanır.
                     </div>
                 </div>
 
-                <div class="mb-20" id="airport-select-container">
-                    <label class="fw-700 text-small" style="display: block; margin-bottom: 8px;">BAĞLI HAVALİMANI</label>
-                    <select name="h_id" id="h_id_select" class="search-input" style="width: 100%; padding-left: 12px; appearance: auto;">
-                        <option value="">Havalimanı Seçin...</option>
-                        {% for h in havalimanlari %}
-                        <option value="{{ h.id }}">{{ h.kodu }} - {{ h.ad }}</option>
-                        {% endfor %}
-                    </select>
-                    <small style="display: block; margin-top: 6px; color: var(--text4); font-size: 11px;">
-                        * Personel ve Yetkili rolleri için birim seçimi zorunludur.
-                    </small>
+                <div class="results-overview" id="userResultsSummary" data-filter-summary>
+                    <div class="results-overview-head">
+                        <div>
+                            <div class="results-overview-label">Filtre Sonucu</div>
+                            <div class="results-overview-value" id="filterResultCount">{{ filter_result_count }}</div>
+                            <div class="results-overview-note">
+                                {% if has_active_filters %}
+                                Seçili ölçütlere göre daraltılmış kullanıcı listesi gösteriliyor.
+                                {% else %}
+                                Varsayılan görünümde aktif kullanıcı kayıtları listeleniyor.
+                                {% endif %}
+                            </div>
+                        </div>
+                        <span class="results-status-pill">{{ selected_status_label }}</span>
+                    </div>
+                    <div class="active-filter-bar">
+                        {% if search_term %}
+                        <span class="active-filter-pill">Arama: {{ search_term }}</span>
+                        {% endif %}
+                        {% if selected_role_label %}
+                        <span class="active-filter-pill">Rol: {{ selected_role_label }}</span>
+                        {% endif %}
+                        {% if selected_airport_label %}
+                        <span class="active-filter-pill">Havalimanı: {{ selected_airport_label }}</span>
+                        {% endif %}
+                        {% if selected_status_key != 'active' %}
+                        <span class="active-filter-pill">Durum: {{ selected_status_label }}</span>
+                        {% endif %}
+                        {% if not has_active_filters %}
+                        <span class="active-filter-pill is-muted">Varsayılan görünüm</span>
+                        {% endif %}
+                        <span class="active-filter-pill is-result">{{ filter_result_count }} kayıt</span>
+                    </div>
                 </div>
-
-                <button type="submit" class="btn-primary" style="width: 100%; justify-content: center; padding: 12px;">
-                    👤 Kullanıcıyı Sisteme Tanımla
-                </button>
-            </form>
+            </div>
         </div>
     </div>
+
+    <div class="panel user-directory-panel" data-admin-stage="select">
+        <div class="panel-header">
+            <div>
+                <div class="panel-kicker">Aşama 2</div>
+                <div class="panel-title">Kullanıcıyı seç</div>
+                <div class="panel-subtitle">Liste kartları birincil seçim alanıdır. Hızlı seçim ve yerel arama yalnızca mevcut filtre sonucunu daha rahat taramanızı sağlar.</div>
+            </div>
+            <button type="button" class="btn btn-secondary user-secondary-action" id="openNewUserPanelBtn" aria-controls="newUserPanel" aria-expanded="false">
+                Yeni kullanıcı ekle
+            </button>
+        </div>
+        <div class="panel-body">
+            <div class="selection-overview-row">
+                {% if selected_user %}
+                <div class="selected-user-banner">
+                    <span class="selected-user-banner-label">Seçili kayıt</span>
+                    <strong>{{ selected_user.tam_ad }}</strong>
+                    <div class="selected-user-banner-meta">
+                        {{ selected_user.havalimani.ad if selected_user.havalimani else 'Global erişim' }}
+                        •
+                        {{ rol_etiketleri.get(selected_user.rol, selected_user.rol) }}
+                    </div>
+                </div>
+                {% else %}
+                <div class="selected-user-banner is-empty">
+                    <span class="selected-user-banner-label">Seçili kayıt</span>
+                    <div>Henüz kullanıcı seçilmedi. Önce filtreleyin, sonra aşağıdaki kartlardan bir kayıt seçin.</div>
+                </div>
+                {% endif %}
+
+                <div class="directory-count-card">
+                    <span class="directory-count-card-label">Liste Özeti</span>
+                    <span class="directory-count-card-value" id="directoryVisibleCount">{{ filter_result_count }}</span>
+                    <div class="directory-count-card-note" id="directoryCountContext">
+                        {% if has_active_filters %}
+                        Filtre sonucu gösteriliyor.
+                        {% else %}
+                        {{ selected_status_label }} görünümündesiniz.
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="directory-controls">
+                <div class="directory-utility-strip">
+                    <div class="directory-utility-card">
+                        <div class="form-group">
+                            <label for="userQuickSelect">Hızlı kullanıcı seçimi</label>
+                            <select id="userQuickSelect" class="form-control" aria-label="Kullanıcı seç" {% if not kullanicilar %}disabled{% endif %}>
+                                <option value="">Kullanıcı seçin</option>
+                                {% for user in kullanicilar %}
+                                {% set role_label = rol_etiketleri.get(user.rol, user.rol) %}
+                                <option
+                                    value="{{ user.id }}"
+                                    data-search-text="{{ (user.tam_ad ~ ' ' ~ (user.havalimani.ad if user.havalimani else 'Global erişim') ~ ' ' ~ role_label)|lower }}"
+                                    {% if selected_user and user.id == selected_user.id %}selected{% endif %}
+                                >
+                                    {{ user.tam_ad }} • {{ user.havalimani.ad if user.havalimani else 'Global erişim' }} • {{ role_label }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <div class="quick-select-help">Açılır liste sadece ad soyad, havalimanı ve rol gösterir; e-posta ikincil bilgi olarak kartlarda tutulur.</div>
+                        </div>
+                    </div>
+
+                    <div class="directory-utility-card">
+                        <div class="form-group">
+                            <label for="userLocalSearch">Listede hızlı bul</label>
+                            <input type="search" id="userLocalSearch" class="form-control" placeholder="Mevcut listede ada, role veya havalimanına göre ara" {% if not kullanicilar %}disabled{% endif %}>
+                            <div class="quick-select-help">Yerel arama yalnızca ekrandaki filtre sonucunda çalışır; sayfayı yeniden yüklemeden kartları daraltır.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="directory-count-row">
+                    <span><strong>{{ filter_result_count }}</strong> kayıt seçim için hazır</span>
+                    <span>{% if selected_user %}Detay paneli {{ selected_user.tam_ad }} için hazır{% else %}Detay paneli bir seçim bekliyor{% endif %}</span>
+                </div>
+            </div>
+
+            <div class="user-directory" id="userDirectory">
+                {% for user in kullanicilar %}
+                {% set role_label = rol_etiketleri.get(user.rol, user.rol) %}
+                {% set scope_label = user.havalimani.ad if user.havalimani else 'Global erişim' %}
+                <a
+                    href="{{ url_for('admin.kullanicilar', user_id=user.id, q=search_term or None, role=selected_role_key or None, airport_id=selected_airport_key or None, status=selected_status_key if selected_status_key != 'active' else None) }}"
+                    class="user-option {% if selected_user and user.id == selected_user.id %}is-active{% endif %}"
+                    data-user-card="{{ user.id }}"
+                    data-user-search="{{ (user.tam_ad ~ ' ' ~ scope_label ~ ' ' ~ role_label ~ ' ' ~ user.kullanici_adi)|lower }}"
+                >
+                    <div class="user-option-head">
+                        <div>
+                            <div class="user-option-eyebrow">Kullanıcı kaydı</div>
+                            <div class="user-option-name">{{ user.tam_ad }}</div>
+                            <div class="user-option-mail">{{ user.kullanici_adi }}</div>
+                        </div>
+                        <span class="status-pill {% if user.is_deleted %}status-pasif{% else %}status-aktif{% endif %}">
+                            {{ 'Arşivde' if user.is_deleted else 'Aktif' }}
+                        </span>
+                    </div>
+                    <div class="user-option-grid">
+                        <div class="user-option-data">
+                            <span class="user-option-label">Havalimanı</span>
+                            <span class="user-option-value">{{ scope_label }}</span>
+                        </div>
+                        <div class="user-option-data">
+                            <span class="user-option-label">Rol</span>
+                            <span class="user-option-value">{{ role_label }}</span>
+                        </div>
+                    </div>
+                </a>
+                {% else %}
+                <div class="user-list-empty" id="userServerEmpty" data-empty-state="server">
+                    <strong>Seçili filtrelerle kullanıcı bulunamadı</strong>
+                    <div>Arama metnini veya filtre kombinasyonunu değiştirerek görünür kullanıcı listesini genişletebilirsiniz.</div>
+                </div>
+                {% endfor %}
+                <div class="user-list-empty" id="userLocalEmpty" hidden>
+                    <strong>Listede eşleşen kullanıcı yok</strong>
+                    <div>Hızlı arama metnini temizleyerek mevcut filtre sonucundaki kayıtları yeniden listeleyin.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel user-editor-panel" id="userDetailPanel">
+        <div class="panel-header">
+            <div>
+                <div class="panel-kicker">Aşama 3</div>
+                <div class="panel-title">Detay ve yetki düzenleme</div>
+                <div class="panel-subtitle">Seçilen kullanıcı için temel bilgiler, rol kapsamı, iletişim alanı ve override yetkileri ayrı bölümlerde yönetilir.</div>
+            </div>
+        </div>
+        <div class="panel-body">
+            {% if selected_user %}
+            <div class="editor-shell" data-selected-user-id="{{ selected_user.id }}">
+                <div class="selection-summary">
+                    <div class="selection-summary-head">
+                        <div>
+                            <div class="selection-title">{{ selected_user.tam_ad }}</div>
+                            <div class="selection-subtitle">{{ selected_user.kullanici_adi }}</div>
+                        </div>
+                        <span class="status-pill {% if selected_user.is_deleted %}status-pasif{% else %}status-aktif{% endif %}">
+                            {{ 'Arşivde' if selected_user.is_deleted else 'Aktif hesap' }}
+                        </span>
+                    </div>
+                    <div class="selection-meta">
+                        <span class="selection-pill">
+                            <strong>Rol:</strong>
+                            {{ rol_etiketleri.get(selected_user.rol, selected_user.rol) }}
+                            {% set tooltip_text = rol_aciklamalari.get(selected_user.rol, '') %}
+                            {% set tooltip_aria_label = rol_etiketleri.get(selected_user.rol, selected_user.rol) ~ ' rol açıklaması' %}
+                            {% include "admin/_info_tooltip.html" %}
+                        </span>
+                        <span class="selection-pill"><strong>Kapsam:</strong> {{ selected_user.havalimani.ad if selected_user.havalimani else 'Global erişim' }}</span>
+                        <span class="selection-pill"><strong>Etkin izin:</strong> {{ selected_effective_permissions|length }}</span>
+                        <span class="selection-pill"><strong>Ek verilen:</strong> {{ selected_override_allow|length }}</span>
+                        <span class="selection-pill"><strong>Geri çekilen:</strong> {{ selected_override_deny|length }}</span>
+                        {% if current_user.is_sahip and selected_user.telefon_numarasi %}
+                        <span class="selection-pill"><strong>Telefon:</strong> {{ selected_user.telefon_numarasi }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if selected_user.is_deleted %}
+                <div class="archived-notice">
+                    <strong>Bu kayıt arşivde tutuluyor.</strong>
+                    <div>Arşivlenmiş kullanıcılar bu ekranda görüntülenebilir; düzenleme ve geri alma işlemleri arşiv akışı üzerinden yönetilir.</div>
+                    <div>
+                        <a href="{{ url_for('admin.arsiv_listesi') }}" class="btn btn-secondary">Arşiv ekranına git</a>
+                    </div>
+                </div>
+                {% else %}
+                <form method="POST" action="{{ url_for('admin.kullanici_guncelle', id=selected_user.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                    <div class="section-stack">
+                        <div class="section-card">
+                            <div class="section-card-head">
+                                <div>
+                                    <div class="section-step-line">
+                                        <span class="section-step-chip">1</span>
+                                        <div class="section-card-title">Temel bilgiler</div>
+                                    </div>
+                                    <div class="section-card-note">Kullanıcının adı ve sisteme girişte kullandığı e-posta bu alanda düzenlenir.</div>
+                                </div>
+                            </div>
+
+                            <div class="editor-form-grid">
+                                <div class="form-group">
+                                    <label>Ad Soyad</label>
+                                    <input type="text" name="tam_ad" value="{{ selected_user.tam_ad }}" class="form-control">
+                                </div>
+                                <div class="form-group">
+                                    <label>Giriş E-postası</label>
+                                    <input type="text" name="k_adi" value="{{ selected_user.kullanici_adi }}" class="form-control">
+                                    <div class="form-help-inline">Bu alan kullanıcının sisteme girişte kullandığı e-posta adresidir.</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="section-split-grid">
+                            <div class="section-card">
+                                <div class="section-card-head">
+                                    <div>
+                                        <div class="section-step-line">
+                                            <span class="section-step-chip">2</span>
+                                            <div class="section-card-title">Rol ve havalimanı</div>
+                                        </div>
+                                        <div class="section-card-note">Rol kapsamı ve kullanıcının bağlı olduğu havalimanı bu bölümde birlikte yönetilir.</div>
+                                    </div>
+                                </div>
+
+                                <div class="editor-form-grid">
+                                    <div class="form-group">
+                                        <label>Rol</label>
+                                        <select name="rol" class="form-control" data-selected-role="{{ selected_user.rol }}">
+                                            {% for role in role_options %}
+                                            <option value="{{ role.key }}" {% if selected_user.rol == role.key %}selected{% endif %}>{{ role.label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <div class="role-select-help">
+                                            {% set tooltip_text = rol_aciklamalari.get(selected_user.rol, '') %}
+                                            {% set tooltip_aria_label = rol_etiketleri.get(selected_user.rol, selected_user.rol) ~ ' rol açıklaması' %}
+                                            {% include "admin/_info_tooltip.html" %}
+                                            <span>Seçili rolün kapsamını bilgi ikonundan kontrol edebilirsiniz.</span>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Havalimanı</label>
+                                        <select name="h_id" class="form-control">
+                                            <option value="">Global</option>
+                                            {% for h in havalimanlari %}
+                                            <option value="{{ h.id }}" {% if selected_user.havalimani_id == h.id %}selected{% endif %}>{{ h.kodu }} - {{ h.ad }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {% if current_user.is_sahip %}
+                            <div class="section-card">
+                                <div class="section-card-head">
+                                    <div>
+                                        <div class="section-step-line">
+                                            <span class="section-step-chip">3</span>
+                                            <div class="section-card-title">Telefon / iletişim</div>
+                                        </div>
+                                        <div class="section-card-note">İletişim alanı yalnızca site sahibi kapsamı içinde görünür ve güncellenir.</div>
+                                    </div>
+                                </div>
+                                <div class="editor-form-grid">
+                                    <div class="form-group full">
+                                        <label>Telefon Numarası</label>
+                                        <input type="text" name="telefon_numarasi" value="{{ selected_user.telefon_numarasi or '' }}" class="form-control" placeholder="+90 555 123 45 67">
+                                        <div class="phone-privacy-note">Telefon numarası yalnızca site sahibi ekranında görünür; diğer rollerde render edilmez.</div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="section-card">
+                            <div class="section-card-head">
+                                <div>
+                                    <div class="section-step-line">
+                                        <span class="section-step-chip">4</span>
+                                        <div class="section-card-title">Override özeti</div>
+                                    </div>
+                                    <div class="section-card-note">Rolün varsayılan matrisine göre bu kullanıcıya eklenen ve özellikle geri çekilen izinleri kısa özet kartları halinde gösterir.</div>
+                                </div>
+                            </div>
+
+                            <div class="override-summary-grid">
+                                <div class="override-summary-card allow" data-override-summary="allow">
+                                    <div class="override-summary-head">
+                                        <div>
+                                            <div class="override-summary-title">Bu kullanıcıya ek olarak verilenler</div>
+                                            <div class="override-summary-note">Rol dışında özel erişim eklemek istediğiniz izinler burada özetlenir.</div>
+                                        </div>
+                                        <span class="override-count-pill">{{ selected_override_allow|length }}</span>
+                                    </div>
+                                    {% if selected_override_allow %}
+                                    <div class="override-pill-list">
+                                        {% for permission_key in selected_override_allow|sort %}
+                                        <span class="override-pill allow">{{ permission_lookup.get(permission_key, permission_key) }}</span>
+                                        {% endfor %}
+                                    </div>
+                                    {% else %}
+                                    <div class="override-empty">Ek özel izin yok.</div>
+                                    {% endif %}
+                                </div>
+                                <div class="override-summary-card deny" data-override-summary="deny">
+                                    <div class="override-summary-head">
+                                        <div>
+                                            <div class="override-summary-title">Bu kullanıcıdan özellikle kaldırılanlar</div>
+                                            <div class="override-summary-note">Rolde varsayılan olarak gelen ama bu kullanıcı için geri çekilen izinler burada görünür.</div>
+                                        </div>
+                                        <span class="override-count-pill">{{ selected_override_deny|length }}</span>
+                                    </div>
+                                    {% if selected_override_deny %}
+                                    <div class="override-pill-list">
+                                        {% for permission_key in selected_override_deny|sort %}
+                                        <span class="override-pill deny">{{ permission_lookup.get(permission_key, permission_key) }}</span>
+                                        {% endfor %}
+                                    </div>
+                                    {% else %}
+                                    <div class="override-empty">Geri çekilen izin yok.</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="section-card">
+                            <div class="section-card-head">
+                                <div>
+                                    <div class="section-step-line">
+                                        <span class="section-step-chip">5</span>
+                                        <div class="section-card-title">Yetki blokları</div>
+                                    </div>
+                                    <div class="section-card-note">İzin verilenler ve geri çekilenler aynı akış içinde ama ayrı bloklarda düzenlenir; kategori bazlı akordiyon yapısı korunur.</div>
+                                </div>
+                            </div>
+
+                            <div class="permissions-stack">
+                                <div class="permission-section allow">
+                                    <div class="permission-section-head">
+                                        <div>
+                                            <div class="section-card-title">İzin Verilenler</div>
+                                            <div class="section-card-note">Bu kullanıcıya rol yetkilerine ek olarak tanımlanacak özel izinleri seçin.</div>
+                                        </div>
+                                        <span class="permission-count-pill">{{ selected_override_allow|length }} seçili</span>
+                                    </div>
+                                    {% for module, permissions in permission_catalog.items() %}
+                                    {% set allow_state = namespace(open=loop.first, selected_count=0) %}
+                                    {% for permission in permissions %}
+                                        {% if permission.key in selected_override_allow %}
+                                            {% set allow_state.open = true %}
+                                            {% set allow_state.selected_count = allow_state.selected_count + 1 %}
+                                        {% endif %}
+                                    {% endfor %}
+                                    <details class="permission-accordion" {% if allow_state.open %}open{% endif %}>
+                                        <summary>
+                                            <span class="permission-accordion-meta">
+                                                <span class="permission-accordion-title">{{ permissions[0].module_label }}</span>
+                                                <span class="permission-module-count">{{ allow_state.selected_count }} seçili • {{ permissions|length }} izin</span>
+                                            </span>
+                                        </summary>
+                                        <div class="permission-accordion-body">
+                                            <div class="permission-checks">
+                                                {% for permission in permissions %}
+                                                <label>
+                                                    <input type="checkbox" name="allow_permissions" value="{{ permission.key }}" {% if permission.key in selected_override_allow %}checked{% endif %}>
+                                                    {% include "admin/_permission_meta.html" %}
+                                                </label>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                    </details>
+                                    {% endfor %}
+                                </div>
+
+                                <div class="permission-section deny">
+                                    <div class="permission-section-head">
+                                        <div>
+                                            <div class="section-card-title">Geri Çekilenler</div>
+                                            <div class="section-card-note">Bu kullanıcı için özellikle kaldırılacak rol izinlerini burada işaretleyin.</div>
+                                        </div>
+                                        <span class="permission-count-pill">{{ selected_override_deny|length }} seçili</span>
+                                    </div>
+                                    {% for module, permissions in permission_catalog.items() %}
+                                    {% set deny_state = namespace(open=loop.first, selected_count=0) %}
+                                    {% for permission in permissions %}
+                                        {% if permission.key in selected_override_deny %}
+                                            {% set deny_state.open = true %}
+                                            {% set deny_state.selected_count = deny_state.selected_count + 1 %}
+                                        {% endif %}
+                                    {% endfor %}
+                                    <details class="permission-accordion" {% if deny_state.open %}open{% endif %}>
+                                        <summary>
+                                            <span class="permission-accordion-meta">
+                                                <span class="permission-accordion-title">{{ permissions[0].module_label }}</span>
+                                                <span class="permission-module-count">{{ deny_state.selected_count }} seçili • {{ permissions|length }} izin</span>
+                                            </span>
+                                        </summary>
+                                        <div class="permission-accordion-body">
+                                            <div class="permission-checks">
+                                                {% for permission in permissions %}
+                                                <label>
+                                                    <input type="checkbox" name="deny_permissions" value="{{ permission.key }}" {% if permission.key in selected_override_deny %}checked{% endif %}>
+                                                    {% include "admin/_permission_meta.html" %}
+                                                </label>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                    </details>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="editor-actions" style="margin-top:16px;">
+                        <button type="submit" class="btn btn-navy">Kullanıcıyı Güncelle</button>
+                        <button
+                            type="submit"
+                            class="btn btn-danger"
+                            formaction="{{ url_for('admin.kullanici_sil', id=selected_user.id) }}"
+                            formmethod="post"
+                            onclick="return confirm('Bu kullanıcı arşive taşınacak. Emin misiniz?')"
+                        >
+                            Arşive Al
+                        </button>
+                    </div>
+                </form>
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="empty-selection" data-detail-empty-state>
+                <strong>Önce bir kullanıcı seçin</strong>
+                <div>Kullanıcı listesi üst bölümde filtrelenip seçildikten sonra rol ve yetki düzenleme alanı burada açılır.</div>
+                <small>Önce filtrele, sonra kullanıcı seç, ardından detayları güncelle akışı bu yüzden daha kısa ve daha anlaşılır ilerler.</small>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="user-secondary-stack">
+        <details class="panel new-user-panel" id="newUserPanel">
+            <summary class="panel-header new-user-summary">
+                <div>
+                    <div class="panel-kicker">İkincil Aksiyon</div>
+                    <div class="panel-title">Yeni Kullanıcı Ekle</div>
+                    <div class="panel-subtitle">Oluşturma formu sürekli açık kalmaz. Gerek duyduğunuzda açıp yeni kullanıcı ekleyebilir, ana düzenleme akışını temiz tutabilirsiniz.</div>
+                </div>
+                <span class="summary-action-label" id="newUserSummaryLabel">Formu aç</span>
+            </summary>
+            <div class="panel-body">
+                <div class="new-user-intro">
+                    Yeni kayıt oluşturma akışı liste ve detay ekranını bölmeden ayrı tutulur. Kullanıcı oluşturulduktan sonra sistem sizi yeni kaydın detay alanına yönlendirir.
+                </div>
+                <form action="{{ url_for('admin.kullanici_ekle') }}" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="editor-form-grid">
+                        <div class="form-group">
+                            <label>Ad Soyad</label>
+                            <input type="text" name="tam_ad" class="form-control" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Giriş E-postası</label>
+                            <input type="text" name="k_adi" class="form-control" required>
+                            <div class="form-help-inline">Bu alan kullanıcının oturum açarken kullanacağı e-posta adresidir.</div>
+                        </div>
+                        <div class="form-group">
+                            <label>Şifre</label>
+                            <input type="password" name="sifre" class="form-control" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Rol</label>
+                            <select name="rol" class="form-control">
+                                {% for role in role_options %}
+                                <option value="{{ role.key }}">{{ role.label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group full">
+                            <label>Havalimanı</label>
+                            <select name="h_id" class="form-control">
+                                <option value="">Global</option>
+                                {% for h in havalimanlari %}
+                                <option value="{{ h.id }}">{{ h.kodu }} - {{ h.ad }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        {% if current_user.is_sahip %}
+                        <div class="form-group full">
+                            <label>Telefon Numarası</label>
+                            <input type="text" name="telefon_numarasi" class="form-control" placeholder="+90 555 123 45 67">
+                            <div class="phone-privacy-note">Bu alan yalnızca site sahibi tarafından görüntülenir ve güncellenir.</div>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="editor-actions" style="margin-top:16px;">
+                        <button type="submit" class="btn btn-primary">Kullanıcı Oluştur</button>
+                    </div>
+                </form>
+            </div>
+        </details>
+
+        {% if can_download_user_template or can_import_users %}
+        <details class="panel bulk-import-panel" id="bulkImportPanel" {% if bulk_import_preview %}open{% endif %}>
+            <summary class="panel-header bulk-import-summary">
+                <div>
+                    <div class="panel-kicker">İkincil Aksiyon</div>
+                    <div class="panel-title">Toplu Kullanıcı İçe Aktarma</div>
+                    <div class="panel-subtitle">Örnek Excel şablonunu indirip doldurun, önizleme ile doğrulayın ve onay sonrası kullanıcıları toplu kaydedin.</div>
+                </div>
+                <span class="summary-action-label" id="bulkImportSummaryLabel">Adımları aç</span>
+            </summary>
+            <div class="panel-body">
+                <div class="bulk-import-layout">
+                    <div class="bulk-import-steps">
+                        <div class="bulk-step">
+                            <span class="bulk-step-index">1</span>
+                            <div class="bulk-step-title">Şablonu İndir</div>
+                            <div class="bulk-step-note">Rol, havalimanı ve aktiflik alanlarını tutarlı biçimde doldurmak için örnek dosya ile başlayın.</div>
+                            {% if can_download_user_template %}
+                            <a href="{{ url_for('admin.kullanici_import_sablonu') }}" class="btn btn-secondary">Örnek Excel Şablonu</a>
+                            {% else %}
+                            <div class="bulk-empty">Bu hesap için şablon indirme yetkisi bulunmuyor.</div>
+                            {% endif %}
+                        </div>
+                        <div class="bulk-step">
+                            <span class="bulk-step-index">2</span>
+                            <div class="bulk-step-title">Dosyayı Yükle</div>
+                            <div class="bulk-step-note">Sistem satırları tek tek kontrol eder; hatalıları ayırır, geçerli satırları önizlemeye hazırlar.</div>
+                            {% if can_import_users %}
+                            <form action="{{ url_for('admin.kullanici_import_preview') }}" method="POST" enctype="multipart/form-data" class="bulk-upload-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <div class="form-group" style="margin-bottom:0;">
+                                    <label for="bulkUserImportFile">Excel Dosyası</label>
+                                    <input id="bulkUserImportFile" type="file" name="import_file" class="form-control" accept=".xlsx,.xls" required>
+                                </div>
+                                <button type="submit" class="btn btn-navy">Önizleme Oluştur</button>
+                            </form>
+                            {% else %}
+                            <div class="bulk-empty">Bu hesap için toplu içe aktarma yetkisi bulunmuyor.</div>
+                            {% endif %}
+                        </div>
+                        <div class="bulk-step">
+                            <span class="bulk-step-index">3</span>
+                            <div class="bulk-step-title">Onayla ve Kaydet</div>
+                            <div class="bulk-step-note">Geçerli satırlar tek seferde oluşturulur; çakışan ve hatalı satırlar ayrı raporlanır.</div>
+                            {% if bulk_import_preview %}
+                            <div class="bulk-preview-summary">
+                                <span class="bulk-preview-pill">{{ bulk_import_preview.summary.total }} toplam satır</span>
+                                <span class="bulk-preview-pill success">{{ bulk_import_preview.summary.valid }} geçerli</span>
+                                <span class="bulk-preview-pill warning">{{ bulk_import_preview.summary.invalid }} hatalı</span>
+                            </div>
+                            {% else %}
+                            <div class="bulk-empty">Önizleme hazır olduğunda işlem özeti burada görünecek.</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    {% if bulk_import_preview %}
+                    <div class="bulk-preview-shell">
+                        <div class="bulk-preview-actions">
+                            {% if bulk_import_preview.valid_rows %}
+                            <form method="POST" action="{{ url_for('admin.kullanici_import_commit') }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-primary">Geçerli Satırları İçe Aktar</button>
+                            </form>
+                            {% endif %}
+                            <form method="POST" action="{{ url_for('admin.kullanici_import_clear') }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-secondary">Önizlemeyi Temizle</button>
+                            </form>
+                        </div>
+
+                        <div class="bulk-preview-card">
+                            <div class="bulk-preview-card-head">
+                                <div>
+                                    <div class="bulk-preview-card-title">Geçerli Satırlar</div>
+                                    <div class="bulk-preview-card-note">Onay verdiğinizde yalnızca aşağıdaki satırlar kullanıcı kaydına dönüşür.</div>
+                                </div>
+                            </div>
+                            {% if bulk_import_preview.valid_rows %}
+                            <div class="table-container">
+                                <table class="bulk-preview-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Satır</th>
+                                            <th>Ad Soyad</th>
+                                            <th>Giriş E-postası</th>
+                                            <th>Rol</th>
+                                            <th>Havalimanı</th>
+                                            <th>Durum</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for row in bulk_import_preview.valid_rows %}
+                                        <tr>
+                                            <td>{{ row.row }}</td>
+                                            <td>{{ row.tam_ad }}</td>
+                                            <td>{{ row.kullanici_adi }}</td>
+                                            <td>{{ rol_etiketleri.get(row.rol, row.rol) }}</td>
+                                            <td>
+                                                {% if row.havalimani_id %}
+                                                    {% set preview_airport = havalimanlari|selectattr('id', 'equalto', row.havalimani_id)|list|first %}
+                                                    {{ preview_airport.ad if preview_airport else row.havalimani_id }}
+                                                {% else %}
+                                                    Global erişim
+                                                {% endif %}
+                                            </td>
+                                            <td>{{ 'Pasif' if row.is_deleted else 'Aktif' }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                            <div class="bulk-empty">Önizlemede içe aktarılabilecek satır bulunmuyor.</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="bulk-preview-card">
+                            <div class="bulk-preview-card-head">
+                                <div>
+                                    <div class="bulk-preview-card-title">Doğrulama Hataları</div>
+                                    <div class="bulk-preview-card-note">Bu satırlar kayda alınmaz; Excel dosyasını düzeltip yeniden yükleyebilirsiniz.</div>
+                                </div>
+                            </div>
+                            {% if bulk_import_preview.errors %}
+                            <div class="table-container">
+                                <table class="bulk-preview-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Satır</th>
+                                            <th>Hata Nedeni</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for error in bulk_import_preview.errors %}
+                                        <tr>
+                                            <td>{{ error.row }}</td>
+                                            <td>{{ error.reason }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                            <div class="bulk-empty">Doğrulama hatası bulunmuyor. Önizleme doğrudan onaya hazır.</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </details>
+        {% endif %}
+    </div>
 </div>
+{% endblock %}
 
+{% block extra_js %}
 <script>
-function toggleAirportSelect() {
-    const rol = document.getElementById('rol-select').value;
-    const container = document.getElementById('airport-select-container');
-    const infoBox = document.getElementById('gm-info-box');
-    const select = document.getElementById('h_id_select');
-    
-    // Eğer Sahip veya Genel Müdürlük ise havalimanı seçimini kapat
-    if (rol === 'sahip' || rol === 'genel_mudurluk') {
-        container.style.display = 'none';
-        select.required = false;
-        select.value = "";
-        
-        // Sadece Genel Müdürlük seçildiğinde bilgi kutusunu göster
-        infoBox.style.display = (rol === 'genel_mudurluk') ? 'block' : 'none';
-    } else {
-        container.style.display = 'block';
-        infoBox.style.display = 'none';
-        select.required = true;
-    }
-}
+  (function () {
+    const baseUrl = "{{ url_for('admin.kullanicilar') }}";
+    const page = document.getElementById('userManagementPage');
+    const quickSelect = document.getElementById('userQuickSelect');
+    const filterForm = document.getElementById('userFilterForm');
+    const searchInput = document.getElementById('userDirectorySearch');
+    const roleFilter = document.getElementById('userRoleFilter');
+    const airportFilter = document.getElementById('userAirportFilter');
+    const statusFilter = document.getElementById('userStatusFilter');
+    const localSearch = document.getElementById('userLocalSearch');
+    const directoryCards = Array.from(document.querySelectorAll('[data-user-search]'));
+    const localEmpty = document.getElementById('userLocalEmpty');
+    const directoryVisibleCount = document.getElementById('directoryVisibleCount');
+    const directoryCountContext = document.getElementById('directoryCountContext');
+    const newUserPanel = document.getElementById('newUserPanel');
+    const newUserSummaryLabel = document.getElementById('newUserSummaryLabel');
+    const openNewUserPanelBtn = document.getElementById('openNewUserPanelBtn');
+    const bulkImportPanel = document.getElementById('bulkImportPanel');
+    const bulkImportSummaryLabel = document.getElementById('bulkImportSummaryLabel');
+    const serverResultCount = Number(page && page.dataset.resultCount ? page.dataset.resultCount : directoryCards.length);
+    const hasActiveFilters = !!(page && page.dataset.hasActiveFilters === 'true');
+    const selectedUserName = page && page.dataset.selectedUserName ? page.dataset.selectedUserName : '';
+    const selectedStatusLabel = page && page.dataset.selectedStatusLabel ? page.dataset.selectedStatusLabel : 'Aktif kayıtlar';
 
-document.addEventListener('DOMContentLoaded', toggleAirportSelect);
+    const queueToast = function (payload) {
+      try {
+        window.sessionStorage.setItem('userDirectoryToast', JSON.stringify(payload));
+      } catch (error) {
+        /* no-op */
+      }
+    };
+
+    const queueIntent = function (payload) {
+      try {
+        window.sessionStorage.setItem('userDirectoryIntent', JSON.stringify(payload));
+      } catch (error) {
+        /* no-op */
+      }
+    };
+
+    const pendingToast = (function () {
+      try {
+        const raw = window.sessionStorage.getItem('userDirectoryToast');
+        if (!raw) return null;
+        window.sessionStorage.removeItem('userDirectoryToast');
+        return JSON.parse(raw);
+      } catch (error) {
+        return null;
+      }
+    })();
+
+    const pendingIntent = (function () {
+      try {
+        const raw = window.sessionStorage.getItem('userDirectoryIntent');
+        if (!raw) return null;
+        window.sessionStorage.removeItem('userDirectoryIntent');
+        return JSON.parse(raw);
+      } catch (error) {
+        return null;
+      }
+    })();
+
+    if (pendingToast && typeof window.showToast === 'function') {
+      window.showToast(pendingToast);
+    } else if (pendingIntent && typeof window.showToast === 'function') {
+      if (pendingIntent.kind === 'filter') {
+        window.showToast({
+          type: serverResultCount ? 'info' : 'warning',
+          title: serverResultCount ? 'Filtre uygulandı' : 'Sonuç bulunamadı',
+          message: serverResultCount
+            ? (serverResultCount + ' kullanıcı seçili ölçütlere göre listeleniyor.')
+            : 'Seçili filtrelerle eşleşen kullanıcı bulunamadı.',
+          duration: 2600
+        });
+      } else if (pendingIntent.kind === 'filter-clear') {
+        window.showToast({
+          type: 'info',
+          title: 'Filtreler temizlendi',
+          message: 'Kullanıcı listesi varsayılan görünümüne döndü.',
+          duration: 2400
+        });
+      } else if (pendingIntent.kind === 'selection-clear') {
+        window.showToast({
+          type: 'info',
+          title: 'Kullanıcı seçimi temizlendi',
+          message: 'Detay alanı kapatıldı; yeni bir kayıt seçebilirsiniz.',
+          duration: 2200
+        });
+      } else if (pendingIntent.kind === 'user-select' && selectedUserName) {
+        window.showToast({
+          type: 'success',
+          title: 'Kullanıcı seçildi',
+          message: selectedUserName + ' kaydı düzenleme alanına yüklendi.',
+          duration: 2400
+        });
+      }
+    }
+
+    const syncVisibleCount = function (visibleCount, isLocalSearchActive) {
+      if (directoryVisibleCount) {
+        directoryVisibleCount.textContent = String(visibleCount);
+      }
+      if (directoryCountContext) {
+        directoryCountContext.textContent = isLocalSearchActive
+          ? ('Yerel arama ile ' + visibleCount + ' kart eşleşti.')
+          : (hasActiveFilters ? 'Filtre sonucu gösteriliyor.' : (selectedStatusLabel + ' görünümü.'));
+      }
+    };
+
+    syncVisibleCount(serverResultCount, false);
+
+    if (quickSelect) {
+      quickSelect.addEventListener('change', function () {
+        const params = new URLSearchParams(window.location.search);
+        if (!quickSelect.value) {
+          params.delete('user_id');
+          queueIntent({ kind: 'selection-clear' });
+          window.location = params.toString() ? (baseUrl + '?' + params.toString()) : baseUrl;
+          return;
+        }
+        queueIntent({ kind: 'user-select' });
+        params.set('user_id', quickSelect.value);
+        window.location = baseUrl + '?' + params.toString();
+      });
+    }
+
+    if (filterForm) {
+      filterForm.addEventListener('submit', function () {
+        const term = searchInput ? searchInput.value.trim() : '';
+        const hasCriteria = !!(
+          term
+          || (roleFilter && roleFilter.value)
+          || (airportFilter && airportFilter.value)
+          || (statusFilter && statusFilter.value && statusFilter.value !== 'active')
+        );
+        queueIntent({ kind: hasCriteria ? 'filter' : 'filter-clear' });
+      });
+    }
+
+    document.querySelectorAll('[data-filter-clear]').forEach(function (link) {
+      link.addEventListener('click', function () {
+        queueIntent({ kind: 'filter-clear' });
+      });
+    });
+
+    if (localSearch) {
+      localSearch.addEventListener('input', function () {
+        const needle = localSearch.value.trim().toLowerCase();
+        let visibleCount = 0;
+
+        directoryCards.forEach(function (card) {
+          const haystack = (card.getAttribute('data-user-search') || '').toLowerCase();
+          const matches = !needle || haystack.indexOf(needle) !== -1;
+          card.hidden = !matches;
+          if (matches) visibleCount += 1;
+        });
+
+        if (quickSelect) {
+          Array.from(quickSelect.options).forEach(function (option, index) {
+            if (index === 0) {
+              option.hidden = false;
+              return;
+            }
+            const haystack = (option.getAttribute('data-search-text') || option.textContent || '').toLowerCase();
+            const matches = !needle || haystack.indexOf(needle) !== -1 || option.selected;
+            option.hidden = !matches;
+          });
+        }
+
+        if (localEmpty) {
+          localEmpty.hidden = !needle || visibleCount !== 0;
+        }
+
+        syncVisibleCount(needle ? visibleCount : serverResultCount, !!needle);
+      });
+    }
+
+    if (newUserPanel && newUserSummaryLabel) {
+      const syncNewUserLabel = function () {
+        newUserSummaryLabel.textContent = newUserPanel.open ? 'Formu kapat' : 'Formu aç';
+        if (openNewUserPanelBtn) {
+          openNewUserPanelBtn.setAttribute('aria-expanded', newUserPanel.open ? 'true' : 'false');
+          openNewUserPanelBtn.textContent = newUserPanel.open ? 'Yeni kullanıcı formunu kapat' : 'Yeni kullanıcı ekle';
+        }
+      };
+      syncNewUserLabel();
+      newUserPanel.addEventListener('toggle', syncNewUserLabel);
+    }
+
+    if (openNewUserPanelBtn && newUserPanel) {
+      openNewUserPanelBtn.addEventListener('click', function () {
+        newUserPanel.open = !newUserPanel.open;
+        if (newUserPanel.open) {
+          newUserPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      });
+    }
+
+    if (bulkImportPanel && bulkImportSummaryLabel) {
+      const syncBulkImportLabel = function () {
+        bulkImportSummaryLabel.textContent = bulkImportPanel.open ? 'Adımları kapat' : 'Adımları aç';
+      };
+      syncBulkImportLabel();
+      bulkImportPanel.addEventListener('toggle', syncBulkImportLabel);
+    }
+  })();
 </script>
 {% endblock %}

@@ -1,216 +1,167 @@
 {% extends "base.html" %}
-
-{% block title %}Kutu Detayı: {{ kutu.kodu }}{% endblock %}
+{% block title %}Kutu Detayı{% endblock %}
 
 {% block extra_css %}
 <style>
-    @media (max-width: 768px) {
-        .sidebar { display: none; }
-        .content { margin-left: 0; padding: 15px; }
-        .navbar { flex-direction: column; text-align: center; gap: 10px; }
-    }
-    
-    .status-badge {
-        padding: 4px 10px;
-        border-radius: 15px;
-        font-size: 12px;
-        font-weight: 600;
-    }
-    .bakim-btn {
-        background: #f97316;
-        color: white;
-        border: none;
-        padding: 4px 8px;
-        border-radius: 6px;
-        font-size: 11px;
-        font-weight: bold;
-        cursor: pointer;
-        margin-top: 5px;
-    }
-    .bakim-btn:hover { background: #ea580c; }
+.box-layout { display:grid; grid-template-columns: 1.1fr .9fr; gap:20px; }
+.box-summary { display:flex; flex-wrap:wrap; gap:10px; }
+.box-stat { padding:10px 12px; border-radius:12px; border:1px solid var(--border); background:var(--surface2); min-width:120px; }
+.box-stat strong { display:block; font-size:18px; color:var(--navy); }
+.material-card { border:1px solid var(--border); border-radius:14px; padding:14px; background:#fff; display:grid; gap:10px; }
+.material-grid { display:grid; grid-template-columns: 1.4fr .8fr .9fr auto auto; gap:10px; align-items:end; }
+.mini-list { display:grid; gap:10px; }
+.print-preview { border:1px dashed var(--border-strong); border-radius:16px; padding:16px; background:linear-gradient(180deg, #fff, #f8fafc); }
+.print-preview img { width:132px; height:132px; object-fit:contain; display:block; margin:0 auto 10px; }
+@media (max-width: 980px) {
+  .box-layout { grid-template-columns: 1fr; }
+  .material-grid { grid-template-columns: 1fr; }
+}
 </style>
 {% endblock %}
 
 {% block body %}
-<div style="background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-    <div style="border-bottom: 2px solid #1a237e; padding-bottom: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
-        <div>
-            <h2 style="color: #1a237e; margin: 0;">📦 Kutu: {{ kutu.kodu }}</h2>
-            <p style="color: #666; margin: 5px 0 0 0;">📍 Konum: {{ kutu.konum if kutu.konum else 'Belirtilmedi' }}</p>
-        </div>
-        <div style="text-align: right;">
-            <span style="background: #e8f5e9; color: #2e7d32; padding: 8px 15px; border-radius: 8px; font-weight: bold; font-size: 14px;">
-                {{ kutu.malzemeler|length }} Malzeme
-            </span>
+<div class="page-header">
+    <div>
+        <div class="page-title">Kutu / Ünite: {{ kutu.kodu }}</div>
+        <div class="page-meta">
+            <span>{{ kutu.konum or 'Konum tanımsız' }}</span>
+            <div class="meta-dot" style="width:3px; height:3px; background:var(--text4); border-radius:50%;"></div>
+            <span>{{ qr_context.airport_name }}</span>
         </div>
     </div>
-
-    <h3 style="color: #333; font-size: 16px; margin-bottom: 15px;">İçerik Listesi</h3>
-    
-    <div style="display: grid; gap: 15px;">
-        {% for malzeme in kutu.malzemeler %}
-        <div style="border: 1px solid #eee; padding: 15px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; {% if malzeme.kritik_mi %}background: #fff8f8; border-left: 5px solid #d32f2f;{% endif %}">
-            <div>
-                <div style="font-weight: 600; color: #1a237e;">{{ malzeme.ad }}</div>
-                <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                    SN: {{ malzeme.seri_no if malzeme.seri_no else '-' }} | Stok: {{ malzeme.stok_miktari }}
-                </div>
-                {% if malzeme.son_bakim_tarihi %}
-                <div style="font-size: 11px; color: #ef6c00; margin-top: 4px;">
-                    📅 Son Bakım: {{ malzeme.son_bakim_tarihi.strftime('%d.%m.%Y') }}
-                </div>
-                {% endif %}
-            </div>
-            <div style="text-align: right; display: flex; flex-direction: column; align-items: flex-end;">
-                <span class="status-badge" style="
-                    background: {% if malzeme.durum == 'Aktif' %}#e8f5e9; color: #2e7d32;
-                                {% elif malzeme.durum == 'Bakımda' %}#fff3e0; color: #ef6c00;
-                                {% else %}#ffebee; color: #c62828;{% endif %};">
-                    {{ malzeme.durum }}
-                </span>
-                <button class="bakim-btn" onclick="bakimModalAc({{ malzeme.id }})">🔧 Bakım Ekle</button>
-            </div>
-        </div>
-        {% else %}
-        <p style="text-align: center; color: #999; padding: 20px;">Bu kutunun içinde henüz malzeme tanımlanmamış.</p>
-        {% endfor %}
-    </div>
-
-    <div style="margin-top: 30px; text-align: center;">
-        <a href="{{ url_for('inventory.envanter') }}" style="color: #1a237e; text-decoration: none; font-weight: 600; font-size: 14px;">← Envantere Dön</a>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        {% if has_permission('qr.generate') %}
+        <a href="{{ url_for('inventory.kutu_qr_uret', box_id=kutu.id) }}" target="_blank" class="btn btn-secondary">Kutu QR</a>
+        <a href="{{ url_for('inventory.kutu_etiket', kodu=kutu.kodu) }}" target="_blank" class="btn btn-primary">Etiket Görünümü</a>
+        <a href="{{ url_for('inventory.kutu_etiket_pdf', kodu=kutu.kodu) }}" class="btn btn-secondary">PDF Dışa Aktar</a>
+        {% endif %}
     </div>
 </div>
 
-<div id="bakimModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); background:white; padding:20px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.5); z-index:9999; width: 90%; max-width: 400px;">
-    <h3 style="margin-top:0; color:#0f2d4a;">🔧 Bakım Ekle</h3>
-    <form id="offlineBakimForm">
-        
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" id="malzemeId" name="malzeme_id">
-        
-        <label style="font-size:12px; font-weight:bold;">Yapılan İşlem / Not:</label>
-        <textarea name="not" required style="width:100%; padding:10px; margin-bottom:10px; border:1px solid #ccc; border-radius:6px; box-sizing: border-box;"></textarea>
-        
-        <label style="font-size:12px; font-weight:bold;">Maliyet (TL):</label>
-        <input type="number" name="maliyet" value="0" style="width:100%; padding:10px; margin-bottom:15px; border:1px solid #ccc; border-radius:6px; box-sizing: border-box;">
-        
-        <div style="display:flex; gap:10px;">
-            <button type="button" onclick="document.getElementById('bakimModal').style.display='none'; document.getElementById('modalOverlay').style.display='none';" style="flex:1; padding:10px; border:none; border-radius:6px; background:#e2e8f0; cursor:pointer; font-weight: bold;">İptal</button>
-            <button type="submit" style="flex:2; padding:10px; border:none; border-radius:6px; background:#f97316; color:white; font-weight:bold; cursor:pointer;">Kaydet</button>
+<div class="box-layout">
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Kutu İçeriği</div>
         </div>
-    </form>
+        <div class="panel-body" style="display:grid; gap:14px;">
+            <div class="box-summary">
+                <div class="box-stat"><span>Malzeme</span><strong>{{ materials|length }}</strong></div>
+                <div class="box-stat"><span>Kod</span><strong style="font-size:15px;">{{ qr_context.box_code }}</strong></div>
+                <div class="box-stat"><span>Havalimanı</span><strong style="font-size:15px;">{{ kutu.havalimani.kodu if kutu.havalimani else '-' }}</strong></div>
+            </div>
+
+            {% if has_permission('inventory.edit') %}
+            <form method="POST" action="{{ url_for('inventory.kutu_malzeme_ekle', kodu=kutu.kodu) }}" class="panel" style="margin:0;">
+                <div class="panel-header"><div class="panel-title">Malzeme Ekle</div></div>
+                <div class="panel-body" style="display:grid; grid-template-columns: 1.5fr auto; gap:10px;">
+                    <select name="material_id" class="form-control" required>
+                        <option value="">Malzeme seçin</option>
+                        {% for material in available_materials %}
+                        <option value="{{ material.id }}">{{ material.ad }} · {{ material.seri_no or '-' }} · {{ material.kutu.kodu if material.kutu else '-' }}</option>
+                        {% endfor %}
+                    </select>
+                    <button class="btn btn-primary" type="submit">Kutunun İçine Al</button>
+                </div>
+            </form>
+            {% endif %}
+
+            <div class="mini-list">
+                {% for malzeme in materials %}
+                <div class="material-card">
+                    <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
+                        <div>
+                            <div style="font-size:15px; font-weight:800; color:var(--navy);">{{ malzeme.ad }}</div>
+                            <div style="font-size:12px; color:var(--text3); margin-top:4px;">
+                                SN: {{ malzeme.seri_no or '-' }} · Durum: {{ malzeme.durum }}
+                            </div>
+                            {% if malzeme.linked_asset %}
+                            <div style="font-size:12px; color:var(--text2); margin-top:6px;">
+                                {{ malzeme.linked_asset.asset_code }} ·
+                                <form method="POST" action="{{ url_for('maintenance.asset_hizli_bakim', asset_id=malzeme.linked_asset.id) }}" style="display:inline;">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" style="background:none; border:none; color:var(--blue); padding:0; cursor:pointer; font:inherit;">Bakım Formunu Aç</button>
+                                </form>
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% if malzeme.kritik_mi %}
+                        <span class="status-pill status-kritik">Kritik</span>
+                        {% endif %}
+                    </div>
+
+                    {% if has_permission('inventory.edit') %}
+                    <form method="POST" action="{{ url_for('inventory.kutu_icerik_guncelle', kodu=kutu.kodu, malzeme_id=malzeme.id) }}" class="material-grid">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label>Hedef Kutu</label>
+                            <select name="target_kutu_id" class="form-control">
+                                <option value="{{ kutu.id }}">Bu kutuda kalsın</option>
+                                {% for sibling_box in kutu.havalimani.kutular if not sibling_box.is_deleted %}
+                                {% if sibling_box.id != kutu.id %}
+                                <option value="{{ sibling_box.id }}">{{ sibling_box.kodu }}</option>
+                                {% endif %}
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label>Miktar</label>
+                            <input type="number" min="1" name="stok_miktari" value="{{ malzeme.stok_miktari or 1 }}" class="form-control">
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label>Bakım</label>
+                            <div style="display:flex; align-items:center; height:44px;">
+                                {% if malzeme.linked_asset %}
+                                <form method="POST" action="{{ url_for('maintenance.asset_hizli_bakim', asset_id=malzeme.linked_asset.id) }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button class="row-btn" type="submit">Checklist</button>
+                                </form>
+                                {% else %}
+                                <span style="font-size:12px; color:var(--text3);">Asset bağlı değil</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <button class="btn btn-navy" type="submit">Kaydet</button>
+                        <div style="display:flex; align-items:end;">
+                            <span style="font-size:12px; color:var(--text3);">Taşıma ve miktar güncelleme</span>
+                        </div>
+                    </form>
+                    <form method="POST" action="{{ url_for('inventory.kutu_malzeme_cikar', kodu=kutu.kodu, malzeme_id=malzeme.id) }}" style="margin-top:8px;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-secondary" type="submit">Kutudan Çıkar</button>
+                    </form>
+                    {% else %}
+                    <div style="font-size:12px; color:var(--text3);">Miktar: {{ malzeme.stok_miktari or 1 }}</div>
+                    {% endif %}
+                </div>
+                {% else %}
+                <div style="text-align:center; color:var(--text3); padding:28px;">Bu kutuda henüz malzeme bulunmuyor.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">QR ve Etiket Önizlemesi</div>
+        </div>
+        <div class="panel-body">
+            <div class="print-preview">
+                <img src="{{ url_for('inventory.kutu_qr_img', box_id=kutu.id) }}" alt="Kutu QR">
+                <div style="text-align:center; font-family:var(--mono); font-size:18px; font-weight:800; color:var(--navy);">{{ qr_context.box_code }}</div>
+                <div style="text-align:center; font-size:13px; color:var(--text2); margin-top:6px;">{{ qr_context.airport_name }}</div>
+                <div style="margin-top:16px; padding-top:12px; border-top:1px solid var(--border);">
+                    <div style="font-size:12px; font-weight:800; color:var(--text3); text-transform:uppercase; margin-bottom:8px;">İçerik Listesi</div>
+                    {% for malzeme in materials[:8] %}
+                    <div style="display:flex; justify-content:space-between; gap:10px; font-size:12px; color:var(--text2); margin-bottom:6px;">
+                        <span>{{ malzeme.ad }}</span>
+                        <strong>{{ malzeme.stok_miktari or 1 }}</strong>
+                    </div>
+                    {% else %}
+                    <div style="font-size:12px; color:var(--text3);">Malzeme eklenmedi.</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
-
-<div id="modalOverlay" onclick="document.getElementById('bakimModal').style.display='none'; this.style.display='none';" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); z-index:9998;"></div>
-
-<script>
-// Modal'ı açmak için yardımcı fonksiyon
-function bakimModalAc(id) {
-    document.getElementById('malzemeId').value = id;
-    document.getElementById('bakimModal').style.display = 'block';
-    document.getElementById('modalOverlay').style.display = 'block';
-}
-
-// 1. Veritabanını (IndexedDB) Başlat
-async function initDB() {
-    return await idb.openDB('SAR_Offline_DB', 1, {
-        upgrade(db) {
-            if (!db.objectStoreNames.contains('bekleyen_bakimlar')) {
-                db.createObjectStore('bekleyen_bakimlar', { keyPath: 'id', autoIncrement: true });
-            }
-        }
-    });
-}
-
-// 2. Form Gönderildiğinde Araya Gir
-document.getElementById('offlineBakimForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const form = e.target;
-    const formData = new FormData(form);
-    const m_id = formData.get('malzeme_id');
-    
-    const data = {
-        malzeme_id: m_id,
-        not: formData.get('not'),
-        maliyet: formData.get('maliyet'),
-        zaman: new Date().toISOString()
-    };
-
-    if (navigator.onLine) {
-        // İNTERNET VARSA
-        const bodyParams = new URLSearchParams();
-        bodyParams.append('not', data.not);
-        bodyParams.append('maliyet', data.maliyet);
-        
-        // ✅ CSRF EKLENDİ (Fetch POST işlemi için)
-        bodyParams.append('csrf_token', formData.get('csrf_token'));
-
-        fetch(`/bakim-kaydet/${m_id}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: bodyParams
-        }).then(() => {
-            alert('✅ Bakım başarıyla kaydedildi!');
-            window.location.reload();
-        }).catch(() => {
-            cevrimdisiKaydet(data, form);
-        });
-
-    } else {
-        // İNTERNET YOKSA
-        await cevrimdisiKaydet(data, form);
-    }
-});
-
-async function cevrimdisiKaydet(data, form) {
-    const db = await initDB();
-    await db.add('bekleyen_bakimlar', data);
-    
-    if ('serviceWorker' in navigator && 'SyncManager' in window) {
-        const swRegistration = await navigator.serviceWorker.ready;
-        await swRegistration.sync.register('bakim-senkronize-et');
-    }
-
-    alert('⚠️ İnternet bağlantısı yok! Bakım kaydınız sıraya alındı, bağlantı sağlandığında otomatik gönderilecektir.');
-    
-    form.reset();
-    document.getElementById('bakimModal').style.display = 'none';
-    document.getElementById('modalOverlay').style.display = 'none';
-}
-
-// iOS / Safari Cihazlar İçin Fallback
-window.addEventListener('online', async () => {
-    const db = await initDB();
-    const bekleyenler = await db.getAll('bekleyen_bakimlar');
-    
-    if (bekleyenler.length > 0) {
-        alert('🌐 Bağlantı geldi! Bekleyen bakım kayıtları sisteme aktarılıyor...');
-        
-        for (let kayit of bekleyenler) {
-            const bodyParams = new URLSearchParams();
-            bodyParams.append('not', kayit.not);
-            bodyParams.append('maliyet', kayit.maliyet);
-            
-            // ✅ CSRF Fallback (Sayfadaki gizli inputtan alır)
-            bodyParams.append('csrf_token', document.querySelector('input[name="csrf_token"]').value);
-
-            try {
-                const res = await fetch(`/bakim-kaydet/${kayit.malzeme_id}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: bodyParams
-                });
-                
-                if (res.ok) {
-                    await db.delete('bekleyen_bakimlar', kayit.id);
-                }
-            } catch (err) {
-                console.log("Gönderim hatası:", err);
-            }
-        }
-        window.location.reload();
-    }
-});
-</script>
 {% endblock %}

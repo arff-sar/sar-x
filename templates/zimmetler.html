@@ -1,0 +1,762 @@
+{% extends "base.html" %}
+{% block title %}Zimmet Yönetimi{% endblock %}
+
+{% block extra_css %}
+<style>
+  .assignment-layout { display:grid; grid-template-columns:minmax(0, 1.12fr) minmax(380px, .88fr); gap:22px; align-items:start; }
+  .assignment-kpi-row { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; margin-bottom:18px; }
+  .assignment-kpi { padding:18px; border:1px solid var(--border); border-radius:18px; background:linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,250,252,.98) 100%); box-shadow:0 12px 28px rgba(15, 23, 42, 0.04); }
+  .assignment-kpi-label { font-size:11px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
+  .assignment-kpi-value { margin-top:8px; font-size:28px; font-weight:900; color:var(--navy); line-height:1; }
+  .assignment-kpi-note { margin-top:6px; font-size:12px; color:var(--text3); line-height:1.5; }
+  .assignment-filter-form { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:12px; align-items:end; }
+  .assignment-filter-summary { margin-top:14px; padding-top:14px; border-top:1px solid var(--border); display:flex; flex-wrap:wrap; gap:10px 14px; justify-content:space-between; align-items:flex-start; }
+  .assignment-filter-result { font-size:12.5px; color:var(--text3); line-height:1.55; }
+  .assignment-filter-result strong { color:var(--navy); font-size:15px; font-weight:800; }
+  .assignment-filter-chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .assignment-filter-chip { display:inline-flex; align-items:center; gap:6px; padding:7px 10px; border-radius:999px; border:1px solid var(--border); background:var(--surface2); color:var(--text2); font-size:11.5px; font-weight:700; white-space:nowrap; }
+  .assignment-create-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px; }
+  .assignment-create-grid .form-group.full { grid-column:1 / -1; }
+  .assignment-form-guide { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; margin-top:16px; }
+  .assignment-form-guide-item { display:flex; gap:12px; align-items:flex-start; padding:14px 15px; border:1px solid var(--border); border-radius:16px; background:linear-gradient(180deg, #fff 0%, rgba(248,250,252,.92) 100%); }
+  .assignment-form-guide-step { width:30px; height:30px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; background:var(--orange-light); border:1px solid var(--orange-border); color:var(--orange); font-size:13px; font-weight:800; }
+  .assignment-form-guide-body { display:grid; gap:3px; min-width:0; }
+  .assignment-form-guide-title { font-size:12.5px; font-weight:800; color:var(--navy); }
+  .assignment-form-guide-note { font-size:11.5px; color:var(--text3); line-height:1.5; }
+  .selection-panel { border:1px solid var(--border); border-radius:18px; background:linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,250,252,.98) 100%); overflow:hidden; box-shadow:0 16px 32px rgba(15, 23, 42, 0.05); }
+  .selection-panel-head { padding:15px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+  .selection-panel-heading { display:grid; gap:6px; min-width:0; }
+  .selection-panel-title-row { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+  .selection-panel-title { font-size:13px; font-weight:800; color:var(--navy); }
+  .selection-panel-note { font-size:11.5px; color:var(--text3); line-height:1.45; }
+  .selection-counter { display:inline-flex; align-items:center; padding:5px 10px; border-radius:999px; background:var(--orange-light); border:1px solid var(--orange-border); color:var(--orange); font-size:11px; font-weight:800; white-space:nowrap; }
+  .selection-panel-body { padding:16px; display:grid; gap:12px; }
+  .selection-toolbar { display:grid; gap:10px; }
+  .selection-list-pick { display:grid; gap:8px; }
+  .selection-list-pick-label { font-size:11px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
+  .selection-toolbar-meta { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .selection-toolbar-note { font-size:11.5px; color:var(--text3); line-height:1.45; }
+  .selection-selected-row { display:grid; gap:10px; padding:14px; border:1px dashed var(--border-dark); border-radius:16px; background:rgba(255,255,255,.84); }
+  .selection-selected-title { font-size:11px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
+  .selection-selected-list { display:grid; gap:10px; }
+  .selection-summary-card { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:12px; align-items:flex-start; padding:12px 14px; border:1px solid rgba(226,232,240,.96); border-radius:16px; background:#fff; box-shadow:0 10px 20px rgba(15,23,42,.04); }
+  .selection-summary-main { display:grid; gap:5px; min-width:0; }
+  .selection-summary-title { font-size:12.5px; font-weight:800; color:var(--navy); line-height:1.45; }
+  .selection-summary-meta { font-size:11.5px; color:var(--text3); line-height:1.5; }
+  .selection-remove-btn { display:inline-flex; align-items:center; justify-content:center; min-height:34px; padding:0 12px; border-radius:12px; border:1px solid var(--border); background:var(--surface2); color:var(--text2); font-size:11px; font-weight:800; cursor:pointer; transition:border-color .16s ease, color .16s ease, background .16s ease; }
+  .selection-remove-btn:hover { border-color:rgba(249,115,22,.35); color:var(--orange); background:rgba(249,115,22,.08); }
+  .selection-chip { display:inline-flex; align-items:center; gap:6px; padding:7px 11px; border-radius:999px; background:var(--navy); color:#fff; font-size:11.5px; font-weight:700; box-shadow:0 8px 18px rgba(15,45,74,.14); }
+  .selection-chip-more { background:var(--surface2); color:var(--text2); border:1px solid var(--border); box-shadow:none; }
+  .selection-empty-chip { display:inline-flex; align-items:center; padding:7px 11px; border-radius:999px; background:var(--surface2); border:1px solid var(--border); color:var(--text3); font-size:11.5px; font-weight:700; }
+  .choice-search { margin-bottom:0 !important; }
+  .selection-available-shell { display:grid; gap:10px; }
+  .selection-available-shell[hidden] { display:none !important; }
+  .selection-available-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .selection-available-title { font-size:11px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
+  .selection-browse-toggle { display:inline-flex; align-items:center; gap:8px; min-height:36px; padding:0 12px; border-radius:12px; border:1px solid var(--border); background:#fff; color:var(--text2); font-size:11.5px; font-weight:800; cursor:pointer; transition:border-color .16s ease, background .16s ease, color .16s ease; }
+  .selection-browse-toggle:hover { border-color:rgba(249,115,22,.35); background:rgba(249,115,22,.08); color:var(--orange); }
+  .choice-grid { display:grid; gap:10px; max-height:320px; overflow:auto; padding-right:2px; }
+  .choice-card { display:flex; gap:12px; align-items:flex-start; padding:14px; border:1px solid var(--border); border-radius:16px; background:#fff; transition:border-color .18s ease, box-shadow .18s ease, transform .18s ease, background .18s ease; cursor:pointer; }
+  .choice-card:hover { border-color:rgba(249,115,22,.45); box-shadow:0 14px 26px rgba(15,23,42,.07); transform:translateY(-1px); }
+  .choice-card.is-selected { border-color:rgba(249,115,22,.52); background:linear-gradient(180deg, rgba(255,247,237,.96) 0%, rgba(255,255,255,1) 100%); box-shadow:0 16px 28px rgba(249,115,22,.12); }
+  .choice-card input[type="checkbox"] { margin-top:3px; accent-color:var(--orange); }
+  .choice-body { display:grid; gap:8px; min-width:0; width:100%; }
+  .choice-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+  .choice-title { font-size:13px; font-weight:800; color:var(--navy); line-height:1.35; }
+  .choice-badges { display:flex; flex-wrap:wrap; gap:8px; }
+  .choice-badge { display:inline-flex; align-items:center; padding:5px 8px; border-radius:999px; background:var(--surface2); border:1px solid var(--border); color:var(--text2); font-size:11px; font-weight:700; line-height:1; }
+  .choice-badge-soft { color:var(--text3); }
+  .choice-meta { font-size:11.5px; color:var(--text3); line-height:1.45; }
+  .choice-detail-shell { padding:12px; border-radius:14px; border:1px solid rgba(226,232,240,.95); background:rgba(248,250,252,.92); transition:opacity .18s ease, background .18s ease, border-color .18s ease; }
+  .choice-detail-shell.is-disabled { opacity:.62; background:rgba(248,250,252,.76); }
+  .choice-inline-grid { display:grid; grid-template-columns:minmax(0, 1.35fr) minmax(88px, 110px) minmax(80px, 96px); gap:10px; align-items:center; }
+  .choice-inline-grid .form-control { margin-bottom:0; }
+  .choice-search-empty { margin-top:2px; }
+  .assignment-empty { padding:20px; border:1px dashed var(--border-dark); border-radius:16px; background:linear-gradient(180deg, rgba(248,250,252,.92) 0%, rgba(255,255,255,.98) 100%); text-align:center; color:var(--text3); line-height:1.55; }
+  .assignment-empty strong { display:block; color:var(--navy); margin-bottom:6px; }
+  .assignment-submit-row { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-top:16px; }
+  .assignment-submit-note { font-size:12px; color:var(--text3); line-height:1.5; }
+  .assignment-table .row-actions { justify-content:flex-end; }
+  @media (max-width: 1100px) {
+    .assignment-layout,
+    .assignment-filter-form,
+    .assignment-kpi-row,
+    .assignment-form-guide { grid-template-columns:1fr; }
+  }
+  @media (max-width: 760px) {
+    .assignment-create-grid,
+    .choice-inline-grid { grid-template-columns:1fr; }
+    .assignment-submit-row,
+    .selection-toolbar-meta,
+    .choice-head { align-items:flex-start; }
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+{% set stats = namespace(open_count=0, returned_count=0) %}
+{% for assignment in assignments %}
+  {% if assignment.status in ['active', 'partial'] %}
+    {% set stats.open_count = stats.open_count + 1 %}
+  {% endif %}
+  {% if assignment.status == 'returned' %}
+    {% set stats.returned_count = stats.returned_count + 1 %}
+  {% endif %}
+{% endfor %}
+{% set filter_meta = namespace(airport_label='Tüm havalimanları', recipient_label='Tüm personel', status_label='Tüm durumlar') %}
+{% for airport in airports %}
+  {% if selected_airport == airport.id %}
+    {% set filter_meta.airport_label = airport.kodu ~ ' - ' ~ airport.ad %}
+  {% endif %}
+{% endfor %}
+{% for user in recipient_options %}
+  {% if selected_recipient == user.id %}
+    {% set filter_meta.recipient_label = user.tam_ad %}
+  {% endif %}
+{% endfor %}
+{% if selected_status %}
+  {% set filter_meta.status_label = assignment_status_labels.get(selected_status, selected_status) %}
+{% endif %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Zimmet Yönetimi</div>
+        <div class="page-meta">
+            <span>Malzeme, ekipman ve personel zimmet akışı</span>
+            <div class="meta-dot" style="width:3px; height:3px; background:var(--text4); border-radius:50%;"></div>
+            <span>{{ assignments|length }} kayıt listeleniyor</span>
+        </div>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        {% if has_permission('assignment.pdf') %}
+        <span class="status-pill status-aktif">PDF hazır</span>
+        {% endif %}
+        {% if has_permission('assignment.document.upload') %}
+        <span class="status-pill status-bakim">İmzalı belge yüklenebilir</span>
+        {% endif %}
+    </div>
+</div>
+
+<div class="assignment-kpi-row">
+    <div class="assignment-kpi">
+        <div class="assignment-kpi-label">Toplam Zimmet</div>
+        <div class="assignment-kpi-value">{{ assignments|length }}</div>
+        <div class="assignment-kpi-note">Yetki kapsamınız içindeki tüm zimmet kayıtları.</div>
+    </div>
+    <div class="assignment-kpi">
+        <div class="assignment-kpi-label">Aktif veya Kısmi</div>
+        <div class="assignment-kpi-value">{{ stats.open_count }}</div>
+        <div class="assignment-kpi-note">Sahada halen açık kalemi bulunan kayıtlar.</div>
+    </div>
+    <div class="assignment-kpi">
+        <div class="assignment-kpi-label">İade Tamamlanan</div>
+        <div class="assignment-kpi-value">{{ stats.returned_count }}</div>
+        <div class="assignment-kpi-note">Teslim süreci kapanmış ve iadesi kayda alınmış zimmetler.</div>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-header">
+        <div>
+            <div class="panel-title">Filtreler</div>
+            <div class="panel-subtitle">Havalimanı, teslim alan personel ve zimmet durumuna göre kayıtları daraltın.</div>
+        </div>
+    </div>
+    <div class="panel-body">
+        <form method="GET" action="{{ url_for('inventory.zimmetler') }}" class="assignment-filter-form">
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Havalimanı</label>
+                {% if airports|length > 1 %}
+                <select name="airport_id" class="form-control">
+                    <option value="">Tümü</option>
+                    {% for airport in airports %}
+                    <option value="{{ airport.id }}" {% if selected_airport == airport.id %}selected{% endif %}>{{ airport.kodu }} - {{ airport.ad }}</option>
+                    {% endfor %}
+                </select>
+                {% else %}
+                <input type="hidden" name="airport_id" value="{{ selected_airport or (airports[0].id if airports else '') }}">
+                <input type="text" class="form-control" value="{{ airports[0].kodu ~ ' - ' ~ airports[0].ad if airports else 'Kapsam bulunamadı' }}" readonly>
+                {% endif %}
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Durum</label>
+                <select name="status" class="form-control">
+                    <option value="">Tüm durumlar</option>
+                    {% for status_key, status_label in assignment_status_labels.items() %}
+                    <option value="{{ status_key }}" {% if selected_status == status_key %}selected{% endif %}>{{ status_label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Teslim Alan</label>
+                <select name="recipient_id" class="form-control">
+                    <option value="">Tüm personel</option>
+                    {% for user in recipient_options %}
+                    <option value="{{ user.id }}" {% if selected_recipient == user.id %}selected{% endif %}>{{ user.tam_ad }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button type="submit" class="btn btn-navy" style="width:100%;">Filtrele</button>
+                <a href="{{ url_for('inventory.zimmetler') }}" class="btn btn-secondary" style="width:100%; text-align:center;">Temizle</a>
+            </div>
+        </form>
+        <div class="assignment-filter-summary">
+            <div class="assignment-filter-result">
+                <strong>{{ assignments|length }} kayıt</strong> mevcut filtrelerle listeleniyor.
+                {% if selected_airport or selected_status or selected_recipient %}
+                Görünüm, seçtiğiniz kapsamla daraltıldı.
+                {% else %}
+                Henüz filtre uygulanmadı; tüm görünür kayıtlar listeleniyor.
+                {% endif %}
+            </div>
+            <div class="assignment-filter-chips">
+                <span class="assignment-filter-chip">Havalimanı: {{ filter_meta.airport_label }}</span>
+                <span class="assignment-filter-chip">Durum: {{ filter_meta.status_label }}</span>
+                <span class="assignment-filter-chip">Teslim alan: {{ filter_meta.recipient_label }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="assignment-layout">
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <div class="panel-title">Zimmet Listesi</div>
+                <div class="panel-subtitle">Personel üzerindeki aktif kayıtlar, geçmiş iadeler ve belge durumu tek tabloda görünür.</div>
+            </div>
+        </div>
+        <div class="table-container">
+            <table class="data-table assignment-table">
+                <thead>
+                    <tr>
+                        <th>Zimmet</th>
+                        <th>Teslim Alan</th>
+                        <th>Havalimanı</th>
+                        <th>Kalem</th>
+                        <th>Durum</th>
+                        <th style="text-align:right;">İşlem</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for assignment in assignments %}
+                    <tr>
+                        <td>
+                            <div style="font-weight:800; color:var(--navy);">{{ assignment.assignment_no }}</div>
+                            <div style="font-size:11.5px; color:var(--text3); margin-top:4px;">{{ assignment.assignment_date.strftime('%d.%m.%Y') if assignment.assignment_date else '-' }}</div>
+                        </td>
+                        <td>
+                            <div>{{ assignment.recipient_names or '-' }}</div>
+                            <div style="font-size:11.5px; color:var(--text3); margin-top:4px;">Teslim eden: {{ assignment.delivered_by.tam_ad if assignment.delivered_by else '-' }}</div>
+                        </td>
+                        <td>{{ assignment.airport.ad if assignment.airport else 'Global' }}</td>
+                        <td>{{ assignment.items|length }} kalem</td>
+                        <td><span class="status-pill {% if assignment.status == 'returned' %}status-aktif{% elif assignment.status == 'cancelled' %}status-pasif{% else %}status-bakim{% endif %}">{{ assignment_status_labels.get(assignment.status, assignment.status) }}</span></td>
+                        <td class="row-actions">
+                            <a href="{{ url_for('inventory.zimmet_detay', assignment_id=assignment.id) }}" class="row-btn">Detay</a>
+                            {% if has_permission('assignment.pdf') %}
+                            <a href="{{ url_for('inventory.zimmet_pdf', assignment_id=assignment.id) }}" class="row-btn">PDF</a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6">
+                            <div class="assignment-empty">
+                                <strong>Zimmet kaydı bulunamadı</strong>
+                                Seçili filtrelerle eşleşen kayıt yok. Farklı bir durum veya personel seçerek listeyi genişletebilirsiniz.
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% if has_permission('assignment.create') %}
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <div class="panel-title">Yeni Zimmet Oluştur</div>
+                <div class="panel-subtitle">Tekli veya çoklu malzemeyi bir ya da birden fazla personele aynı kayıtta zimmetleyin.</div>
+            </div>
+        </div>
+        <div class="panel-body">
+            <form method="POST" action="{{ url_for('inventory.zimmetler', airport_id=selected_airport or None, status=selected_status or None, recipient_id=selected_recipient or None) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="assignment-create-grid">
+                    <div class="form-group">
+                        <label>Zimmet Tarihi</label>
+                        <input type="date" name="assignment_date" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Havalimanı</label>
+                        {% if airports|length > 1 %}
+                        <select name="airport_id" class="form-control">
+                            {% for airport in airports %}
+                            <option value="{{ airport.id }}" {% if selected_airport == airport.id %}selected{% endif %}>{{ airport.kodu }} - {{ airport.ad }}</option>
+                            {% endfor %}
+                        </select>
+                        {% else %}
+                        <input type="hidden" name="airport_id" value="{{ selected_airport or (airports[0].id if airports else '') }}">
+                        <input type="text" class="form-control" value="{{ airports[0].kodu ~ ' - ' ~ airports[0].ad if airports else 'Kapsam bulunamadı' }}" readonly>
+                        {% endif %}
+                    </div>
+                    <div class="form-group full">
+                        <label>Teslim Eden</label>
+                        <select name="delivered_by_id" class="form-control">
+                            {% if recipient_options|selectattr('id', 'equalto', current_user.id)|list|length == 0 %}
+                            <option value="{{ current_user.id }}">{{ current_user.tam_ad }}</option>
+                            {% endif %}
+                            {% for user in recipient_options %}
+                            <option value="{{ user.id }}" {% if user.id == current_user.id %}selected{% endif %}>{{ user.tam_ad }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="assignment-form-guide">
+                    <div class="assignment-form-guide-item">
+                        <span class="assignment-form-guide-step">1</span>
+                        <div class="assignment-form-guide-body">
+                            <div class="assignment-form-guide-title">Personeli belirleyin</div>
+                            <div class="assignment-form-guide-note">{{ recipient_options|length }} görünür personel arasından zimmet alıcılarını seçin.</div>
+                        </div>
+                    </div>
+                    <div class="assignment-form-guide-item">
+                        <span class="assignment-form-guide-step">2</span>
+                        <div class="assignment-form-guide-body">
+                            <div class="assignment-form-guide-title">Malzemeleri eşleştirin</div>
+                            <div class="assignment-form-guide-note">{{ material_options|length }} görünür malzeme arasından kalemleri, miktarı ve birimi netleştirin.</div>
+                        </div>
+                    </div>
+                    <div class="assignment-form-guide-item">
+                        <span class="assignment-form-guide-step">3</span>
+                        <div class="assignment-form-guide-body">
+                            <div class="assignment-form-guide-title">Kaydı tamamlayın</div>
+                            <div class="assignment-form-guide-note">Açıklama ekleyip zimmeti tek kayıt altında güvenli biçimde oluşturun.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="selection-panel" style="margin-top:16px;">
+                    <div class="selection-panel-head">
+                        <div class="selection-panel-heading">
+                            <div class="selection-panel-title-row">
+                                <div class="selection-panel-title">Teslim Alan Personel</div>
+                                <span class="selection-counter" id="assignmentRecipientCounter">0 seçili / {{ recipient_options|length }}</span>
+                            </div>
+                            <div class="selection-panel-note">Ortak zimmet için birden fazla personel seçebilirsiniz.</div>
+                        </div>
+                    </div>
+                    <div class="selection-panel-body">
+                        <div class="selection-toolbar">
+                            <div class="selection-list-pick">
+                                <div class="selection-list-pick-label">Listeden hızlı seç</div>
+                                <select id="assignmentRecipientQuickSelect" class="form-control">
+                                    <option value="">Teslim alan personel seçin</option>
+                                    {% for user in recipient_options %}
+                                    <option value="{{ user.id }}">{{ user.tam_ad }} • {{ rol_etiketleri.get(user.rol, user.rol) }} • {{ user.havalimani.ad if user.havalimani else 'Global erişim' }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <input type="search" id="assignmentRecipientSearch" class="form-control choice-search" placeholder="Ad, e-posta, rol veya havalimanına göre ara">
+                            <div class="selection-toolbar-meta">
+                                <div class="selection-toolbar-note">Hızlı seçimle kişi ekleyin; ayrıntılı tarama gerekirse listeyi ayrıca açabilirsiniz.</div>
+                                <button type="button" class="selection-browse-toggle" id="assignmentRecipientToggle" aria-expanded="false">Tüm personel listesini aç</button>
+                            </div>
+                        </div>
+                        <div class="selection-selected-row">
+                            <div class="selection-selected-title">Seçilen personel</div>
+                            <div class="selection-selected-list" id="assignmentRecipientSelection" data-selected-summary="recipient">
+                                <span class="selection-empty-chip">Henüz personel seçilmedi</span>
+                            </div>
+                        </div>
+                        <div class="selection-available-shell" id="assignmentRecipientAvailable" hidden>
+                            <div class="selection-available-head">
+                                <div class="selection-available-title">Uygun personel listesi</div>
+                            </div>
+                            <div class="choice-grid" id="assignmentRecipientGrid">
+                                {% for user in recipient_options %}
+                                <label
+                                    class="choice-card"
+                                    data-choice-card
+                                    data-choice-type="recipient"
+                                    data-choice-label="{{ user.tam_ad }}"
+                                    data-choice-meta-primary="{{ rol_etiketleri.get(user.rol, user.rol) }} • {{ user.havalimani.ad if user.havalimani else 'Global erişim' }}"
+                                    data-choice-meta-secondary="{{ user.kullanici_adi or 'E-posta bilgisi yok' }}"
+                                    data-filter-text="{{ (user.tam_ad ~ ' ' ~ (user.kullanici_adi or '') ~ ' ' ~ (rol_etiketleri.get(user.rol, user.rol)) ~ ' ' ~ (user.havalimani.ad if user.havalimani else 'global'))|lower }}"
+                                >
+                                    <input type="checkbox" name="recipient_ids" value="{{ user.id }}" {% if selected_recipient == user.id %}checked{% endif %}>
+                                    <div class="choice-body">
+                                        <div class="choice-head">
+                                            <span class="choice-title">{{ user.tam_ad }}</span>
+                                        </div>
+                                        <div class="choice-badges">
+                                            <span class="choice-badge">{{ rol_etiketleri.get(user.rol, user.rol) }}</span>
+                                            <span class="choice-badge choice-badge-soft">{{ user.havalimani.ad if user.havalimani else 'Global erişim' }}</span>
+                                        </div>
+                                        <span class="choice-meta">{{ user.kullanici_adi or 'E-posta bilgisi yok' }}</span>
+                                    </div>
+                                </label>
+                                {% else %}
+                                <div class="assignment-empty">
+                                    <strong>Personel bulunamadı</strong>
+                                    Zimmet alıcısı olarak seçilebilecek görünür personel yok.
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="assignment-empty choice-search-empty" id="assignmentRecipientEmpty" hidden>
+                                <strong>Aramayla eşleşen personel bulunamadı</strong>
+                                Daha kısa bir anahtar sözcükle tekrar deneyin veya filtre alanını temizleyin.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="selection-panel" style="margin-top:16px;">
+                    <div class="selection-panel-head">
+                        <div class="selection-panel-heading">
+                            <div class="selection-panel-title-row">
+                                <div class="selection-panel-title">Zimmetlenecek Malzemeler</div>
+                                <span class="selection-counter" id="assignmentMaterialCounter">0 seçili / {{ material_options|length }}</span>
+                            </div>
+                            <div class="selection-panel-note">Aynı zimmet kaydına birden fazla malzeme, miktar ve not ekleyebilirsiniz.</div>
+                        </div>
+                    </div>
+                    <div class="selection-panel-body">
+                        <div class="selection-toolbar">
+                            <div class="selection-list-pick">
+                                <div class="selection-list-pick-label">Listeden hızlı seç</div>
+                                <select id="assignmentMaterialQuickSelect" class="form-control">
+                                    <option value="">Zimmetlenecek malzemeyi seçin</option>
+                                    {% for item in material_options %}
+                                    <option value="{{ item.id }}">{{ item.ad }} • Seri No: {{ item.seri_no or 'Yok' }} • Stok {{ item.stok_miktari or 0 }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <input type="search" id="assignmentMaterialSearch" class="form-control choice-search" placeholder="Malzeme, seri no veya havalimanına göre ara">
+                            <div class="selection-toolbar-meta">
+                                <div class="selection-toolbar-note">Kalemi hızlıca ekleyin; ayrıntılı listeyi yalnız gerektiğinde açın.</div>
+                                <button type="button" class="selection-browse-toggle" id="assignmentMaterialToggle" aria-expanded="false">Tüm malzeme listesini aç</button>
+                            </div>
+                        </div>
+                        <div class="selection-selected-row">
+                            <div class="selection-selected-title">Seçilen malzemeler</div>
+                            <div class="selection-selected-list" id="assignmentMaterialSelection" data-selected-summary="material">
+                                <span class="selection-empty-chip">Henüz malzeme seçilmedi</span>
+                            </div>
+                        </div>
+                        <div class="selection-available-shell" id="assignmentMaterialAvailable" hidden>
+                            <div class="selection-available-head">
+                                <div class="selection-available-title">Uygun malzeme listesi</div>
+                            </div>
+                            <div class="choice-grid" id="assignmentMaterialGrid">
+                                {% for item in material_options %}
+                                <label
+                                    class="choice-card"
+                                    data-choice-card
+                                    data-choice-type="material"
+                                    data-choice-label="{{ item.ad }}"
+                                    data-choice-meta-primary="{{ item.linked_asset.asset_code if item.linked_asset and item.linked_asset.asset_code else ('Seri No: ' ~ (item.seri_no or 'Yok')) }}"
+                                    data-choice-meta-secondary="{{ item.havalimani.ad if item.havalimani else 'Global' }} • Stok {{ item.stok_miktari or 0 }}"
+                                    data-filter-text="{{ (item.ad ~ ' ' ~ (item.seri_no or '') ~ ' ' ~ (item.havalimani.ad if item.havalimani else '') ~ ' ' ~ (item.linked_asset.equipment_template.name if item.linked_asset and item.linked_asset.equipment_template else ''))|lower }}"
+                                >
+                                    <input type="checkbox" name="item_ids" value="{{ item.id }}">
+                                    <div class="choice-body">
+                                        <div class="choice-head">
+                                            <span class="choice-title">{{ item.ad }}</span>
+                                            <span class="choice-badge">Stok {{ item.stok_miktari or 0 }}</span>
+                                        </div>
+                                        <div class="choice-badges">
+                                            <span class="choice-badge choice-badge-soft">Seri No: {{ item.seri_no or 'Yok' }}</span>
+                                            <span class="choice-badge choice-badge-soft">{{ item.havalimani.ad if item.havalimani else 'Global' }}</span>
+                                        </div>
+                                        <div class="choice-detail-shell" data-choice-inputs>
+                                            <div class="choice-inline-grid">
+                                                <input type="text" name="item_note_{{ item.id }}" class="form-control" placeholder="Kalem notu">
+                                                <input type="number" name="item_qty_{{ item.id }}" class="form-control" min="0" step="0.01" value="{{ item.stok_miktari or 1 }}">
+                                                <input type="text" name="item_unit_{{ item.id }}" class="form-control" value="adet">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </label>
+                                {% else %}
+                                <div class="assignment-empty">
+                                    <strong>Malzeme bulunamadı</strong>
+                                    Bu kapsamda zimmetlenecek görünür malzeme kaydı yok.
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="assignment-empty choice-search-empty" id="assignmentMaterialEmpty" hidden>
+                                <strong>Aramayla eşleşen malzeme bulunamadı</strong>
+                                Seri numarası, havalimanı veya malzeme adının bir bölümünü deneyin.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top:16px; margin-bottom:0;">
+                    <label>Açıklama / Not</label>
+                    <textarea name="note" class="form-control" style="height:100px;" placeholder="Teslim şartları, vardiya notu veya operasyon açıklaması"></textarea>
+                </div>
+
+                <div class="assignment-submit-row">
+                    <div class="assignment-submit-note">Seçtiğiniz personel ve malzemeler tek zimmet kaydında birleştirilir. Oluşturma sonrası detay sayfasında PDF hazır olur.</div>
+                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                        <button type="submit" class="btn btn-primary">Zimmeti Oluştur</button>
+                        <span class="status-pill status-bakim">PDF formu otomatik hazır olur</span>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    const showFeedback = function (type, message) {
+      if (window.showToast) {
+        window.showToast({ type: type, message: message });
+      }
+    };
+
+    const updateSelectionPanel = function (config) {
+      const input = document.getElementById(config.inputId);
+      const grid = document.getElementById(config.gridId);
+      const counter = document.getElementById(config.counterId);
+      const selectedList = document.getElementById(config.selectedListId);
+      const emptyState = document.getElementById(config.emptyStateId);
+      const quickSelect = document.getElementById(config.quickSelectId);
+      const availableShell = document.getElementById(config.availableShellId);
+      const toggleButton = document.getElementById(config.toggleId);
+      if (!grid) return;
+      const cards = Array.from(grid.querySelectorAll('[data-choice-card]'));
+      let keepAvailableOpen = false;
+      let visibleCount = cards.length;
+
+      const getSelectedCards = function () {
+        return cards.filter(function (card) {
+          const checkbox = card.querySelector('input[type="checkbox"]');
+          return checkbox && checkbox.checked;
+        });
+      };
+
+      const syncAvailableShell = function () {
+        const hasSearch = !!(input && input.value.trim());
+        const shouldOpen = keepAvailableOpen || hasSearch;
+        if (availableShell) {
+          availableShell.hidden = !shouldOpen;
+        }
+        if (toggleButton) {
+          toggleButton.textContent = shouldOpen ? config.hideListText : config.showListText;
+          toggleButton.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+        }
+        if (emptyState) {
+          emptyState.hidden = !(shouldOpen && visibleCount === 0);
+        }
+      };
+
+      const renderSelected = function () {
+        const selectedCards = getSelectedCards();
+        if (counter) {
+          counter.textContent = selectedCards.length + ' seçili / ' + cards.length;
+        }
+        if (selectedList) {
+          selectedList.innerHTML = '';
+          if (!selectedCards.length) {
+            const emptyChip = document.createElement('span');
+            emptyChip.className = 'selection-empty-chip';
+            emptyChip.textContent = config.emptySelectionText;
+            selectedList.appendChild(emptyChip);
+            return;
+          }
+          selectedCards.forEach(function (card) {
+            const checkbox = card.querySelector('input[type="checkbox"]');
+            const summary = document.createElement('div');
+            summary.className = 'selection-summary-card';
+
+            const main = document.createElement('div');
+            main.className = 'selection-summary-main';
+
+            const title = document.createElement('div');
+            title.className = 'selection-summary-title';
+            title.textContent = card.getAttribute('data-choice-label') || 'Seçili kayıt';
+            main.appendChild(title);
+
+            (config.summaryMetaBuilder ? config.summaryMetaBuilder(card) : []).forEach(function (line) {
+              if (!line) return;
+              const meta = document.createElement('div');
+              meta.className = 'selection-summary-meta';
+              meta.textContent = line;
+              main.appendChild(meta);
+            });
+
+            const removeButton = document.createElement('button');
+            removeButton.type = 'button';
+            removeButton.className = 'selection-remove-btn';
+            removeButton.textContent = 'Kaldır';
+            removeButton.addEventListener('click', function () {
+              if (!checkbox) return;
+              checkbox.checked = false;
+              checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+
+            summary.appendChild(main);
+            summary.appendChild(removeButton);
+            selectedList.appendChild(summary);
+          });
+        }
+      };
+      const updateCardState = function (card) {
+        const checkbox = card.querySelector('input[type="checkbox"]');
+        const isSelected = !!(checkbox && checkbox.checked);
+        card.classList.toggle('is-selected', isSelected);
+        card.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+        const detailShell = card.querySelector('[data-choice-inputs]');
+        if (detailShell) {
+          detailShell.classList.toggle('is-disabled', !isSelected);
+          detailShell.querySelectorAll('input, textarea, select').forEach(function (field) {
+            if (field === checkbox) return;
+            field.disabled = !isSelected;
+          });
+        }
+      };
+      const applyFilter = function () {
+        const needle = input ? input.value.trim().toLowerCase() : '';
+        visibleCount = 0;
+        cards.forEach(function (card) {
+          const haystack = (card.getAttribute('data-filter-text') || '').toLowerCase();
+          const shouldShow = !needle || haystack.indexOf(needle) !== -1;
+          card.hidden = !shouldShow;
+          if (shouldShow) visibleCount += 1;
+        });
+        syncAvailableShell();
+      };
+      cards.forEach(function (card) {
+        const checkbox = card.querySelector('input[type="checkbox"]');
+        updateCardState(card);
+        const linkedFields = card.querySelectorAll('[data-choice-inputs] input, [data-choice-inputs] textarea, [data-choice-inputs] select');
+        linkedFields.forEach(function (field) {
+          field.addEventListener('input', function () {
+            if (checkbox && checkbox.checked) {
+              renderSelected();
+            }
+          });
+        });
+        if (!checkbox) return;
+        checkbox.addEventListener('change', function () {
+          updateCardState(card);
+          renderSelected();
+          applyFilter();
+          showFeedback(
+            checkbox.checked ? 'success' : 'info',
+            checkbox.checked ? config.selectedToast(card) : config.removedToast(card)
+          );
+        });
+      });
+      if (input) {
+        input.addEventListener('input', function () {
+          applyFilter();
+        });
+      }
+      if (toggleButton) {
+        toggleButton.addEventListener('click', function () {
+          keepAvailableOpen = !keepAvailableOpen;
+          applyFilter();
+        });
+      }
+      if (quickSelect) {
+        quickSelect.addEventListener('change', function () {
+          const selectedValue = quickSelect.value;
+          if (!selectedValue) return;
+          if (input) {
+            input.value = '';
+          }
+          keepAvailableOpen = false;
+          const checkbox = grid.querySelector('input[type="checkbox"][value="' + selectedValue + '"]');
+          if (checkbox) {
+            if (!checkbox.checked) {
+              checkbox.checked = true;
+              checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+            } else {
+              renderSelected();
+              showFeedback('info', config.alreadySelectedToast(checkbox.closest('[data-choice-card]')));
+            }
+          }
+          applyFilter();
+          quickSelect.value = '';
+        });
+      }
+      applyFilter();
+      renderSelected();
+    };
+    updateSelectionPanel({
+      inputId: 'assignmentRecipientSearch',
+      gridId: 'assignmentRecipientGrid',
+      counterId: 'assignmentRecipientCounter',
+      selectedListId: 'assignmentRecipientSelection',
+      emptyStateId: 'assignmentRecipientEmpty',
+      quickSelectId: 'assignmentRecipientQuickSelect',
+      availableShellId: 'assignmentRecipientAvailable',
+      toggleId: 'assignmentRecipientToggle',
+      emptySelectionText: 'Henüz personel seçilmedi',
+      showListText: 'Tüm personel listesini aç',
+      hideListText: 'Listeyi gizle',
+      selectedToast: function (card) {
+        return 'Personel seçildi: ' + (card.getAttribute('data-choice-label') || 'Kayıt');
+      },
+      removedToast: function (card) {
+        return 'Seçim kaldırıldı: ' + (card.getAttribute('data-choice-label') || 'Kayıt');
+      },
+      alreadySelectedToast: function (card) {
+        return (card.getAttribute('data-choice-label') || 'Kayıt') + ' zaten seçili.';
+      },
+      summaryMetaBuilder: function (card) {
+        return [
+          card.getAttribute('data-choice-meta-primary'),
+          card.getAttribute('data-choice-meta-secondary')
+        ];
+      },
+    });
+    updateSelectionPanel({
+      inputId: 'assignmentMaterialSearch',
+      gridId: 'assignmentMaterialGrid',
+      counterId: 'assignmentMaterialCounter',
+      selectedListId: 'assignmentMaterialSelection',
+      emptyStateId: 'assignmentMaterialEmpty',
+      quickSelectId: 'assignmentMaterialQuickSelect',
+      availableShellId: 'assignmentMaterialAvailable',
+      toggleId: 'assignmentMaterialToggle',
+      emptySelectionText: 'Henüz malzeme seçilmedi',
+      showListText: 'Tüm malzeme listesini aç',
+      hideListText: 'Listeyi gizle',
+      selectedToast: function (card) {
+        return 'Malzeme seçildi: ' + (card.getAttribute('data-choice-label') || 'Kayıt');
+      },
+      removedToast: function (card) {
+        return 'Seçim kaldırıldı: ' + (card.getAttribute('data-choice-label') || 'Kayıt');
+      },
+      alreadySelectedToast: function (card) {
+        return (card.getAttribute('data-choice-label') || 'Kayıt') + ' zaten seçili.';
+      },
+      summaryMetaBuilder: function (card) {
+        const qty = card.querySelector('input[name^="item_qty_"]');
+        const unit = card.querySelector('input[name^="item_unit_"]');
+        const note = card.querySelector('input[name^="item_note_"]');
+        const noteText = note && note.value.trim() ? note.value.trim() : '';
+        return [
+          ((qty && qty.value) ? qty.value : '1') + ' ' + ((unit && unit.value) ? unit.value : 'adet'),
+          card.getAttribute('data-choice-meta-primary'),
+          card.getAttribute('data-choice-meta-secondary'),
+          noteText ? 'Not: ' + noteText.slice(0, 80) : ''
+        ];
+      },
+    });
+  })();
+</script>
+{% endblock %}

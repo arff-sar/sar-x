@@ -13,7 +13,7 @@
     </div>
     
     <div style="display: flex; gap: 10px; align-items: center;">
-        {% if current_user.rol != 'personel' %}
+        {% if has_permission('inventory.export') %}
         <a href="{{ url_for('inventory.envanter_excel') }}" class="btn btn-secondary" style="color: #1d6f42;">
             📊 Excel
         </a>
@@ -21,12 +21,93 @@
             📄 PDF
         </a>
         {% endif %}
+        {% if has_permission('reports.view') %}
+        <a href="{{ url_for('reports.index', report='inventory') }}" class="btn btn-secondary">
+            📈 Rapor Merkezi
+        </a>
+        {% endif %}
 
-        {% if current_user.rol in ['sahip', 'yetkili'] %}
+        {% if has_permission('inventory.create') %}
         <a href="{{ url_for('inventory.malzeme_ekle') }}" class="btn btn-primary">
             ➕ Yeni Malzeme Ekle
         </a>
         {% endif %}
+    </div>
+</div>
+
+{% if has_permission('assignment.view') or has_permission('ppe.view') %}
+<div class="panel">
+    <div class="panel-body" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+        {% if has_permission('assignment.view') %}
+        <a href="{{ url_for('inventory.zimmetler') }}" class="row-btn" style="padding:16px; border-radius:16px; justify-content:flex-start;">
+            Zimmet Yönetimi
+        </a>
+        {% endif %}
+        {% if has_permission('ppe.view') %}
+        <a href="{{ url_for('inventory.kkd_listesi') }}" class="row-btn" style="padding:16px; border-radius:16px; justify-content:flex-start;">
+            KKD Takibi
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<div class="panel">
+    <div class="panel-body" style="padding-bottom: 10px;">
+        <form method="GET" action="{{ url_for('inventory.envanter') }}" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end;">
+            {% if has_permission('logs.view') or has_permission('settings.manage') %}
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Havalimanı</label>
+                <select name="havalimani_id" class="form-control">
+                    <option value="">Tümü</option>
+                    {% for h in havalimanlari %}
+                    <option value="{{ h.id }}" {% if selected_airport == h.id %}selected{% endif %}>{{ h.kodu }} - {{ h.ad }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Kategori</label>
+                <select name="kategori" class="form-control">
+                    <option value="">Tümü</option>
+                    {% for c in categories %}
+                    <option value="{{ c }}" {% if selected_category == c %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Bakım Durumu</label>
+                <select name="bakim_durumu" class="form-control">
+                    <option value="">Tümü</option>
+                    <option value="yaklasan" {% if selected_maintenance == 'yaklasan' %}selected{% endif %}>Yaklaşan</option>
+                    <option value="geciken" {% if selected_maintenance == 'geciken' %}selected{% endif %}>Geciken</option>
+                    <option value="normal" {% if selected_maintenance == 'normal' %}selected{% endif %}>Planlı/Normal</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>İş Emri Durumu</label>
+                <select name="is_emri_durumu" class="form-control">
+                    <option value="">Tümü</option>
+                    <option value="acik" {% if selected_work_order == 'acik' %}selected{% endif %}>Açık</option>
+                    <option value="atandi" {% if selected_work_order == 'atandi' %}selected{% endif %}>Atandı</option>
+                    <option value="islemde" {% if selected_work_order == 'islemde' %}selected{% endif %}>İşlemde</option>
+                    <option value="beklemede_parca" {% if selected_work_order == 'beklemede_parca' %}selected{% endif %}>Parça Bekleniyor</option>
+                    <option value="beklemede_onay" {% if selected_work_order == 'beklemede_onay' %}selected{% endif %}>Onay Bekleniyor</option>
+                    <option value="tamamlandi" {% if selected_work_order == 'tamamlandi' %}selected{% endif %}>Tamamlandı</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Kritik Ekipman</label>
+                <select name="kritik" class="form-control">
+                    <option value="">Tümü</option>
+                    <option value="1" {% if selected_critical == '1' %}selected{% endif %}>Sadece Kritik</option>
+                </select>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button type="submit" class="btn btn-navy" style="width:100%;">Filtrele</button>
+                <a href="{{ url_for('inventory.envanter') }}" class="btn btn-secondary" style="width:100%; text-align:center;">Sıfırla</a>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -47,7 +128,7 @@
             <thead>
                 <tr>
                     <th>MALZEME / SERİ NO</th>
-                    {% if current_user.rol in ['sahip', 'genel_mudurluk'] %}
+                    {% if has_permission('logs.view') or has_permission('settings.manage') %}
                     <th>BİRİM</th>
                     {% endif %}
                     <th style="text-align: center;">ÜNİTE / QR</th>
@@ -72,15 +153,17 @@
                         </div>
                     </td>
                     
-                    {% if current_user.rol in ['sahip', 'genel_mudurluk'] %}
+                    {% if has_permission('logs.view') or has_permission('settings.manage') %}
                     <td>
                         <span class="tag-navy" style="font-size: 10px; padding: 4px 8px;">{{ m.havalimani.kodu }}</span>
                     </td>
                     {% endif %}
 
                     <td style="text-align: center;">
-                        <div style="font-size: 13px; font-weight: 700; margin-bottom: 4px;">{{ m.kutu.kodu }}</div>
-                        <a href="{{ url_for('inventory.qr_uret', kodu=m.kutu.kodu) }}" target="_blank" title="QR Kodunu Görüntüle" style="text-decoration: none; font-size: 18px; filter: grayscale(100%); opacity: 0.7; transition: 0.2s;">🖼️</a>
+                        <div style="font-size: 13px; font-weight: 700; margin-bottom: 4px;">{{ m.linked_asset.asset_code if m.linked_asset else m.kutu.kodu }}</div>
+                        {% if m.linked_asset and has_permission('qr.generate') %}
+                        <a href="{{ url_for('inventory.qr_uret', asset_id=m.linked_asset.id) }}" target="_blank" title="QR Kodunu Görüntüle" style="text-decoration: none; font-size: 18px; filter: grayscale(100%); opacity: 0.7; transition: 0.2s;">🖼️</a>
+                        {% endif %}
                     </td>
 
                     <td style="text-align: center;">
@@ -110,8 +193,25 @@
                     <td style="text-align: right;">
                         <div class="row-actions">
                             <a href="{{ url_for('inventory.kutu_detay', kodu=m.kutu.kodu) }}" class="row-btn">🔍 Detay</a>
-                            {% if current_user.rol != 'genel_mudurluk' %}
+                            {% if m.linked_asset %}
+                            <a href="{{ url_for('inventory.quick_asset_view', asset_id=m.linked_asset.id) }}" class="row-btn">📱 Hızlı</a>
+                            {% endif %}
+                            {% if has_permission('assignment.view') and m.linked_asset %}
+                            <a href="{{ url_for('inventory.zimmetler') }}" class="row-btn">Zimmetler</a>
+                            {% endif %}
+                            
+                            {% if has_permission('maintenance.edit') %}
                             <button class="row-btn" onclick="openBakimModal('{{ m.id }}', '{{ m.ad }}')" style="background: var(--navy); color: white; border: none;">🛠️ Bakım</button>
+                            {% endif %}
+
+                            {# ✅ GÜNCELLENDİ: Modern Dinamik Silme Butonu #}
+                            {% if has_permission('inventory.delete') %}
+                            <button type="button" 
+                                    class="row-btn" 
+                                    style="background: var(--red-light); color: var(--red); border: 1px solid var(--red-border); cursor: pointer;"
+                                    onclick="confirmDelete('{{ m.id }}', '{{ m.ad }}')">
+                                🗑️ Sil
+                            </button>
                             {% endif %}
                         </div>
                     </td>
@@ -131,6 +231,42 @@
 </div>
 
 <script>
+// ✅ MODERN SİLME ONAYI (SWEETALERT2)
+function confirmDelete(id, name) {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+    Swal.fire({
+        title: 'Emin misiniz?',
+        text: `'${name}' isimli malzeme arşive gönderilecek!`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Evet, Arşive Gönder',
+        cancelButtonText: 'Vazgeç',
+        background: '#ffffff',
+        borderRadius: '14px',
+        customClass: {
+            title: 'swal-title-custom',
+            content: 'swal-text-custom'
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = "{{ url_for('inventory.malzeme_sil', id=0) }}".replace("0", id);
+
+            const csrfInput = document.createElement('input');
+            csrfInput.type = 'hidden';
+            csrfInput.name = 'csrf_token';
+            csrfInput.value = csrfToken;
+            form.appendChild(csrfInput);
+
+            document.body.appendChild(form);
+            form.submit();
+        }
+    });
+}
+
 function filterInventory() {
     const input = document.getElementById("inventorySearch");
     const filter = input.value.toUpperCase();

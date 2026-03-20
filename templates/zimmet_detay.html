@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+{% block title %}Zimmet Detayı{% endblock %}
+
+{% block extra_css %}
+<style>
+  .assignment-detail-grid { display:grid; grid-template-columns:minmax(0, 1.05fr) minmax(320px, .95fr); gap:20px; align-items:start; }
+  .summary-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+  .summary-card { padding:16px; border:1px solid var(--border); border-radius:16px; background:var(--surface2); }
+  .summary-label { font-size:11px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
+  .summary-value { margin-top:6px; font-size:14px; font-weight:800; color:var(--navy); line-height:1.45; }
+  .history-list { display:grid; gap:10px; }
+  .history-item { padding:14px; border:1px solid var(--border); border-radius:16px; background:#fff; }
+  .history-item strong { color:var(--navy); }
+  .history-meta { font-size:11.5px; color:var(--text3); line-height:1.5; margin-top:6px; }
+  .return-grid { display:grid; gap:12px; }
+  .return-card { padding:14px; border:1px solid var(--border); border-radius:16px; background:#fff; display:grid; gap:10px; }
+  .return-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+  .return-title { font-size:13px; font-weight:800; color:var(--navy); }
+  .return-meta { font-size:11.5px; color:var(--text3); line-height:1.45; }
+  .return-fields { display:grid; grid-template-columns:120px minmax(0, 1fr); gap:10px; }
+  @media (max-width: 980px) {
+    .assignment-detail-grid,
+    .summary-grid,
+    .return-fields { grid-template-columns:1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Zimmet: {{ assignment.assignment_no }}</div>
+        <div class="page-meta">
+            <span>{{ assignment.airport.ad if assignment.airport else 'Global erişim' }}</span>
+            <div class="meta-dot" style="width:3px; height:3px; background:var(--text4); border-radius:50%;"></div>
+            <span>{{ assignment.assignment_date.strftime('%d.%m.%Y') if assignment.assignment_date else '-' }}</span>
+        </div>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <span class="status-pill {% if assignment.status == 'returned' %}status-aktif{% elif assignment.status == 'cancelled' %}status-pasif{% else %}status-bakim{% endif %}">{{ assignment_status_label(assignment.status) }}</span>
+        {% if can_download_assignment_pdf %}
+        <a href="{{ url_for('inventory.zimmet_pdf', assignment_id=assignment.id) }}" class="btn btn-secondary">PDF İndir</a>
+        {% endif %}
+        <a href="{{ url_for('inventory.zimmetler') }}" class="btn btn-secondary">Listeye Dön</a>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-body">
+        <div class="summary-grid">
+            <div class="summary-card">
+                <div class="summary-label">Teslim Alan</div>
+                <div class="summary-value">{{ assignment.recipient_names or '-' }}</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Teslim Eden</div>
+                <div class="summary-value">{{ assignment.delivered_by.tam_ad if assignment.delivered_by else '-' }}</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Kalem Sayısı</div>
+                <div class="summary-value">{{ assignment.items|length }} kalem</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Oluşturan</div>
+                <div class="summary-value">{{ assignment.created_by.tam_ad if assignment.created_by else '-' }}</div>
+            </div>
+        </div>
+        {% if assignment.note %}
+        <div style="margin-top:16px;">
+            <div class="summary-label">Açıklama / Not</div>
+            <div style="margin-top:8px; color:var(--text2); line-height:1.65;">{{ assignment.note }}</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="assignment-detail-grid">
+    <div style="display:grid; gap:20px;">
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <div class="panel-title">Zimmet Kalemleri</div>
+                    <div class="panel-subtitle">Miktar, iade durumu ve not bilgileri zimmet kalemi bazında tutulur.</div>
+                </div>
+            </div>
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Kalem</th>
+                            <th>Miktar</th>
+                            <th>Kalan</th>
+                            <th>İade Bilgisi</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in assignment.items %}
+                        <tr>
+                            <td>
+                                <div style="font-weight:800; color:var(--navy);">{{ item.item_name }}</div>
+                                <div style="font-size:11.5px; color:var(--text3); margin-top:4px;">{{ item.note or 'Kalem notu yok' }}</div>
+                            </td>
+                            <td>{{ item.quantity }} {{ item.unit or 'adet' }}</td>
+                            <td>{{ item.remaining_quantity }} {{ item.unit or 'adet' }}</td>
+                            <td>
+                                {% if item.returned_quantity %}
+                                <div>{{ item.returned_quantity }} {{ item.unit or 'adet' }} iade</div>
+                                <div style="font-size:11.5px; color:var(--text3); margin-top:4px;">{{ item.returned_at.strftime('%d.%m.%Y %H:%M') if item.returned_at else '-' }} • {{ item.returned_by.tam_ad if item.returned_by else '-' }}</div>
+                                {% if item.return_note %}
+                                <div style="font-size:11.5px; color:var(--text3); margin-top:4px;">{{ item.return_note }}</div>
+                                {% endif %}
+                                {% else %}
+                                <span style="color:var(--text3);">Henüz iade kaydı yok</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if can_manage_assignment %}
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <div class="panel-title">İade İşlemi</div>
+                    <div class="panel-subtitle">Tam veya kısmi iade miktarlarını kalem bazında kaydedin.</div>
+                </div>
+            </div>
+            <div class="panel-body">
+                <form method="POST" action="{{ url_for('inventory.zimmet_iade', assignment_id=assignment.id) }}" class="return-grid">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    {% for item in assignment.items %}
+                    <div class="return-card">
+                        <div class="return-head">
+                            <div>
+                                <div class="return-title">{{ item.item_name }}</div>
+                                <div class="return-meta">Toplam: {{ item.quantity }} {{ item.unit or 'adet' }} • Kalan: {{ item.remaining_quantity }} {{ item.unit or 'adet' }}</div>
+                            </div>
+                            {% if item.remaining_quantity <= 0 %}
+                            <span class="status-pill status-aktif">İade tamamlandı</span>
+                            {% else %}
+                            <span class="status-pill status-bakim">Açık kalem</span>
+                            {% endif %}
+                        </div>
+                        <div class="return-fields">
+                            <input type="number" min="0" step="0.01" name="return_qty_{{ item.id }}" class="form-control" placeholder="Miktar">
+                            <input type="text" name="return_note_{{ item.id }}" class="form-control" placeholder="İade notu">
+                        </div>
+                    </div>
+                    {% endfor %}
+                    <button type="submit" class="btn btn-primary">İade Kaydını Oluştur</button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div style="display:grid; gap:20px;">
+        {% if can_manage_assignment %}
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <div class="panel-title">Durum Güncelle</div>
+                    <div class="panel-subtitle">Zimmeti aktif, iade, kısmi iade veya iptal durumuna alabilirsiniz.</div>
+                </div>
+            </div>
+            <div class="panel-body">
+                <form method="POST" action="{{ url_for('inventory.zimmet_durum_guncelle', assignment_id=assignment.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <label>Zimmet Durumu</label>
+                    <select name="status" class="form-control">
+                        {% for status_key in ['active', 'partial', 'returned', 'cancelled'] %}
+                        <option value="{{ status_key }}" {% if assignment.status == status_key %}selected{% endif %}>{{ assignment_status_label(status_key) }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-navy" style="width:100%; justify-content:center;">Durumu Kaydet</button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <div class="panel-title">İmzalı Belge</div>
+                    <div class="panel-subtitle">PDF formunun ıslak imzalı taramasını bu kayda bağlayabilirsiniz.</div>
+                </div>
+            </div>
+            <div class="panel-body">
+                {% if assignment.signed_document_url %}
+                <div class="summary-card" style="margin-bottom:16px;">
+                    <div class="summary-label">Yüklü Belge</div>
+                    <div class="summary-value">{{ assignment.signed_document_name or 'İmzalı belge' }}</div>
+                    <div style="margin-top:12px;">
+                        <a href="{{ url_for('inventory.zimmet_imzali_belge_indir', assignment_id=assignment.id) }}" class="btn btn-secondary">Belgeyi İndir</a>
+                    </div>
+                </div>
+                {% else %}
+                <div class="assignment-empty" style="margin-bottom:16px;">
+                    <strong>Henüz imzalı belge yüklenmedi</strong>
+                    Zimmet formunun imzalı hali hazır olduğunda bu kayda eklenebilir.
+                </div>
+                {% endif %}
+
+                {% if can_upload_assignment_document %}
+                <form method="POST" action="{{ url_for('inventory.zimmet_imzali_belge_yukle', assignment_id=assignment.id) }}" enctype="multipart/form-data">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <label>İmzalı Belge</label>
+                    <input type="file" name="signed_document" class="form-control" accept=".pdf,.png,.jpg,.jpeg,.webp" required>
+                    <div style="margin-top:8px; font-size:11.5px; color:var(--text3); line-height:1.5;">
+                        Desteklenen dosya türleri: PDF, PNG, JPG, JPEG ve WEBP. En fazla {{ (config.MAX_CONTENT_LENGTH / (1024 * 1024))|round(0, 'floor')|int }} MB yükleyebilirsiniz.
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">Belgeyi Yükle</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <div class="panel-title">İşlem Geçmişi</div>
+                    <div class="panel-subtitle">Zimmet oluşturma, iade ve belge hareketleri zaman sırasıyla kayıt altına alınır.</div>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="history-list">
+                    {% for entry in assignment.history_entries %}
+                    <div class="history-item">
+                        <strong>{{ entry.event_note or entry.event_type }}</strong>
+                        <div class="history-meta">{{ entry.created_at.strftime('%d.%m.%Y %H:%M') if entry.created_at else '-' }} • {{ entry.created_by.tam_ad if entry.created_by else 'Sistem' }}</div>
+                    </div>
+                    {% else %}
+                    <div class="assignment-empty">
+                        <strong>Geçmiş kaydı yok</strong>
+                        Bu zimmet için henüz ayrı bir işlem kaydı oluşmadı.
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

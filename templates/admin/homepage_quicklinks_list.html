@@ -1,0 +1,161 @@
+{% extends "admin/homepage_base.html" %}
+
+{% block homepage_body %}
+<div class="two-col">
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title">➕ Yeni Hızlı Bağlantı</div></div>
+    <div class="panel-body">
+      <div class="hp-preview-note">URL için `/duyurular`, `https://...`, `mailto:` veya `tel:` formatlarını kullanın.</div>
+      <form method="POST" action="{{ url_for('content.homepage_quicklink_create') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Başlık</label>
+        <input type="text" name="title" class="form-control" required>
+        <label>Açıklama</label>
+        <input type="text" name="description" class="form-control">
+        <label>Bağlantı URL</label>
+        <input type="text" name="link_url" class="form-control" placeholder="/duyurular">
+        <label>İkon</label>
+        <input type="text" name="icon" class="form-control" placeholder="🔗">
+        <label>Sıra</label>
+        <input type="number" name="order_index" class="form-control" value="0">
+        <label>Workflow Durumu</label>
+        <select name="workflow_status" class="form-control">
+          <option value="draft">Taslak</option>
+          <option value="published">Yayında</option>
+          <option value="passive">Pasif</option>
+        </select>
+        <label style="text-transform:none;"><input type="checkbox" name="is_active"> Legacy aktif bayrağı</label>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-primary" style="flex:1; justify-content:center;">Kaydet</button>
+          <button class="btn btn-secondary" type="submit" formaction="{{ url_for('content.content_preview', content_type='quicklink') }}" formtarget="_blank">Önizle</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">Hızlı Erişim Kartları</div>
+      <div style="font-size:12px; color:var(--text3);">Toplam: {{ links|length }}</div>
+    </div>
+
+    <div class="hp-toolbar">
+      <form method="GET" class="hp-toolbar-left">
+        <input type="search" name="q" placeholder="Başlık veya açıklama ara..." value="{{ search_query or '' }}">
+        <select name="status">
+          <option value="">Tüm Durumlar</option>
+          <option value="published" {% if selected_status == 'published' %}selected{% endif %}>Yayında</option>
+          <option value="draft" {% if selected_status == 'draft' %}selected{% endif %}>Taslak</option>
+          <option value="passive" {% if selected_status == 'passive' %}selected{% endif %}>Pasif</option>
+          <option value="archived" {% if selected_status == 'archived' %}selected{% endif %}>Arşiv</option>
+        </select>
+        <button class="btn btn-secondary" type="submit">Filtrele</button>
+        <a class="btn btn-secondary" href="{{ url_for('content.homepage_quicklinks_list') }}">Temizle</a>
+      </form>
+    </div>
+
+    <form id="bulkQuicklinkForm" method="POST" action="{{ url_for('content.homepage_bulk_action', content_type='quicklink') }}" class="hp-toolbar">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="hp-toolbar-left hp-bulk">
+        <select name="bulk_action">
+          <option value="">Toplu İşlem</option>
+          <option value="publish">Seçilileri Yayına Al</option>
+          <option value="passive">Seçilileri Pasif Et</option>
+          <option value="archive">Seçilileri Arşivle</option>
+          <option value="normalize">Sıralamayı Normalize Et</option>
+        </select>
+        <button class="btn btn-secondary" type="submit">Uygula</button>
+      </div>
+    </form>
+
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width:36px;"><input type="checkbox" id="selectAllRows"></th>
+            <th>Başlık</th>
+            <th>URL</th>
+            <th>Sıra</th>
+            <th>Durum</th>
+            <th>İşlemler</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in links %}
+          {% set wf = workflow_map.get(item.id) %}
+          <tr>
+            <td><input type="checkbox" name="selected_ids" value="{{ item.id }}" class="row-selector" form="bulkQuicklinkForm"></td>
+            <td>{{ item.title }}</td>
+            <td style="font-family:var(--mono); font-size:11px;">{{ item.link_url or '-' }}</td>
+            <td>{{ item.order_index }}</td>
+            <td>
+              {% if wf and wf.status == 'published' %}<span class="hp-status-pill hp-status-published">Yayında</span>
+              {% elif wf and wf.status == 'draft' %}<span class="hp-status-pill hp-status-draft">Taslak</span>
+              {% elif wf and wf.status == 'archived' %}<span class="hp-status-pill hp-status-archived">Arşiv</span>
+              {% else %}<span class="hp-status-pill hp-status-passive">Pasif</span>{% endif %}
+            </td>
+            <td>
+              <div class="row-actions">
+                <form method="POST" action="{{ url_for('content.homepage_move_item', content_type='quicklink', item_id=item.id, direction='up') }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="row-btn" type="submit">↑</button>
+                </form>
+                <form method="POST" action="{{ url_for('content.homepage_move_item', content_type='quicklink', item_id=item.id, direction='down') }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="row-btn" type="submit">↓</button>
+                </form>
+                <form method="POST" action="{{ url_for('content.homepage_quicklink_toggle', link_id=item.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="row-btn" type="submit">{{ 'Pasife Al' if wf and wf.status == 'published' else 'Yayınla' }}</button>
+                </form>
+                <form method="POST" action="{{ url_for('content.homepage_quicklink_delete', link_id=item.id) }}" onsubmit="return confirm('Bağlantı silinsin mi?');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="row-btn" type="submit" style="color:var(--red); border-color:var(--red-border);">Sil</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td colspan="6" style="background:var(--surface2);">
+              <form method="POST" action="{{ url_for('content.homepage_quicklink_edit', link_id=item.id) }}" style="display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:8px; align-items:center;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="text" name="title" class="form-control" value="{{ item.title }}" required>
+                <input type="text" name="description" class="form-control" value="{{ item.description or '' }}" placeholder="Açıklama">
+                <input type="text" name="link_url" class="form-control" value="{{ item.link_url or '' }}" placeholder="URL">
+                <input type="text" name="icon" class="form-control" value="{{ item.icon or '' }}" placeholder="İkon">
+                <input type="number" name="order_index" class="form-control" value="{{ item.order_index }}">
+                <div style="display:flex; gap:8px;">
+                  <select name="workflow_status" class="form-control">
+                    <option value="published" {% if wf and wf.status == 'published' %}selected{% endif %}>Yayında</option>
+                    <option value="draft" {% if wf and wf.status == 'draft' %}selected{% endif %}>Taslak</option>
+                    <option value="passive" {% if wf and wf.status == 'passive' %}selected{% endif %}>Pasif</option>
+                    <option value="archived" {% if wf and wf.status == 'archived' %}selected{% endif %}>Arşiv</option>
+                  </select>
+                  <label style="display:flex; align-items:center; gap:4px; font-size:12px;">
+                    <input type="checkbox" name="is_active" {% if item.is_active %}checked{% endif %}>Aktif
+                  </label>
+                  <button class="row-btn" type="submit">Kaydet</button>
+                </div>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6"><div class="hp-empty">Henüz hızlı bağlantı kartı yok.</div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const selectAll = document.getElementById('selectAllRows');
+    const rows = Array.from(document.querySelectorAll('.row-selector'));
+    if (!selectAll) return;
+    selectAll.addEventListener('change', function () {
+      rows.forEach((row) => { row.checked = selectAll.checked; });
+    });
+  })();
+</script>
+{% endblock %}

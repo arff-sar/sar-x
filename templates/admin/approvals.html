@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Approval Merkezi{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Approval Merkezi</div>
+        <div class="page-meta">Bekleyen kritik operasyonlar ve yönetici inceleme akışı</div>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-body">
+        <form method="GET" style="display:flex; gap:10px; align-items:end; flex-wrap:wrap;">
+            <div class="form-group" style="margin-bottom:0; min-width:220px;">
+                <label>Durum</label>
+                <select name="status" class="form-control">
+                    <option value="">Tümü</option>
+                    <option value="pending" {% if selected_status == 'pending' %}selected{% endif %}>Pending</option>
+                    <option value="approved" {% if selected_status == 'approved' %}selected{% endif %}>Approved</option>
+                    <option value="rejected" {% if selected_status == 'rejected' %}selected{% endif %}>Rejected</option>
+                </select>
+            </div>
+            <button class="btn btn-secondary">Filtrele</button>
+        </form>
+    </div>
+</div>
+
+{% if focused_approval %}
+{% set approvals = [focused_approval] %}
+{% endif %}
+
+<div class="panel">
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Tip</th>
+                    <th>Hedef</th>
+                    <th>Talep Eden</th>
+                    <th>Durum</th>
+                    <th>Tarih</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in approvals %}
+                <tr>
+                    <td>#{{ item.id }}</td>
+                    <td>{{ item.approval_type }}</td>
+                    <td>{{ item.target_model }} / {{ item.target_id or '-' }}</td>
+                    <td>{{ item.requested_by.tam_ad if item.requested_by else '-' }}</td>
+                    <td><span class="status-pill {% if item.status == 'approved' %}status-aktif{% elif item.status == 'pending' %}status-bakim{% else %}status-ariza{% endif %}">{{ item.status|upper }}</span></td>
+                    <td>{{ item.created_at.strftime('%d.%m.%Y %H:%M') if item.created_at else '-' }}</td>
+                    <td class="row-actions">
+                        {% if item.status == 'pending' %}
+                        <form method="POST" action="{{ url_for('admin.approval_detail', id=item.id) }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="action" value="approve">
+                            <button class="row-btn" type="submit">Onayla</button>
+                        </form>
+                        <form method="POST" action="{{ url_for('admin.approval_detail', id=item.id) }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="action" value="reject">
+                            <button class="row-btn" type="submit" style="color:var(--red); border-color:var(--red-border);">Reddet</button>
+                        </form>
+                        {% else %}
+                        <a href="{{ url_for('admin.approval_detail', id=item.id) }}" class="row-btn">Detay</a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" style="text-align:center; color:var(--text3);">Bekleyen approval kaydı bulunmuyor.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

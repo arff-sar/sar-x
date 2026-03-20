@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Ekipman Şablonları{% endblock %}
+
+{% block extra_css %}
+<style>
+  .template-grid { display:grid; grid-template-columns:minmax(0, 1.02fr) minmax(0, .98fr); gap:18px; }
+  .template-form-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+  .template-form-grid .form-group.full { grid-column:1 / -1; }
+  .template-table td { vertical-align:top; }
+  .template-kicker { font-size:10.5px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
+  .template-meta { margin-top:5px; font-size:11.5px; color:var(--text3); line-height:1.5; }
+  .template-links { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+  @media (max-width: 980px) {
+    .template-grid,
+    .template-form-grid { grid-template-columns:1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Merkezi Ekipman Şablonları</div>
+        <div class="page-meta">Bakım talimatı, checklist şablonu ve katalogdan sahaya türetme akışı</div>
+    </div>
+</div>
+
+<div class="template-grid">
+    {% if has_permission('maintenance.instructions.manage') or has_permission('maintenance.plan.change') %}
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <div class="panel-title">Merkezi Şablon Oluştur</div>
+                <div class="panel-subtitle">Ekipman tipini, bakım periyodunu ve ilk talimat alanlarını tek formda tanımlayın.</div>
+            </div>
+        </div>
+        <div class="panel-body">
+            <form method="POST" action="{{ url_for('maintenance.ekipman_sablonlari') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="template-form-grid">
+                    <div class="form-group">
+                        <label>Ekipman Adı</label>
+                        <input type="text" name="name" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Kategori</label>
+                        <input type="text" name="category" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Marka</label>
+                        <input type="text" name="brand" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Model</label>
+                        <input type="text" name="model_code" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Üretici</label>
+                        <input type="text" name="manufacturer" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Bakım Periyodu (Gün)</label>
+                        <input type="number" name="maintenance_period_days" min="1" value="180" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Kritik Seviyesi</label>
+                        <select name="criticality_level" class="form-control">
+                            <option value="normal">Normal</option>
+                            <option value="high">Yüksek</option>
+                            <option value="critical">Kritik</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Varsayılan Bakım Formu</label>
+                        <select name="default_maintenance_form_id" class="form-control">
+                            <option value="">Form atanmadı</option>
+                            {% for form in form_templates %}
+                            <option value="{{ form.id }}">{{ form.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group full">
+                        <label>Açıklama</label>
+                        <textarea name="description" class="form-control" style="height:80px;"></textarea>
+                    </div>
+                    <div class="form-group full">
+                        <label>Teknik Özellikler</label>
+                        <textarea name="technical_specs" class="form-control" style="height:80px;"></textarea>
+                    </div>
+                    <div class="form-group full">
+                        <label>Talimat Başlığı</label>
+                        <input type="text" name="instruction_title" class="form-control" placeholder="Örn: Solunum Seti Periyodik Bakım Talimatı">
+                    </div>
+                    <div class="form-group full">
+                        <label>Talimat Açıklaması</label>
+                        <textarea name="instruction_description" class="form-control" style="height:90px;"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Kılavuz Linki</label>
+                        <input type="url" name="manual_url" class="form-control" placeholder="https://...">
+                    </div>
+                    <div class="form-group">
+                        <label>Görsel URL</label>
+                        <input type="url" name="visual_url" class="form-control" placeholder="https://...">
+                    </div>
+                    <div class="form-group">
+                        <label>Revizyon No</label>
+                        <input type="text" name="revision_no" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Revizyon Tarihi</label>
+                        <input type="date" name="revision_date" class="form-control">
+                    </div>
+                    <div class="form-group full">
+                        <label>Talimat Notları</label>
+                        <textarea name="instruction_notes" class="form-control" style="height:80px;"></textarea>
+                    </div>
+                </div>
+                <button class="btn btn-primary" style="width:100%; justify-content:center;">Şablonu Kaydet</button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <div class="panel-title">Merkezi Katalog</div>
+                <div class="panel-subtitle">Bakım talimatı, aktif checklist ve sahaya kopyalama akışını aynı tabloda yönetin.</div>
+            </div>
+        </div>
+        <div class="table-container">
+            <table class="data-table template-table">
+                <thead>
+                    <tr>
+                        <th>Şablon</th>
+                        <th>Bakım Bilgisi</th>
+                        <th>İşlem</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for t in templates %}
+                    <tr>
+                        <td>
+                            <div class="template-kicker">{{ t.category or 'Kategori yok' }}</div>
+                            <div style="margin-top:4px; font-weight:800; color:var(--navy);">{{ t.name }}</div>
+                            <div class="template-meta">{{ t.brand or t.manufacturer or '-' }}{% if t.model_code %} • {{ t.model_code }}{% endif %}</div>
+                        </td>
+                        <td>
+                            <div class="template-meta">Periyot: {{ t.maintenance_period_days or '-' }} gün</div>
+                            <div class="template-meta">Checklist: {{ t.default_maintenance_form.name if t.default_maintenance_form else 'Atanmadı' }}</div>
+                            <div class="template-meta">Talimat: {{ t.maintenance_instruction.title if t.maintenance_instruction else 'Tanımlanmadı' }}</div>
+                            {% if t.maintenance_instruction and t.maintenance_instruction.manual_url %}
+                            <div class="template-links">
+                                <a href="{{ t.maintenance_instruction.manual_url }}" target="_blank" rel="noopener" class="row-btn">Kılavuz</a>
+                                {% if t.maintenance_instruction.visual_url %}
+                                <a href="{{ t.maintenance_instruction.visual_url }}" target="_blank" rel="noopener" class="row-btn">Görsel</a>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div style="display:grid; gap:10px;">
+                                {% if has_permission('maintenance.instructions.manage') or has_permission('maintenance.plan.change') %}
+                                <a href="{{ url_for('maintenance.ekipman_talimat', template_id=t.id) }}" class="row-btn" style="justify-content:center;">Talimatı Düzenle</a>
+                                {% endif %}
+                                {% if rol in ['sahip', 'yetkili'] %}
+                                <form method="POST" action="{{ url_for('inventory.merkezi_sablondan_envantere_ekle', template_id=t.id) }}" style="display:grid; gap:6px;">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    {% if rol == 'sahip' %}
+                                    <select name="havalimani_id" class="form-control" style="margin-bottom:0;">
+                                        {% for h in airports %}
+                                        <option value="{{ h.id }}">{{ h.kodu }} - {{ h.ad }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    {% endif %}
+                                    <input type="text" name="kutu_kodu" class="form-control" placeholder="Kutu / Depo" style="margin-bottom:0;" required>
+                                    <input type="text" name="seri_no" class="form-control" placeholder="Seri No" style="margin-bottom:0;">
+                                    <button class="row-btn" style="justify-content:center;">Birime Ekle</button>
+                                </form>
+                                {% else %}
+                                <span style="font-size:11px; color:var(--text4);">Birime ekleme için yetki gerekir.</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" style="text-align:center; color:var(--text3);">Merkezi şablon bulunmuyor.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
