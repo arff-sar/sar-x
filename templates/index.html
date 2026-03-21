@@ -142,7 +142,7 @@
     border-radius: 12px;
     background: linear-gradient(135deg, rgba(245,158,11,.14), rgba(245,158,11,.08));
     color: var(--accent-dark);
-    font-size: 12px;
+    font-size: clamp(13px, 1.2vw, 14px);
     font-weight: 800;
     letter-spacing: .01em;
   }
@@ -416,14 +416,18 @@
 
   .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 18px;
   }
   .stat-card {
     position: relative;
     overflow: hidden;
-    min-height: 100%;
-    padding: 24px 22px 22px;
+    min-height: 196px;
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    align-items: center;
+    gap: 18px;
+    padding: 20px 22px;
     border-radius: 24px;
     background:
       linear-gradient(180deg, rgba(255,255,255,.99), rgba(255,247,237,.94)),
@@ -456,30 +460,74 @@
     box-shadow: 0 22px 38px rgba(249,115,22,.12);
     border-color: rgba(249,115,22,.24);
   }
-  .stat-label {
-    display: inline-flex;
+  .stat-media {
+    position: relative;
+    z-index: 1;
+    width: 104px;
+    height: 104px;
+    display: flex;
     align-items: center;
-    gap: 8px;
-    color: var(--accent-dark);
-    font-size: 12.5px;
-    font-weight: 800;
-    letter-spacing: .04em;
-    text-transform: uppercase;
+    justify-content: center;
+    margin: 0 auto;
+    background: transparent;
+    isolation: isolate;
+  }
+  .stat-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center;
+    display: block;
+    background: transparent;
+    mix-blend-mode: darken;
+    filter: saturate(1.02) contrast(1.02);
+    transform-origin: center;
+  }
+  .stat-card[data-homepage-stat="total_assets"] .stat-media img,
+  .stat-card[data-homepage-stat="total_personnel"] .stat-media img,
+  .stat-card[data-homepage-stat="total_airports"] .stat-media img {
+    transform: scale(1.08);
+  }
+  .stat-card[data-homepage-stat="completed_trainings"] .stat-media {
+    width: 116px;
+    height: 116px;
+  }
+  .stat-card[data-homepage-stat="completed_trainings"] .stat-media img {
+    transform: scale(1.24);
+  }
+  .stat-copy {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    min-width: 0;
+    width: 100%;
+    min-height: 144px;
+    padding: 2px 0;
+    text-align: center;
   }
   .stat-value {
-    margin: 16px 0 8px;
-    font-size: clamp(34px, 4vw, 46px);
+    margin: auto 0 0;
+    font-size: clamp(38px, 4vw, 48px);
     line-height: .95;
     letter-spacing: -.065em;
     color: var(--ink-900);
     font-weight: 800;
     font-variant-numeric: tabular-nums;
   }
-  .stat-sub {
+  .stat-title {
     margin: 0;
-    color: var(--ink-500);
-    font-size: 13.5px;
-    line-height: 1.72;
+    color: var(--accent-dark);
+    width: 100%;
+    min-height: 52px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    font-size: 19px;
+    line-height: 1.2;
+    font-weight: 800;
   }
 
   @media (max-width: 1100px) {
@@ -496,6 +544,9 @@
     .announcement-media,
     .announcement-empty-media {
       min-height: 320px;
+    }
+    .stats-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 
@@ -524,6 +575,27 @@
     .announcement-media,
     .stat-card {
       border-radius: 18px;
+    }
+    .stat-card {
+      min-height: 170px;
+      grid-template-columns: 88px minmax(0, 1fr);
+      gap: 14px;
+      padding: 18px;
+    }
+    .stat-media {
+      width: 86px;
+      height: 86px;
+    }
+    .stat-card[data-homepage-stat="completed_trainings"] .stat-media {
+      width: 94px;
+      height: 94px;
+    }
+    .stat-copy {
+      min-height: 122px;
+    }
+    .stat-title {
+      min-height: 46px;
+      font-size: 17px;
     }
     .announcement-stage,
     .announcement-stage-empty {
@@ -699,10 +771,32 @@
     </div>
     <div class="stats-grid" data-stats-grid>
       {% for card in stats[:4] %}
+        {% if card.metric_key == "total_assets" %}
+          {% set stat_image = url_for('static', filename='img/sayisal-ozet/simge_1_malzeme.png') %}
+          {% set display_title = "Toplam Malzeme" %}
+        {% elif card.metric_key == "total_personnel" %}
+          {% set stat_image = url_for('static', filename='img/sayisal-ozet/simge_2_personel.png') %}
+          {% set display_title = "Toplam Personel" %}
+        {% elif card.metric_key == "total_airports" %}
+          {% set stat_image = url_for('static', filename='img/sayisal-ozet/simge_3_aktif_tim.png') %}
+          {% set display_title = "Aktif Tim" %}
+        {% elif card.metric_key == "completed_trainings" %}
+          {% set stat_image = url_for('static', filename='img/sayisal-ozet/simge_4_egitim.png') %}
+          {% set display_title = "Tamamlanan Eğitimler" %}
+        {% else %}
+          {% set stat_image = "" %}
+          {% set display_title = card.title %}
+        {% endif %}
         <article class="stat-card public-card" data-homepage-stat="{{ card.metric_key or 'custom' }}">
-          <div class="stat-label">{{ card.icon or "●" }} {{ card.title }}</div>
-          <div class="stat-value">{{ card.value_text }}</div>
-          <p class="stat-sub">{{ card.subtitle or "Timin güncel hazırlık görünümü" }}</p>
+          <div class="stat-media">
+            {% if stat_image %}
+              <img src="{{ stat_image }}" alt="{{ display_title }} simgesi" loading="lazy">
+            {% endif %}
+          </div>
+          <div class="stat-copy">
+            <h3 class="stat-title">{{ display_title }}</h3>
+            <div class="stat-value" data-stat-final="{{ card.value_text }}">{{ card.value_text }}</div>
+          </div>
         </article>
       {% endfor %}
     </div>
@@ -743,6 +837,76 @@
 
       startTimer();
     }
+  })();
+
+  (function () {
+    const statSection = document.getElementById("sayisal-ozet");
+    if (!statSection) return;
+
+    const values = Array.from(statSection.querySelectorAll(".stat-value[data-stat-final]"));
+    if (!values.length) return;
+
+    const prefersReducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    function animateValue(node) {
+      if (!node || node.dataset.animated === "true") return;
+
+      const finalText = String(node.dataset.statFinal || node.textContent || "").trim();
+      const digitString = (finalText.match(/\d+/g) || []).join("");
+      const targetValue = Number(digitString || 0);
+
+      node.dataset.animated = "true";
+      if (prefersReducedMotion || !Number.isFinite(targetValue) || targetValue <= 0) {
+        node.textContent = finalText;
+        return;
+      }
+
+      const duration = 950;
+      const startTime = performance.now();
+
+      function easeOutCubic(progress) {
+        return 1 - Math.pow(1 - progress, 3);
+      }
+
+      function formatInteger(value) {
+        return new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 0 }).format(value);
+      }
+
+      function step(now) {
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const currentValue = Math.round(targetValue * easeOutCubic(progress));
+        node.textContent = formatInteger(currentValue);
+
+        if (progress < 1) {
+          window.requestAnimationFrame(step);
+          return;
+        }
+        node.textContent = finalText;
+      }
+
+      node.textContent = "0";
+      window.requestAnimationFrame(step);
+    }
+
+    function runCounters() {
+      values.forEach(animateValue);
+    }
+
+    if (!("IntersectionObserver" in window)) {
+      runCounters();
+      return;
+    }
+
+    const observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        runCounters();
+        observer.disconnect();
+      });
+    }, { threshold: 0.3 });
+
+    observer.observe(statSection);
   })();
 
   (function () {

@@ -62,11 +62,15 @@ def test_only_stat_cards_render_on_homepage(client, app):
     assert response.status_code == 200
     assert "Toplam Malzeme" in page
     assert "Toplam Personel" in page
-    assert "Aktif Havalimanı" in page
+    assert "Aktif Tim" in page
     assert "Tamamlanan Eğitimler" in page
     assert "24/7" not in page
-    assert re.search(r'data-homepage-stat="total_assets"[\s\S]*?<div class="stat-value">3</div>', page)
-    assert re.search(r'data-homepage-stat="total_personnel"[\s\S]*?<div class="stat-value">2</div>', page)
+    assert re.search(r'data-homepage-stat="total_assets"[\s\S]*?<div class="stat-value" data-stat-final="3">3</div>', page)
+    assert re.search(r'data-homepage-stat="total_personnel"[\s\S]*?<div class="stat-value" data-stat-final="2">2</div>', page)
+    assert "/static/img/sayisal-ozet/simge_1_malzeme.png" in page
+    assert "/static/img/sayisal-ozet/simge_2_personel.png" in page
+    assert "/static/img/sayisal-ozet/simge_3_aktif_tim.png" in page
+    assert "/static/img/sayisal-ozet/simge_4_egitim.png" in page
     assert "Doküman Merkezi" not in page
 
 
