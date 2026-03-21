@@ -13,6 +13,7 @@ def test_login_page_renders_updated_titles_and_home_link(client):
     assert "SAR-X Envanter Yönetim Sistemi" in html
     assert "Bu sistem yalnızca mevcut arama kurtarma ekiplerinde görevli ARFF personelinin kullanımına açıktır." in html
     assert "Anasayfaya Dön" in html
+    assert "justify-content: flex-start;" in html
 
 
 def test_login_page_renders_password_toggle_and_remember_me_layout(client):
@@ -24,6 +25,7 @@ def test_login_page_renders_password_toggle_and_remember_me_layout(client):
     assert 'aria-pressed="false"' in html
     assert 'class="remember-option"' in html
     assert 'name="remember_me"' in html
+    assert 'maxlength="5"' in html
 
 
 def test_logout_flash_is_rendered_as_transient_login_toast(client, app):

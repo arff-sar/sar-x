@@ -704,10 +704,10 @@ def create_app(config_name=None):
                     menu_label=config["menu_label"],
                     title=config["title"],
                     description=(
-                        source.subtitle
-                        if source and source.subtitle
-                        else source.content
+                        source.content
                         if source and source.content
+                        else source.subtitle
+                        if source and source.subtitle
                         else config["description"]
                     ),
                 )
@@ -740,61 +740,48 @@ def create_app(config_name=None):
             DocumentResource.order_index.asc(), DocumentResource.id.asc()
         ).all()
         documents = _filter_by_workflow(documents, "document")
-        configured_stats = HomeStatCard.query.filter_by(is_active=True).order_by(
-            HomeStatCard.order_index.asc(), HomeStatCard.id.asc()
-        ).all()
-        configured_stats = _filter_by_workflow(configured_stats, "stat")
-        configured_stats = filter_homepage_demo_items(configured_stats)
         quick_links = HomeQuickLink.query.filter_by(is_active=True).order_by(
             HomeQuickLink.order_index.asc(), HomeQuickLink.id.asc()
         ).all()
         quick_links = _filter_by_workflow(quick_links, "quicklink")
 
-        live_stat_metrics = {
-            "total_assets": {
-                "key": "total_assets",
-                "label": "Toplam Malzeme",
-                "value": InventoryAsset.query.filter_by(is_deleted=False).count(),
-                "subtitle": "Tüm havalimanlarında kayıtlı ekipman ve varlık sayısı.",
-                "icon": "●",
-            },
-            "total_personnel": {
-                "key": "total_personnel",
-                "label": "Toplam Personel",
-                "value": Kullanici.query.filter_by(is_deleted=False).count(),
-                "subtitle": "Sistemde görevli ARFF personeli ve ekip üyeleri.",
-                "icon": "●",
-            },
-            "total_airports": {
-                "key": "total_airports",
-                "label": "Aktif Havalimanı",
-                "value": Havalimani.query.filter_by(is_deleted=False).count(),
-                "subtitle": "Envanter ve operasyon takibi yapılan lokasyon sayısı.",
-                "icon": "●",
-            },
-            "published_announcements": {
-                "key": "published_announcements",
-                "label": "Yayındaki Duyuru",
-                "value": announcement_count,
-                "subtitle": "Güncel saha paylaşımları ve ekip duyuruları.",
-                "icon": "●",
-            },
-            "training_modules": {
-                "key": "training_modules",
-                "label": "Eğitim Modülü",
-                "value": sum(1 for item in sections if item.section_key == "training"),
-                "subtitle": "Faaliyetlerimiz sayfasında yayındaki eğitim içerikleri.",
-                "icon": "●",
-            },
-            "exercise_modules": {
-                "key": "exercise_modules",
-                "label": "Tatbikat Modülü",
-                "value": sum(1 for item in sections if item.section_key == "exercise"),
-                "subtitle": "Faaliyetlerimiz sayfasında yayındaki tatbikat içerikleri.",
-                "icon": "●",
-            },
-        }
-        stats = _build_public_stats(configured_stats, live_stat_metrics)
+        completed_training_count = sum(
+            1 for item in sections if item.section_key in {"training", "exercise", "operation"}
+        )
+        stats = [
+            SimpleNamespace(
+                metric_key="total_assets",
+                title="Toplam Malzeme",
+                value_text=_format_public_count(InventoryAsset.query.filter_by(is_deleted=False).count()),
+                subtitle="Tüm havalimanlarında kayıtlı ekipman ve varlık sayısı.",
+                icon="◈",
+                order_index=0,
+            ),
+            SimpleNamespace(
+                metric_key="total_personnel",
+                title="Toplam Personel",
+                value_text=_format_public_count(Kullanici.query.filter_by(is_deleted=False).count()),
+                subtitle="Sistemde görevli ARFF personeli ve ekip üyeleri.",
+                icon="◎",
+                order_index=1,
+            ),
+            SimpleNamespace(
+                metric_key="total_airports",
+                title="Aktif Havalimanı",
+                value_text=_format_public_count(Havalimani.query.filter_by(is_deleted=False).count()),
+                subtitle="Envanter ve operasyon takibi yapılan lokasyon sayısı.",
+                icon="◇",
+                order_index=2,
+            ),
+            SimpleNamespace(
+                metric_key="completed_trainings",
+                title="Tamamlanan Eğitimler",
+                value_text=_format_public_count(completed_training_count),
+                subtitle="Sistem kayıtlarına işlenmiş eğitim ve hazırlık çalışması sayısı.",
+                icon="✦",
+                order_index=3,
+            ),
+        ]
 
         return render_template(
             "index.html",
@@ -814,6 +801,7 @@ def create_app(config_name=None):
                         or "Yeni paylaşımlar eklendiğinde bu kartta kısa özet görünür."
                     ),
                     "image_url": item.cover_image or "",
+                    "badge_label": item.title,
                     "link_url": url_for("content.public_announcement_detail", slug=item.slug)
                     if getattr(item, "slug", None)
                     else url_for("content.public_announcements"),

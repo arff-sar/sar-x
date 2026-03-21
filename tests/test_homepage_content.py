@@ -59,8 +59,9 @@ def test_homepage_announcement_preview_payload_renders(client, app):
     assert "announcementCarouselTitle" in page
     assert "announcementCarouselImage" in page
     assert "announcementCarouselData" in page
-    assert "Öne Çıkan Duyuru" in page
+    assert "Eğitim Daveti" in page
     assert "18.03.2026" in page
+    assert "Duyuru içeriğine ulaşmak için tıklayınız." in page
 
 
 def test_public_dropdown_pages_open_and_render_section_content(client, app):

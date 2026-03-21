@@ -9,7 +9,8 @@ def test_login_page_uses_shorter_default_captcha_ttl(client):
     html = response.data.decode("utf-8")
 
     assert response.status_code == 200
-    assert 'data-lifetime="45"' in html
+    assert 'data-lifetime="60"' in html
+    assert 'maxlength="5"' in html
 
 
 def _current_captcha_token(client):

@@ -137,24 +137,17 @@
   .about-card-kicker {
     display: inline-flex;
     align-items: center;
-    min-height: 28px;
-    padding: 0 10px;
-    border-radius: 999px;
-    background: rgba(245,158,11,.09);
+    min-height: 34px;
+    padding: 0 14px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(245,158,11,.14), rgba(245,158,11,.08));
     color: var(--accent-dark);
-    font-size: 10.5px;
+    font-size: 12px;
     font-weight: 800;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-  }
-  .about-card h3 {
-    margin: 12px 0 8px;
-    font-size: 21px;
-    line-height: 1.08;
-    letter-spacing: -.03em;
+    letter-spacing: .01em;
   }
   .about-card p {
-    margin: 0;
+    margin: 14px 0 0;
     color: var(--ink-500);
     font-size: 13.5px;
     line-height: 1.72;
@@ -169,6 +162,7 @@
     gap: 22px;
     align-items: stretch;
     padding: 22px;
+    min-height: 372px;
     border-radius: 28px;
     border: 1px solid rgba(197,212,229,.88);
     background: linear-gradient(180deg, #ffffff, #fbfdff);
@@ -177,11 +171,12 @@
   .announcement-copy {
     display: grid;
     gap: 18px;
-    align-content: space-between;
+    grid-template-rows: minmax(0, 1fr) auto;
   }
   .announcement-copy-top {
     display: grid;
     gap: 14px;
+    align-content: start;
   }
   .announcement-topline {
     display: flex;
@@ -225,17 +220,25 @@
   }
   .announcement-title {
     margin: 0;
-    font-size: clamp(28px, 4vw, 40px);
-    line-height: 1.02;
+    font-size: clamp(26px, 4vw, 36px);
+    line-height: 1.08;
     letter-spacing: -.045em;
-    max-width: 13ch;
+    max-width: 14ch;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
   .announcement-summary {
     margin: 0;
     color: var(--ink-500);
     font-size: 14px;
-    line-height: 1.82;
+    line-height: 1.74;
     max-width: 58ch;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
   .announcement-actions {
     display: flex;
@@ -320,7 +323,7 @@
   .announcement-media img {
     width: 100%;
     height: 100%;
-    min-height: 320px;
+    min-height: 326px;
     object-fit: cover;
     object-position: center;
     display: block;
@@ -356,7 +359,7 @@
   }
   .announcement-stage-empty h3 {
     margin: 0;
-    font-size: clamp(28px, 4vw, 40px);
+    font-size: clamp(24px, 4vw, 34px);
     line-height: 1.04;
     letter-spacing: -.04em;
   }
@@ -595,8 +598,7 @@
         <div class="about-grid">
           {% for card in about_cards %}
             <article class="about-card public-card" id="{{ card.anchor_id }}">
-              <div class="about-card-kicker">{{ card.menu_label }}</div>
-              <h3>{{ card.title }}</h3>
+              <div class="about-card-kicker">{{ card.title }}</div>
               <p>{{ card.description }}</p>
             </article>
           {% endfor %}
@@ -611,9 +613,7 @@
     <div id="egitimler"></div>
     <div id="tatbikatlar"></div>
     <div class="section-head">
-      <p class="section-kicker">Faaliyetlerimiz</p>
-      <h2 class="section-title">Duyurular ve sahadan kısa notlar</h2>
-      <p class="section-lead">Aktif duyuruyu tek bir odakta gösteren, diğer paylaşımları ise kısa gezinme adımlarıyla ulaşılabilir tutan daha sade bir akış.</p>
+      <h2 class="section-title">Duyurular</h2>
     </div>
 
     {% if active_announcement %}
@@ -642,7 +642,7 @@
 
             <div class="announcement-actions">
               <a class="announcement-link" id="announcementCarouselLink" href="{{ active_announcement.link_url }}">
-                <span>Detay için tıklayınız</span>
+                <span>Duyuru içeriğine ulaşmak için tıklayınız.</span>
                 <span aria-hidden="true">→</span>
               </a>
               {% if announcement_carousel_items|length > 1 %}
@@ -662,7 +662,7 @@
               loading="lazy"
               onerror="this.src='{{ default_announcement_image }}'"
             >
-            <div class="announcement-media-badge">Öne Çıkan Duyuru</div>
+            <div class="announcement-media-badge" id="announcementCarouselBadge">{{ active_announcement.badge_label or active_announcement.title }}</div>
           </aside>
         </article>
         <script type="application/json" id="announcementCarouselData">{{ announcement_carousel_items|tojson }}</script>
@@ -672,18 +672,12 @@
         <article class="announcement-stage announcement-stage-empty public-card">
           <div class="announcement-copy">
             <div class="announcement-copy-top">
-              <div class="announcement-empty-kicker">Duyuru Akışı</div>
               <h3>Henüz yayınlanmış duyuru yok</h3>
-              <p>Yeni bir paylaşım yayınlandığında burada tek odaklı duyuru kartı aynı düzen içinde görünecek. Şimdilik akış sade kalır ama boş görünmez.</p>
+              <p>Yeni bir duyuru yayınlandığında bu alanda sabit yapılı duyuru kartı otomatik olarak görünecek.</p>
             </div>
             <div class="announcement-actions">
-              <div class="announcement-empty-pills">
-                <span>Eğitim notları</span>
-                <span>Saha hazırlığı</span>
-                <span>Tim içi bilgilendirme</span>
-              </div>
               <a class="announcement-link" href="{{ url_for('content.public_announcements') }}">
-                <span>Duyuru merkezini aç</span>
+                <span>Duyuru içeriğine ulaşmak için tıklayınız.</span>
                 <span aria-hidden="true">→</span>
               </a>
             </div>
@@ -691,7 +685,6 @@
 
           <aside class="announcement-empty-media">
             <img src="{{ default_announcement_image }}" alt="Duyuru paneli görseli" loading="lazy">
-            <div class="announcement-media-badge">Hazır Panel</div>
           </aside>
         </article>
       </div>
@@ -701,13 +694,11 @@
 
 <section class="public-section" id="sayisal-ozet">
   <div class="container">
-    <div class="section-head">
-      <p class="section-kicker">Sayısal Özet</p>
-      <h2 class="section-title">Timin ritmini gösteren kısa veriler</h2>
-      <p class="section-lead">Sistemdeki güncel kayıtların kısa özeti. Kartlar doğrudan veritabanındaki mevcut durumu yansıtır.</p>
+    <div class="section-head" style="text-align:center;">
+      <h2 class="section-title">Sayısal Özet</h2>
     </div>
     <div class="stats-grid" data-stats-grid>
-      {% for card in stats %}
+      {% for card in stats[:4] %}
         <article class="stat-card public-card" data-homepage-stat="{{ card.metric_key or 'custom' }}">
           <div class="stat-label">{{ card.icon or "●" }} {{ card.title }}</div>
           <div class="stat-value">{{ card.value_text }}</div>
@@ -761,7 +752,8 @@
     const titleNode = document.getElementById("announcementCarouselTitle");
     const summaryNode = document.getElementById("announcementCarouselSummary");
     const linkNode = document.getElementById("announcementCarouselLink");
-    if (!payload || !imageNode || !dateNode || !titleNode || !summaryNode || !linkNode) return;
+    const badgeNode = document.getElementById("announcementCarouselBadge");
+    if (!payload || !imageNode || !dateNode || !titleNode || !summaryNode || !linkNode || !badgeNode) return;
 
     let items = [];
     try {
@@ -793,6 +785,7 @@
       dateNode.textContent = item.date_label || "";
       titleNode.textContent = item.title || "";
       summaryNode.textContent = item.summary || "";
+      badgeNode.textContent = item.badge_label || item.title || "";
       linkNode.href = item.link_url || "{{ url_for('content.public_announcements') }}";
       dots.forEach((dot) => {
         dot.classList.toggle("is-active", Number(dot.dataset.announcementDot || 0) === activeIndex);

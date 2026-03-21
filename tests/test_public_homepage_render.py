@@ -34,9 +34,9 @@ def test_homepage_renders_fallback_content_when_cms_empty(client, app):
     assert "ARFF Özel Arama Kurtarma Timi" in page
     assert 'data-hero-label' in page
     assert "Duyurular" in page
-    assert "Duyurular ve sahadan kısa notlar" in page
+    assert "Duyurular ve sahadan kısa notlar" not in page
     assert "Henüz yayınlanmış duyuru yok" in page
-    assert "Timin ritmini gösteren kısa veriler" in page
+    assert "Timin ritmini gösteren kısa veriler" not in page
     assert 'data-announcement-carousel' not in page
     assert 'data-stats-grid' in page
     assert "ARFF SAR gönüllü tim akışı" not in page
@@ -62,6 +62,8 @@ def test_only_stat_cards_render_on_homepage(client, app):
     assert response.status_code == 200
     assert "Toplam Malzeme" in page
     assert "Toplam Personel" in page
+    assert "Aktif Havalimanı" in page
+    assert "Tamamlanan Eğitimler" in page
     assert "24/7" not in page
     assert re.search(r'data-homepage-stat="total_assets"[\s\S]*?<div class="stat-value">3</div>', page)
     assert re.search(r'data-homepage-stat="total_personnel"[\s\S]*?<div class="stat-value">2</div>', page)
@@ -119,7 +121,7 @@ def test_homepage_about_cards_render_requested_order(client, app):
     assert response.status_code == 200
     assert page.index("Biz Kimiz") < page.index("Misyon") < page.index("Vizyon") < page.index("Etik Değerler")
     assert 'id="hakkimizda"' in page
-    assert "Ekip Yapısı" in page
-    assert "Odak" in page
-    assert "Bakış" in page
-    assert "İlke" in page
+    assert "Ekip Yapısı" not in page
+    assert "Odak" not in page
+    assert "Bakış" not in page
+    assert "İlke" not in page

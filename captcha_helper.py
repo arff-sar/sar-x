@@ -9,7 +9,7 @@ from extensions import db, table_exists
 from models import LoginVisualChallenge, get_tr_now
 
 LOGIN_CAPTCHA_SESSION_KEY = "login_visual_captcha_token"
-LOGIN_CAPTCHA_DEFAULT_TTL = 45
+LOGIN_CAPTCHA_DEFAULT_TTL = 60
 LOGIN_CAPTCHA_CODE_LENGTH = 5
 LOGIN_CAPTCHA_CHARSET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 

@@ -135,7 +135,7 @@
 
         .section-topbar {
             display: flex;
-            justify-content: flex-end;
+            justify-content: flex-start;
             margin-bottom: 10px;
         }
 
@@ -376,7 +376,7 @@
 
         .captcha-box {
             display: grid;
-            grid-template-columns: 146px 48px minmax(0, 1fr);
+            grid-template-columns: 146px 46px 118px;
             gap: 8px;
             align-items: stretch;
             padding: 7px;
@@ -485,16 +485,18 @@
         .captcha-input-shell {
             display: flex;
             align-items: center;
+            justify-content: center;
             min-width: 0;
             min-height: 46px;
-            padding: 0 12px;
+            padding: 0 10px;
             background: #fff;
             border: 1px solid var(--border);
             border-radius: 10px;
         }
 
         .captcha-input {
-            width: 100%;
+            width: 88px;
+            max-width: 100%;
             min-width: 0;
             border: 0 !important;
             background: transparent !important;
@@ -514,6 +516,7 @@
             font-feature-settings: "tnum" 1, "case" 1;
             text-transform: uppercase;
             caret-color: var(--orange);
+            text-align: center;
         }
 
         .captcha-input:focus,
@@ -751,12 +754,12 @@
             .login-body { padding: 14px 14px 16px; }
             .login-toast-stack { padding: 12px 14px 0; }
             .section-topbar { margin-bottom: 8px; }
-            .home-link { width: 100%; justify-content: center; }
+            .home-link { justify-content: flex-start; }
             .captcha-caption { flex-direction: column; align-items: flex-start; gap: 6px; }
-            .captcha-box { grid-template-columns: minmax(0, 1fr) 42px; gap: 6px; }
+            .captcha-box { grid-template-columns: minmax(0, 1fr) 42px 116px; gap: 6px; }
             .captcha-canvas-container { grid-column: 1; }
             .captcha-refresh { grid-column: 2; }
-            .captcha-input-shell { grid-column: 1 / -1; }
+            .captcha-input-shell { grid-column: 3; }
             .captcha-canvas-container,
             .captcha-visual,
             .captcha-refresh,
@@ -764,9 +767,9 @@
             .captcha-refresh { width: 42px; min-width: 42px; }
             .captcha-input-shell { padding: 0 9px; }
             .captcha-input { font-size: 14px !important; letter-spacing: 1.5px; }
-            .account-actions-row { gap: 8px; flex-direction: column; align-items: stretch; }
-            .remember-option { padding: 8px 10px; width: 100%; min-height: 44px; }
-            .forgot-password-link { min-height: 44px; width: 100%; border-radius: 12px; border: 1px solid var(--border); background: var(--surface2); }
+            .account-actions-row { gap: 8px; }
+            .remember-option { padding: 8px 10px; min-height: 44px; }
+            .forgot-password-link { min-height: 44px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface2); padding: 0 12px; }
             .remember-copy,
             .forgot-password-link { font-size: 12px; }
             .login-btn-submit { min-height: 46px; }
@@ -905,7 +908,7 @@
                             class="captcha-timer"
                             id="captchaTimer"
                             data-expiry="{{ login_captcha.expires_at_epoch if login_captcha else 0 }}"
-                            data-lifetime="{{ login_captcha.ttl_seconds if login_captcha else 90 }}"
+                            data-lifetime="{{ login_captcha.ttl_seconds if login_captcha else 60 }}"
                         >
                             --:--
                         </span>
@@ -950,7 +953,7 @@
                                 autocomplete="off"
                                 autocapitalize="characters"
                                 spellcheck="false"
-                                maxlength="8"
+                                maxlength="5"
                             >
                         </div>
                     </div>
@@ -1148,7 +1151,7 @@
             }
 
             let expiryEpoch = Number(timerEl.dataset.expiry || 0);
-            let totalLifetime = Number(timerEl.dataset.lifetime || 90);
+            let totalLifetime = Number(timerEl.dataset.lifetime || 60);
             let countdownHandle = null;
             let refreshInFlight = false;
             let autoRefreshQueued = false;
@@ -1207,9 +1210,9 @@
                     boxEl.dataset.refreshUrl = captcha.refresh_url;
                 }
                 expiryEpoch = Number(captcha.expires_at_epoch || 0);
-                totalLifetime = Number(captcha.ttl_seconds || totalLifetime || 90);
+                totalLifetime = Number(captcha.ttl_seconds || totalLifetime || 60);
                 timerEl.dataset.expiry = String(expiryEpoch || 0);
-                timerEl.dataset.lifetime = String(totalLifetime || 90);
+                timerEl.dataset.lifetime = String(totalLifetime || 60);
                 stateEl.style.display = 'none';
                 stateEl.textContent = expiredStateMessage;
                 boxEl.classList.remove('is-expired');
