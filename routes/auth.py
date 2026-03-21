@@ -1,7 +1,9 @@
 import smtplib
+import re
 from datetime import timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from urllib.parse import urljoin
 
 from flask import Blueprint, current_app, flash, jsonify, make_response, redirect, render_template, request, session, url_for
 from flask_login import login_user, logout_user, login_required, current_user
@@ -18,6 +20,9 @@ from extensions import audit_log, db, limiter, log_kaydet
 from decorators import role_home_endpoint
 
 auth_bp = Blueprint('auth', __name__)
+
+PASSWORD_RESET_SALT = 'sifre-sifirlama-tuzu'
+PASSWORD_RESET_PATTERN = re.compile(r"^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*?[#?!@$%^&*-]).{8,}$")
 
 # --- YARDIMCI FONKSİYONLAR ---
 
@@ -108,6 +113,55 @@ def _reset_failed_login(identifier):
 def _is_locked(record):
     now = get_tr_now().replace(tzinfo=None)
     return bool(record and record.locked_until and record.locked_until > now)
+
+
+def _get_password_reset_serializer():
+    return URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
+
+
+def _get_password_reset_token_max_age():
+    try:
+        return max(int(current_app.config.get("PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS", 3600)), 1)
+    except (TypeError, ValueError):
+        return 3600
+
+
+def _get_password_reset_base_url():
+    configured_base_url = (
+        current_app.config.get("PASSWORD_RESET_BASE_URL")
+        or current_app.config.get("PUBLIC_BASE_URL")
+        or ""
+    ).strip()
+    if configured_base_url:
+        return configured_base_url.rstrip("/") + "/"
+
+    script_root = (request.script_root or "").strip("/")
+    path_prefix = f"/{script_root}" if script_root else ""
+
+    forwarded_host = (
+        (request.headers.get("X-Forwarded-Host") or "")
+        or (request.headers.get("X-Forwarded-Server") or "")
+    ).split(",")[0].strip()
+    if forwarded_host:
+        forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip()
+        scheme = forwarded_proto or request.scheme or "https"
+        return f"{scheme}://{forwarded_host}{path_prefix}/"
+
+    return f"{request.host_url.rstrip('/')}{path_prefix}/"
+
+
+def _build_password_reset_link(token):
+    reset_path = url_for('auth.sifre_yenile', token=token)
+    return urljoin(_get_password_reset_base_url(), reset_path.lstrip("/"))
+
+
+def _validate_password_reset_value(password):
+    if PASSWORD_RESET_PATTERN.match(password or ""):
+        return None
+    return (
+        "Yeni şifre en az 8 karakter uzunluğunda olmalı; "
+        "1 büyük harf, 1 küçük harf, 1 rakam ve 1 özel karakter içermelidir."
+    )
 
 
 def mail_gonder(alici_mail, konu, icerik):
@@ -280,10 +334,9 @@ def sifre_sifirla_talep():
     user = Kullanici.query.filter_by(kullanici_adi=k_ad, is_deleted=False).first()
     
     if user:
-        serializer = URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
-        token = serializer.dumps(k_ad, salt='sifre-sifirlama-tuzu')
-        
-        reset_link = url_for('auth.sifre_yenile', token=token, _external=True)
+        serializer = _get_password_reset_serializer()
+        token = serializer.dumps(k_ad, salt=PASSWORD_RESET_SALT)
+        reset_link = _build_password_reset_link(token)
         
         log_kaydet('Şifre Sıfırlama', f'{k_ad} için şifre sıfırlama bağlantısı gönderildi.')
         
@@ -305,10 +358,14 @@ def sifre_sifirla_talep():
 
 @auth_bp.route('/sifre-yenile/<token>', methods=['GET', 'POST'])
 def sifre_yenile(token):
-    serializer = URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
+    serializer = _get_password_reset_serializer()
     
     try:
-        email = serializer.loads(token, salt='sifre-sifirlama-tuzu', max_age=3600)
+        email = serializer.loads(
+            token,
+            salt=PASSWORD_RESET_SALT,
+            max_age=_get_password_reset_token_max_age(),
+        )
     except SignatureExpired:
         flash("Şifre sıfırlama bağlantısının süresi dolmuş. Lütfen yeni bir talep oluşturun.", "danger")
         return redirect(url_for('auth.login'))
@@ -318,9 +375,10 @@ def sifre_yenile(token):
 
     if request.method == 'POST':
         yeni_sifre = request.form.get('yeni_sifre')
-        
-        if not yeni_sifre or len(yeni_sifre) < 6:
-            flash("Şifre en az 6 karakter olmalıdır.", "warning")
+
+        password_error = _validate_password_reset_value(yeni_sifre)
+        if password_error:
+            flash(password_error, "warning")
             return render_template('sifre_yenile.html', token=token, email=email)
 
         user = Kullanici.query.filter_by(kullanici_adi=email, is_deleted=False).first()

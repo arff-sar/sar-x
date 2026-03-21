@@ -1,9 +1,10 @@
 import pytest
+from unittest.mock import patch
 from tests.factories import KullaniciFactory
 from extensions import db
 from werkzeug.security import generate_password_hash
 from flask import url_for, current_app
-from itsdangerous import URLSafeTimedSerializer
+from itsdangerous import SignatureExpired, URLSafeTimedSerializer
 from models import LoginVisualChallenge
 
 
@@ -133,6 +134,59 @@ def test_sifre_sifirla_talep_success(client, app):
     assert response.status_code == 200
     assert "e-posta adresinize gönderildi" in response.data.decode('utf-8')
 
+def test_sifre_sifirla_talep_uses_public_reset_base_url(client, app):
+    app.config.update({
+        'WTF_CSRF_ENABLED': False,
+        'PASSWORD_RESET_BASE_URL': 'https://portal.sarx.com',
+    })
+    user = KullaniciFactory(kullanici_adi="link@sarx.com", is_deleted=False)
+    db.session.add(user)
+    db.session.commit()
+
+    with patch('routes.auth.mail_gonder', return_value=True) as mocked_mail:
+        response = client.post(
+            '/sifre-sifirla-talep',
+            data={'kullanici_adi': 'link@sarx.com'},
+            base_url='http://127.0.0.1:5000',
+            follow_redirects=True,
+        )
+
+    assert response.status_code == 200
+    assert mocked_mail.call_count == 1
+    email_html = mocked_mail.call_args.args[2]
+    assert "https://portal.sarx.com/sifre-yenile/" in email_html
+    assert "http://127.0.0.1:5000/sifre-yenile/" not in email_html
+
+
+def test_sifre_sifirla_talep_uses_forwarded_headers_for_reset_link(client, app):
+    app.config.update({
+        'WTF_CSRF_ENABLED': False,
+        'PASSWORD_RESET_BASE_URL': '',
+        'PUBLIC_BASE_URL': '',
+    })
+    user = KullaniciFactory(kullanici_adi="proxy@sarx.com", is_deleted=False)
+    db.session.add(user)
+    db.session.commit()
+
+    with patch('routes.auth.mail_gonder', return_value=True) as mocked_mail:
+        response = client.post(
+            '/sifre-sifirla-talep',
+            data={'kullanici_adi': 'proxy@sarx.com'},
+            base_url='http://internal.service.local',
+            headers={
+                'X-Forwarded-Proto': 'https',
+                'X-Forwarded-Host': 'sarx.example.com',
+            },
+            follow_redirects=True,
+        )
+
+    assert response.status_code == 200
+    assert mocked_mail.call_count == 1
+    email_html = mocked_mail.call_args.args[2]
+    assert "https://sarx.example.com/sifre-yenile/" in email_html
+    assert "http://internal.service.local/sifre-yenile/" not in email_html
+
+
 def test_sifre_yenile_page_loads(client, app):
     """Geçerli bir token ile şifre yenileme sayfasının açılması"""
     email = "yenileme@sarx.com"
@@ -146,23 +200,73 @@ def test_sifre_yenile_page_loads(client, app):
 def test_sifre_yenile_success(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
     email = "basarili@sarx.com"
-    user = KullaniciFactory(kullanici_adi=email, is_deleted=False)
+    old_password = "EskiSifre1!"
+    new_password = "YeniSifre1!"
+    user = KullaniciFactory(kullanici_adi=email, is_deleted=False, rol="sahip", password=old_password)
     db.session.add(user)
     db.session.commit()
 
-    from itsdangerous import URLSafeTimedSerializer
     serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
     token = serializer.dumps(email, salt='sifre-sifirlama-tuzu')
 
     response = client.post(f'/sifre-yenile/{token}', data={
-        'yeni_sifre': 'yeni_sifre_123'
+        'yeni_sifre': new_password
     }, follow_redirects=True)
 
     assert response.status_code == 200
-    # ✅ ÇÖZÜM: "Şifreniz başarıyla güncellendi" mesajını ara
     assert "güncellendi" in response.data.decode('utf-8')
+
+    db.session.expire_all()
+    refreshed_user = db.session.get(type(user), user.id)
+    assert refreshed_user.sifre_kontrol(new_password)
+    assert not refreshed_user.sifre_kontrol(old_password)
+
+    answer = _extract_challenge_answer(client, app)
+    login_response = client.post('/login', data={
+        'kullanici_adi': email,
+        'sifre': new_password,
+        'security_verification': answer,
+    }, follow_redirects=True)
+
+    assert login_response.status_code == 200
+    assert login_response.request.path == '/dashboard'
 
 def test_sifre_yenile_invalid_token(client, app):
     """Geçersiz veya bozuk token ile erişim denemesi"""
     response = client.get('/sifre-yenile/bu-gecersiz-bir-tokendir', follow_redirects=True)
     assert "Geçersiz veya bozuk" in response.data.decode('utf-8')
+
+
+def test_sifre_yenile_expired_token(client, app):
+    with patch('routes.auth._get_password_reset_serializer') as mocked_serializer_factory:
+        mocked_serializer_factory.return_value.loads.side_effect = SignatureExpired('expired')
+        response = client.get('/sifre-yenile/suresi-dolmus-token', follow_redirects=True)
+
+    assert response.status_code == 200
+    assert "süresi dolmuş" in response.data.decode('utf-8')
+
+
+def test_sifre_yenile_invalid_password_feedback_is_rendered(client, app):
+    app.config['WTF_CSRF_ENABLED'] = False
+    email = "uyari@sarx.com"
+    old_password = "EskiSifre1!"
+    user = KullaniciFactory(kullanici_adi=email, is_deleted=False, password=old_password)
+    db.session.add(user)
+    db.session.commit()
+
+    serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
+    token = serializer.dumps(email, salt='sifre-sifirlama-tuzu')
+
+    response = client.post(
+        f'/sifre-yenile/{token}',
+        data={'yeni_sifre': 'zayif123'},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    html = response.data.decode('utf-8')
+    assert "Yeni şifre en az 8 karakter uzunluğunda olmalı" in html
+
+    db.session.expire_all()
+    refreshed_user = db.session.get(type(user), user.id)
+    assert refreshed_user.sifre_kontrol(old_password)
