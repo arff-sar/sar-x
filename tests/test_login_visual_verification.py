@@ -1,3 +1,5 @@
+import re
+
 from extensions import db
 from models import LoginVisualChallenge, get_tr_now
 from tests.factories import KullaniciFactory
@@ -10,6 +12,7 @@ def test_login_page_uses_shorter_default_captcha_ttl(client):
 
     assert response.status_code == 200
     assert 'data-lifetime="60"' in html
+    assert re.search(r'data-remaining="([5-9][0-9]|60)"', html)
     assert 'maxlength="5"' in html
 
 
@@ -42,6 +45,8 @@ def test_login_page_styles_captcha_input_without_default_blue_focus(client):
     assert ".captcha-input:focus-visible" in html
     assert "outline: none !important;" in html
     assert "font-family: var(--sans) !important;" in html
+    assert "text-align: center;" in html
+    assert "line-height: 44px;" in html
 
 
 def test_captcha_refresh_invalidates_previous_code(client, app):

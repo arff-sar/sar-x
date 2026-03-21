@@ -26,6 +26,8 @@ def test_login_page_renders_password_toggle_and_remember_me_layout(client):
     assert 'class="remember-option"' in html
     assert 'name="remember_me"' in html
     assert 'maxlength="5"' in html
+    assert "grid-template-columns: 148px 46px 132px;" in html
+    assert "grid-template-columns: minmax(0, 1fr) 42px 124px;" in html
 
 
 def test_logout_flash_is_rendered_as_transient_login_toast(client, app):

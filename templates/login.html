@@ -376,7 +376,7 @@
 
         .captcha-box {
             display: grid;
-            grid-template-columns: 146px 46px 118px;
+            grid-template-columns: 148px 46px 132px;
             gap: 8px;
             align-items: stretch;
             padding: 7px;
@@ -488,16 +488,17 @@
             justify-content: center;
             min-width: 0;
             min-height: 46px;
-            padding: 0 10px;
+            padding: 0 12px;
             background: #fff;
             border: 1px solid var(--border);
             border-radius: 10px;
         }
 
         .captcha-input {
-            width: 88px;
+            width: 100%;
             max-width: 100%;
             min-width: 0;
+            height: 44px;
             border: 0 !important;
             background: transparent !important;
             box-shadow: none !important;
@@ -509,9 +510,9 @@
             font-family: var(--sans) !important;
             font-weight: 800 !important;
             font-size: 15.5px !important;
-            line-height: 1;
+            line-height: 44px;
             color: var(--navy) !important;
-            letter-spacing: .16em;
+            letter-spacing: .14em;
             font-variant-numeric: tabular-nums;
             font-feature-settings: "tnum" 1, "case" 1;
             text-transform: uppercase;
@@ -756,7 +757,7 @@
             .section-topbar { margin-bottom: 8px; }
             .home-link { justify-content: flex-start; }
             .captcha-caption { flex-direction: column; align-items: flex-start; gap: 6px; }
-            .captcha-box { grid-template-columns: minmax(0, 1fr) 42px 116px; gap: 6px; }
+            .captcha-box { grid-template-columns: minmax(0, 1fr) 42px 124px; gap: 6px; }
             .captcha-canvas-container { grid-column: 1; }
             .captcha-refresh { grid-column: 2; }
             .captcha-input-shell { grid-column: 3; }
@@ -765,8 +766,8 @@
             .captcha-refresh,
             .captcha-input-shell { min-height: 42px; height: 42px; }
             .captcha-refresh { width: 42px; min-width: 42px; }
-            .captcha-input-shell { padding: 0 9px; }
-            .captcha-input { font-size: 14px !important; letter-spacing: 1.5px; }
+            .captcha-input-shell { padding: 0 10px; }
+            .captcha-input { font-size: 14px !important; letter-spacing: .12em; }
             .account-actions-row { gap: 8px; }
             .remember-option { padding: 8px 10px; min-height: 44px; }
             .forgot-password-link { min-height: 44px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface2); padding: 0 12px; }
@@ -909,6 +910,7 @@
                             id="captchaTimer"
                             data-expiry="{{ login_captcha.expires_at_epoch if login_captcha else 0 }}"
                             data-lifetime="{{ login_captcha.ttl_seconds if login_captcha else 60 }}"
+                            data-remaining="{{ login_captcha.remaining_seconds if login_captcha else 60 }}"
                         >
                             --:--
                         </span>
@@ -1150,13 +1152,19 @@
                 return;
             }
 
-            let expiryEpoch = Number(timerEl.dataset.expiry || 0);
             let totalLifetime = Number(timerEl.dataset.lifetime || 60);
+            let remainingSeconds = Number(timerEl.dataset.remaining || totalLifetime || 60);
+            let countdownDeadline = Date.now() + (Math.max(remainingSeconds, 0) * 1000);
             let countdownHandle = null;
             let refreshInFlight = false;
             let autoRefreshQueued = false;
             const expiredStateMessage = 'Doğrulama süresi doldu. Lütfen kodu yenileyin.';
             const autoRefreshStateMessage = 'Doğrulama kodu yenileniyor...';
+
+            function syncCountdownDeadline(nextRemaining) {
+                remainingSeconds = Math.max(Number(nextRemaining || 0), 0);
+                countdownDeadline = Date.now() + (remainingSeconds * 1000);
+            }
 
             function formatTime(seconds) {
                 const safe = Math.max(seconds, 0);
@@ -1166,8 +1174,7 @@
             }
 
             function renderTimer() {
-                const nowEpoch = Math.floor(Date.now() / 1000);
-                const remaining = Math.max(expiryEpoch - nowEpoch, 0);
+                const remaining = Math.max(Math.ceil((countdownDeadline - Date.now()) / 1000), 0);
                 timerEl.textContent = remaining > 0 ? formatTime(remaining) : 'SÜRE DOLDU';
                 const progressRatio = remaining > 0 ? Math.min((remaining / totalLifetime) * 100, 100) : 0;
                 progressEl.style.width = progressRatio + '%';
@@ -1209,10 +1216,11 @@
                 if (captcha.refresh_url) {
                     boxEl.dataset.refreshUrl = captcha.refresh_url;
                 }
-                expiryEpoch = Number(captcha.expires_at_epoch || 0);
                 totalLifetime = Number(captcha.ttl_seconds || totalLifetime || 60);
-                timerEl.dataset.expiry = String(expiryEpoch || 0);
+                syncCountdownDeadline(captcha.remaining_seconds || totalLifetime);
+                timerEl.dataset.expiry = String(captcha.expires_at_epoch || 0);
                 timerEl.dataset.lifetime = String(totalLifetime || 60);
+                timerEl.dataset.remaining = String(remainingSeconds || 0);
                 stateEl.style.display = 'none';
                 stateEl.textContent = expiredStateMessage;
                 boxEl.classList.remove('is-expired');
@@ -1306,6 +1314,7 @@
                 await refreshCaptcha({ focusInput: true, silent: false, auto: false });
             });
 
+            syncCountdownDeadline(remainingSeconds || totalLifetime);
             startTimer();
         })();
     </script>
