@@ -6,6 +6,7 @@
 .page-header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 20px; }
 .page-title { font-size: 22px; font-weight: 800; color: var(--navy); letter-spacing: -.02em; }
 .page-meta { font-size: 12.5px; color: var(--text3); margin-top: 4px; display: flex; align-items: center; gap: 6px; }
+.dashboard-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .btn-primary { background: var(--orange); color: #fff; border: none; padding: 10px 20px; border-radius: var(--r); font-family: var(--sans); font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 10px rgba(249,115,22,.28); text-decoration: none; transition: transform .1s, box-shadow .1s; }
 .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(249,115,22,.38); }
 .alarm-strip { background: var(--red-light); border: 1.5px solid var(--red-border); border-radius: var(--r-lg); padding: 14px 18px; display: flex; align-items: center; gap: 14px; margin-bottom: 20px; cursor: pointer; transition: background .15s; text-decoration: none; }
@@ -19,7 +20,7 @@
 .warn-strip .alarm-strip-title { color: var(--amber); }
 .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
 .secondary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
-.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px; transition: transform .15s, box-shadow .15s; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px; transition: transform .15s, box-shadow .15s; min-width: 0; }
 .stat-card:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.07); }
 .stat-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .stat-icon { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
@@ -30,6 +31,7 @@
 .trend-up { color: var(--green); }
 .trend-down { color: var(--red); }
 .trend-flat { color: var(--text3); }
+.dashboard-sections { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; margin-bottom: 20px; }
 .panel-header { padding: 15px 18px 13px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
 .panel-title { font-size: 14px; font-weight: 700; color: var(--navy); display: flex; align-items: center; gap: 8px; }
@@ -42,15 +44,47 @@
 .status-tag { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 5px; white-space: nowrap; flex-shrink: 0; }
 .tag-red { background: var(--red-light); color: var(--red); }
 .tag-amber { background: var(--amber-light); color: var(--amber); }
-.quick-grid { display: grid; grid-template-columns: 1fr; gap: 10px; padding: 16px; }
-.quick-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r); padding: 16px 10px; text-align: center; cursor: pointer; text-decoration: none; transition: transform .12s; }
+.quick-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 16px; }
+.quick-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r); padding: 16px 10px; text-align: center; cursor: pointer; text-decoration: none; transition: transform .12s; min-height: 92px; display:flex; flex-direction:column; align-items:center; justify-content:center; }
 .quick-btn:hover { background: var(--surface); border-color: var(--orange); transform: translateY(-2px); box-shadow: 0 4px 14px rgba(249,115,22,.12); }
+.quick-icon { font-size: 24px; line-height: 1; }
 .quick-label { font-size: 12px; font-weight: 700; color: var(--navy); margin-top: 7px; }
-@media (max-width: 980px) { .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 980px) {
+  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-actions { width: 100%; }
+}
 @media (max-width: 640px) {
-  .stats-grid { grid-template-columns: 1fr; }
+  .alarm-strip { padding: 12px 14px; align-items: flex-start; }
+  .alarm-strip-icon { width: 36px; height: 36px; font-size: 18px; }
+  .alarm-strip-title { font-size: 13px; }
+  .alarm-strip-desc { font-size: 11.5px; line-height: 1.45; }
+  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .secondary-grid,
+  .dashboard-sections { grid-template-columns: 1fr; gap: 14px; }
+  .stat-card { padding: 14px; }
+  .stat-card-top { align-items: flex-start; margin-bottom: 12px; gap: 10px; }
+  .stat-icon { width: 34px; height: 34px; border-radius: 10px; font-size: 16px; }
+  .stat-trend { font-size: 10px; padding: 3px 8px; }
+  .stat-value { font-size: 26px; }
+  .stat-label { font-size: 12px; line-height: 1.4; }
+  .stat-trend-line { font-size: 10.5px; margin-top: 8px; }
+  .alarm-row { padding: 12px 14px; align-items: flex-start; }
+  .alarm-row-name { font-size: 13px; }
+  .alarm-row-meta { font-size: 10.5px; line-height: 1.45; }
+  .status-tag { min-height: 28px; }
+  .dashboard-actions .btn,
+  .dashboard-actions .btn-primary { flex: 1 1 calc(50% - 4px); min-width: 0; }
   .kutu-bul-form { flex-direction: column; }
   .kutu-bul-form .btn { width: 100%; padding: 12px; }
+  .kutu-bul-panel-body { padding: 14px; }
+  .kutu-bul-note { font-size: 11.5px; margin-bottom: 10px; }
+  .quick-grid { padding: 14px; }
+  .quick-btn { min-height: 84px; padding: 14px 8px; }
+  .quick-label { font-size: 11.5px; line-height: 1.4; }
+}
+@media (max-width: 420px) {
+  .stats-grid,
+  .quick-grid { grid-template-columns: 1fr; }
 }
 </style>
 {% endblock %}
@@ -67,7 +101,7 @@
             <span>{{ trend_days }} günlük trend</span>
         </div>
     </div>
-    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+    <div class="dashboard-actions">
         {% if has_permission('reports.view') %}
         <a href="{{ url_for('reports.index') }}" class="btn btn-secondary">Rapor Merkezi</a>
         {% endif %}
@@ -246,7 +280,7 @@
     </div>
 </div>
 
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+<div class="dashboard-sections">
     <div class="panel">
         <div class="panel-header">
             <div class="panel-title">
@@ -277,8 +311,8 @@
                     Kutu / Ünite Bul
                 </div>
             </div>
-            <div style="padding: 16px;">
-                <p style="font-size: 12px; color: var(--text3); margin-bottom: 12px; line-height: 1.45;">QR okunmuyorsa etiket kodunu girin.</p>
+            <div class="kutu-bul-panel-body">
+                <p class="kutu-bul-note" style="font-size: 12px; color: var(--text3); margin-bottom: 12px; line-height: 1.45;">QR okunmuyorsa etiket kodunu girin.</p>
                 <form method="POST" action="{{ url_for('inventory.kutu_bul') }}" class="kutu-bul-form" style="display: flex; gap: 10px;">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="text" name="kutu_kodu" placeholder="Örn: KUTU-01" class="form-control" style="margin-bottom: 0; text-transform: uppercase; font-family: var(--mono); font-weight: 800; font-size: 14px;" required autocomplete="off">
@@ -296,36 +330,36 @@
             </div>
             <div class="quick-grid">
                 <a href="{{ url_for('inventory.envanter') }}" class="quick-btn">
-                    <div style="font-size: 24px;">📦</div>
+                    <div class="quick-icon">📦</div>
                     <div class="quick-label">Envanter</div>
                 </a>
                 <a href="{{ url_for('maintenance.bakim_paneli') }}" class="quick-btn">
-                    <div style="font-size: 24px;">🛠️</div>
+                    <div class="quick-icon">🛠️</div>
                     <div class="quick-label">Bakım</div>
                 </a>
                 <a href="{{ url_for('parts.spare_parts_list') }}" class="quick-btn">
-                    <div style="font-size: 24px;">🧰</div>
+                    <div class="quick-icon">🧰</div>
                     <div class="quick-label">Yedek Parça</div>
                 </a>
                 <a href="{{ url_for('inventory.kutular') }}" class="quick-btn">
-                    <div style="font-size: 24px;">🗂️</div>
+                    <div class="quick-icon">🗂️</div>
                     <div class="quick-label">Kutu / Ünite</div>
                 </a>
                 <a href="{{ url_for('inventory.consumables') }}" class="quick-btn">
-                    <div style="font-size: 24px;">🧴</div>
+                    <div class="quick-icon">🧴</div>
                     <div class="quick-label">Sarf</div>
                 </a>
                 <a href="{{ url_for('inventory.calibration_records') }}" class="quick-btn">
-                    <div style="font-size: 24px;">🧪</div>
+                    <div class="quick-icon">🧪</div>
                     <div class="quick-label">Kalibrasyon</div>
                 </a>
                 <a href="{{ url_for('inventory.asset_lifecycle') }}" class="quick-btn">
-                    <div style="font-size: 24px;">♻️</div>
+                    <div class="quick-icon">♻️</div>
                     <div class="quick-label">Lifecycle</div>
                 </a>
                 {% if has_permission('reports.view') %}
                 <a href="{{ url_for('reports.index') }}" class="quick-btn">
-                    <div style="font-size: 24px;">📈</div>
+                    <div class="quick-icon">📈</div>
                     <div class="quick-label">Rapor Merkezi</div>
                 </a>
                 {% endif %}

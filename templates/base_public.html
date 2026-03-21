@@ -29,7 +29,7 @@
     }
 
     * { box-sizing: border-box; }
-    html { scroll-behavior: smooth; }
+    html { scroll-behavior: smooth; overflow-x: hidden; }
     body {
       margin: 0;
       background:
@@ -38,6 +38,7 @@
         linear-gradient(180deg, #eef3f8 0%, #f5f8fc 55%, #eef3f8 100%);
       color: var(--ink-900);
       font-family: var(--font);
+      overflow-x: hidden;
     }
     a { color: inherit; }
     button, input, textarea { font: inherit; }
@@ -437,6 +438,9 @@
         border: 1px solid rgba(255,255,255,.1);
         background: rgba(8, 27, 49, .98);
         box-shadow: 0 20px 38px rgba(8, 27, 49, .24);
+        max-height: calc(100svh - 104px);
+        overflow: auto;
+        overscroll-behavior: contain;
       }
       .public-header.is-open .public-nav-shell { display: flex; }
       .public-nav {
@@ -458,6 +462,8 @@
         width: 100%;
         margin-top: 8px;
         background: rgba(255,255,255,.98);
+        max-height: 50svh;
+        overflow: auto;
       }
       .public-login {
         width: 100%;
@@ -481,6 +487,7 @@
       .public-section { padding: 48px 0; }
       .section-title { font-size: clamp(26px, 9vw, 36px); }
       .footer-contact { padding: 18px; }
+      .public-copy { flex-direction: column; align-items: flex-start; }
     }
   </style>
   {% block head_meta %}{% endblock %}
@@ -603,8 +610,22 @@
         toggle.setAttribute("aria-expanded", String(nextState));
       });
 
+      shell.querySelectorAll("a").forEach(function (link) {
+        link.addEventListener("click", function () {
+          header.classList.remove("is-open");
+          toggle.setAttribute("aria-expanded", "false");
+        });
+      });
+
       document.addEventListener("click", function (event) {
         if (!header.contains(event.target)) {
+          header.classList.remove("is-open");
+          toggle.setAttribute("aria-expanded", "false");
+        }
+      });
+
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
           header.classList.remove("is-open");
           toggle.setAttribute("aria-expanded", "false");
         }

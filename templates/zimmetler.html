@@ -77,18 +77,56 @@
   .assignment-submit-row { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-top:16px; }
   .assignment-submit-note { font-size:12px; color:var(--text3); line-height:1.5; }
   .assignment-table .row-actions { justify-content:flex-end; }
+  @media (max-width: 900px) {
+    .assignment-kpi-row { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+    .assignment-filter-form { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+    .assignment-layout { grid-template-columns:1fr; gap:18px; }
+  }
   @media (max-width: 1100px) {
-    .assignment-layout,
-    .assignment-filter-form,
-    .assignment-kpi-row,
     .assignment-form-guide { grid-template-columns:1fr; }
   }
-  @media (max-width: 760px) {
+  @media (max-width: 680px) {
+    .assignment-kpi-row,
+    .assignment-filter-form,
     .assignment-create-grid,
     .choice-inline-grid { grid-template-columns:1fr; }
-    .assignment-submit-row,
+    .assignment-kpi { padding:14px; }
+    .assignment-kpi-value { font-size:24px; }
+    .assignment-filter-summary { flex-direction:column; align-items:stretch; gap:10px; }
+    .assignment-filter-chips { gap:6px; }
+    .assignment-filter-chip { white-space:normal; }
+    .selection-panel-head,
+    .selection-available-head,
     .selection-toolbar-meta,
-    .choice-head { align-items:flex-start; }
+    .choice-head,
+    .assignment-submit-row,
+    .assignment-submit-row > div:last-child { align-items:flex-start; }
+    .selection-panel-head,
+    .selection-available-head,
+    .selection-toolbar-meta,
+    .assignment-submit-row { flex-direction:column; }
+    .selection-panel-body { padding:14px; }
+    .selection-selected-row { padding:12px; }
+    .selection-summary-card { grid-template-columns:1fr; }
+    .selection-remove-btn,
+    .selection-browse-toggle { width:100%; min-height:40px; justify-content:center; }
+    .selection-counter { align-self:flex-start; }
+    .choice-grid { max-height:none; overflow:visible; }
+    .choice-card { padding:13px; gap:10px; }
+    .choice-card input[type="checkbox"] { width:22px; height:22px; margin-top:0; flex-shrink:0; }
+    .choice-badge { min-height:30px; }
+    .assignment-submit-row > div:last-child { width:100%; display:grid; gap:10px; }
+    .assignment-submit-row .btn,
+    .assignment-submit-row .status-pill { width:100%; }
+    .assignment-submit-note { font-size:11.5px; }
+  }
+  @media (max-width: 520px) {
+    .selection-panel-title-row { align-items:flex-start; }
+    .selection-selected-list { gap:8px; }
+    .selection-summary-card { padding:12px; }
+    .choice-body { gap:7px; }
+    .choice-title { font-size:12.5px; }
+    .choice-meta { font-size:11px; }
   }
 </style>
 {% endblock %}

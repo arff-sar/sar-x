@@ -58,6 +58,7 @@
                 var(--bg);
             color: var(--text);
             min-height: 100vh;
+            min-height: 100svh;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -142,6 +143,7 @@
             display: inline-flex;
             align-items: center;
             gap: 8px;
+            min-height: 44px;
             padding: 9px 12px;
             border-radius: 999px;
             border: 1px solid var(--border);
@@ -273,6 +275,7 @@
             color: var(--text);
             font-family: var(--sans);
             font-size: 14px;
+            min-height: 46px;
             padding: 11px 12px;
             outline: none;
             transition: border-color .2s, box-shadow .2s, background .2s;
@@ -288,6 +291,7 @@
             display: flex;
             align-items: center;
             gap: 8px;
+            min-height: 46px;
             padding: 0 10px 0 0;
             background: var(--surface2);
             border: 1.5px solid var(--border-dark);
@@ -544,6 +548,8 @@
 
         .forgot-password-link {
             display: inline-flex;
+            align-items: center;
+            justify-content: center;
             font-size: 12.5px;
             color: var(--blue);
             font-weight: 700;
@@ -735,7 +741,7 @@
 
         @media (max-width: 560px) {
             body { align-items: flex-start; padding: 10px; }
-            .login-card { max-width: 100%; border-radius: 16px; }
+            .login-card { max-width: 100%; border-radius: 16px; box-shadow: 0 16px 34px rgba(15,45,74,.12); }
             .login-header { padding: 18px 16px 14px; }
             .login-logo-mark { width: 42px; height: 42px; margin-bottom: 8px; }
             .login-logo-mark svg { width: 22px; height: 22px; }
@@ -746,7 +752,11 @@
             .login-toast-stack { padding: 12px 14px 0; }
             .section-topbar { margin-bottom: 8px; }
             .home-link { width: 100%; justify-content: center; }
-            .captcha-box { grid-template-columns: 108px 42px minmax(0, 1fr); gap: 6px; }
+            .captcha-caption { flex-direction: column; align-items: flex-start; gap: 6px; }
+            .captcha-box { grid-template-columns: minmax(0, 1fr) 42px; gap: 6px; }
+            .captcha-canvas-container { grid-column: 1; }
+            .captcha-refresh { grid-column: 2; }
+            .captcha-input-shell { grid-column: 1 / -1; }
             .captcha-canvas-container,
             .captcha-visual,
             .captcha-refresh,
@@ -754,10 +764,21 @@
             .captcha-refresh { width: 42px; min-width: 42px; }
             .captcha-input-shell { padding: 0 9px; }
             .captcha-input { font-size: 14px !important; letter-spacing: 1.5px; }
-            .account-actions-row { gap: 8px; }
-            .remember-option { padding: 6px 8px; }
+            .account-actions-row { gap: 8px; flex-direction: column; align-items: stretch; }
+            .remember-option { padding: 8px 10px; width: 100%; min-height: 44px; }
+            .forgot-password-link { min-height: 44px; width: 100%; border-radius: 12px; border: 1px solid var(--border); background: var(--surface2); }
             .remember-copy,
             .forgot-password-link { font-size: 12px; }
+            .login-btn-submit { min-height: 46px; }
+            .login-footer { padding: 12px; }
+        }
+
+        @media (max-width: 400px) {
+            .captcha-box { grid-template-columns: 1fr; }
+            .captcha-canvas-container,
+            .captcha-refresh,
+            .captcha-input-shell { grid-column: auto; }
+            .captcha-refresh { width: 100%; min-width: 0; }
         }
 
         @media (max-height: 860px) {
@@ -778,7 +799,7 @@
             .captcha-visual,
             .captcha-refresh,
             .captcha-input-shell { min-height: 42px; height: 42px; }
-            .captcha-box { grid-template-columns: 128px 42px minmax(0, 1fr); gap: 6px; }
+            .captcha-box { gap: 6px; }
             .account-actions-row { margin: 2px 0 8px; }
             .login-btn-submit { padding: 11px; }
             .login-footer { margin-top: 12px; padding: 10px 12px; }

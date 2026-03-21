@@ -45,23 +45,23 @@ SECTION_PAGE_LABELS = {
 }
 
 DEMO_IMAGE_LIBRARY = {
-    "hero_team": "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=1600&q=80",
-    "hero_training": "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1600&q=80",
-    "hero_coordination": "https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=1600&q=80",
-    "announcement_training": "https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=1400&q=80",
-    "announcement_night": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1400&q=80",
-    "announcement_equipment": "https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=1400&q=80",
-    "announcement_meeting": "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1400&q=80",
-    "announcement_ethics": "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=1400&q=80",
-    "about_team": "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1400&q=80",
-    "training_search": "https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=1400&q=80",
-    "training_ppe": "https://images.unsplash.com/photo-1520607162513-77705c0f0d4a?auto=format&fit=crop&w=1400&q=80",
-    "training_equipment": "https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=1400&q=80",
-    "training_command": "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=1400&q=80",
-    "drill_night": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1400&q=80",
-    "drill_access": "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=1400&q=80",
-    "drill_communication": "https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=1400&q=80",
-    "drill_dispatch": "https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1400&q=80",
+    "hero_team": "https://images.unsplash.com/photo-1618477462146-050d2767eac4?auto=format&fit=crop&w=1600&q=80",
+    "hero_training": "https://images.unsplash.com/photo-1584362917165-526a968579e8?auto=format&fit=crop&w=1600&q=80",
+    "hero_coordination": "https://images.unsplash.com/photo-1611691543543-6b62f8fc1d1b?auto=format&fit=crop&w=1600&q=80",
+    "announcement_training": "https://images.unsplash.com/photo-1526256262350-7da7584cf5eb?auto=format&fit=crop&w=1400&q=80",
+    "announcement_night": "https://images.unsplash.com/photo-1593113598332-cd59a93c6138?auto=format&fit=crop&w=1400&q=80",
+    "announcement_equipment": "https://images.unsplash.com/photo-1532635241-17e820acc59f?auto=format&fit=crop&w=1400&q=80",
+    "announcement_meeting": "https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&w=1400&q=80",
+    "announcement_ethics": "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1400&q=80",
+    "about_team": "https://images.unsplash.com/photo-1618477461853-cf6ed80faba5?auto=format&fit=crop&w=1400&q=80",
+    "training_search": "https://images.unsplash.com/photo-1516910817561-6f39db2a7a48?auto=format&fit=crop&w=1400&q=80",
+    "training_ppe": "https://images.unsplash.com/photo-1584515933487-779824d29309?auto=format&fit=crop&w=1400&q=80",
+    "training_equipment": "https://images.unsplash.com/photo-1600959907703-125ba1374a12?auto=format&fit=crop&w=1400&q=80",
+    "training_command": "https://images.unsplash.com/photo-1516307365426-bea591f05011?auto=format&fit=crop&w=1400&q=80",
+    "drill_night": "https://images.unsplash.com/photo-1618477247222-acbdb0e159b3?auto=format&fit=crop&w=1400&q=80",
+    "drill_access": "https://images.unsplash.com/photo-1586773860418-d37222d8fce3?auto=format&fit=crop&w=1400&q=80",
+    "drill_communication": "https://images.unsplash.com/photo-1516841273335-e39b37888115?auto=format&fit=crop&w=1400&q=80",
+    "drill_dispatch": "https://images.unsplash.com/photo-1503428593586-e225b39bddfe?auto=format&fit=crop&w=1400&q=80",
 }
 
 
@@ -357,32 +357,32 @@ def _create_section(payload):
 def _slider_payloads():
     return [
         {
-            "title": "Hazırlık sahada değil, her gün birlikte başlar",
-            "subtitle": "ARFF Arama Kurtarma Timi",
-            "description": "Ekip ruhu, ekipman disiplini ve hazır koordinasyon aynı ritimde tutulur. Sessizce tekrar eden bu hazırlık, sahada sakin ve güvenli hareket etmenin temelini kurar.",
+            "title": "ARFF Özel Arama Kurtarma Timi",
+            "subtitle": "Hazırlık ve ekip uyumu",
+            "description": "Hazırlık, disiplin ve ekip uyumu her gün yeniden kurulur. Eğitim, ekipman kontrolü ve ortak hareket kültürüyle sahaya her zaman hazır kalmaya çalışırız.",
             "image_url": DEMO_IMAGE_LIBRARY["hero_team"],
-            "button_text": "Duyurular",
-            "button_link": "/duyurular",
+            "button_text": "Timimizi Tanıyın",
+            "button_link": "/hakkimizda/biz-kimiz",
             "order_index": 0,
             "is_active": True,
         },
         {
-            "title": "Eğitim ve tatbikat aynı refleksi besler",
-            "subtitle": "Yakın tekrar, net görev paylaşımı",
-            "description": "Her eğitim oturumu görev paylaşımını sadeleştirir; her tatbikat, timin birbirine ne kadar hızlı yaslanabildiğini tekrar gösterir.",
+            "title": "Eğitim ve Hazırlık Sürekliliği",
+            "subtitle": "Düzenli tekrar ve ortak uygulama",
+            "description": "Düzenli tekrar, ortak uygulama ve görev öncesi hazırlık; güvenli ve kontrollü hareket etmenin temelidir.",
             "image_url": DEMO_IMAGE_LIBRARY["hero_training"],
-            "button_text": "Faaliyetlerimiz",
+            "button_text": "Eğitimleri İnceleyin",
             "button_link": "/faaliyetlerimiz/egitimler",
             "order_index": 1,
             "is_active": True,
         },
         {
-            "title": "Sahaya yakın, birbirine güvenen gönüllü yapı",
-            "subtitle": "Güven, sorumluluk, dayanışma",
-            "description": "Küçük ama uyumlu bir ekip; hızlı toplanma, doğru ekipman seçimi ve sakin koordinasyonla göreve hazır kalır.",
+            "title": "Koordinasyon ve Ekip Ruhu",
+            "subtitle": "Sakin koordinasyon ve ortak hareket",
+            "description": "İhtiyaç anında doğru ekip, doğru ekipman ve sakin koordinasyonla hareket edebilmek için birlikte çalışırız.",
             "image_url": DEMO_IMAGE_LIBRARY["hero_coordination"],
-            "button_text": "Biz Kimiz",
-            "button_link": "/hakkimizda/biz-kimiz",
+            "button_text": "Faaliyetlerimizi Görün",
+            "button_link": "/faaliyetlerimiz/tatbikatlar",
             "order_index": 2,
             "is_active": True,
         },
@@ -393,64 +393,48 @@ def _announcement_payloads():
     now = get_tr_now()
     return [
         {
-            "title": "Hafta sonu ortak eğitim buluşması",
-            "slug": "demo-hafta-sonu-ortak-egitim-bulusmasi",
-            "summary": "Temel arama adımları, ekip içi rol dağılımı ve saha giriş hazırlığı için ortak tekrar oturumu planlandı.",
+            "title": "Aylık Ekipman Kontrol ve Hazırlık Günü",
+            "slug": "demo-aylik-ekipman-kontrol-ve-hazirlik-gunu",
+            "summary": "Tim envanterinde yer alan kritik ekipmanların gözden geçirilmesi, eksiklerin tespiti ve kullanım hazırlığının güncellenmesi amacıyla aylık kontrol çalışması yapılacaktır.",
             "content": (
-                "Cumartesi sabahı yapılacak ortak oturumda temel enkaz arama akışı, ekip içi rol dağılımı ve ilk saha yaklaşımı adımları üzerinden tekrar geçilecek.\n\n"
-                "Çalışma; yeni katılan gönüllülerin ritme dahil olmasını, mevcut ekibin ise aynı dili korumasını hedefliyor. Katılım öncesi kişisel koruyucu donanım kontrolünün tamamlanması ve ekipman teslim kaydının girilmesi bekleniyor.\n\n"
-                "Oturum boyunca teorik anlatım yerine kısa tekrarlar, eşli uygulama ve senaryo bazlı koordinasyon tercih edilecek."
+                "Kontrol günü kapsamında kişisel koruyucu donanımlar, saha çantaları, aydınlatma ve destek ekipmanları gözden geçirilecek; "
+                "kayıtlar güncellenecek ve ihtiyaç listesi oluşturulacaktır."
             ),
             "cover_image": DEMO_IMAGE_LIBRARY["announcement_training"],
             "published_at": now - timedelta(days=1, hours=2),
             "is_published": True,
         },
         {
-            "title": "Gece tatbikatı ön hazırlık paylaşımı",
-            "slug": "demo-gece-tatbikati-on-hazirlik-paylasimi",
-            "summary": "Aydınlatma, haberleşme ve toplanma akışı gece senaryosu öncesinde tekrar gözden geçirilecek.",
+            "title": "Temel Saha Koordinasyon Eğitimi",
+            "slug": "demo-temel-saha-koordinasyon-egitimi",
+            "summary": "Ekip içi iletişim, görev dağılımı, güvenli alan disiplini ve ortak hareket pratiğini güçlendirmeye yönelik eğitim planlanmıştır.",
             "content": (
-                "Planlanan gece tatbikatı öncesinde ekip liderleriyle kısa bir hazırlık toplantısı yapılacak. Bu paylaşımda aydınlatma ekipmanları, sessiz iletişim kuralları ve sahada görüş sınırı daraldığında uygulanacak rol dağılımı ele alınacak.\n\n"
-                "Timden beklenti, toplanma saatine en az on beş dakika önce hazır alanda bulunmak ve kendi ekipman kontrol listesini tamamlamış olmak. Tatbikat boyunca hızdan önce güvenli hareket ve birbirini teyit eden iletişim esas alınacak."
+                "Eğitim kapsamında ekip içi haberleşme, görev önceliği, kısa saha brifingi düzeni ve uygulamalı koordinasyon senaryoları ele alınacaktır."
             ),
             "cover_image": DEMO_IMAGE_LIBRARY["announcement_night"],
             "published_at": now - timedelta(days=3, hours=4),
             "is_published": True,
         },
         {
-            "title": "Ekipman kontrol haftası başladı",
-            "slug": "demo-ekipman-kontrol-haftasi-basladi",
-            "summary": "Kullanım yoğunluğu olan ekipmanlar için görünür hasar, şarj ve erişim hızı kontrolleri sıraya alındı.",
+            "title": "Haftalık Tatbikat Hazırlık Toplantısı",
+            "slug": "demo-haftalik-tatbikat-hazirlik-toplantisi",
+            "summary": "Planlanan saha tatbikatı öncesinde görev akışı, ekipman dağılımı ve uygulama sahası hazırlıkları değerlendirilecektir.",
             "content": (
-                "Bu haftaki odak, sahada ilk ulaşılan ekipmanların sessiz ve düzenli bir akışla kontrol edilmesi. Kesici, aydınlatma, haberleşme ve taşıma ekipmanları için görünür hasar, şarj durumu, etiket okunurluğu ve hızlı erişim adımları gözden geçirilecek.\n\n"
-                "Kontrol sırasında eksik veya yorgun parça görülürse yalnızca bildirim bırakmak yerine ilgili sorumluya doğrudan haber verilmesi isteniyor. Amaç kusur aramak değil, timin bir sonraki göreve sakin şekilde hazır olmasını sağlamak."
+                "Toplantıda görev grupları, tatbikat akışı, emniyet önlemleri ve ihtiyaç duyulan destek malzemeleri üzerinden son hazırlık gözden geçirilecektir."
             ),
             "cover_image": DEMO_IMAGE_LIBRARY["announcement_equipment"],
             "published_at": now - timedelta(days=6, hours=1),
             "is_published": True,
         },
         {
-            "title": "Gönüllü koordinasyon toplantısı",
-            "slug": "demo-gonullu-koordinasyon-toplantisi",
-            "summary": "Yeni dönem görev dağılımı, iletişim zinciri ve saha dışı destek başlıkları kısa bir toplantı ile netleştirilecek.",
+            "title": "Gönüllü Ekip Uyum ve Tekrar Çalışması",
+            "slug": "demo-gonullu-ekip-uyum-ve-tekrar-calismasi",
+            "summary": "Tim içi uyumu ve uygulama sürekliliğini desteklemek amacıyla kısa tekrar ve ortak çalışma oturumu düzenlenecektir.",
             "content": (
-                "Aylık koordinasyon buluşmasında yeni döneme ait görev dağılımı, nöbet destek takvimi ve saha dışı lojistik başlıkları birlikte gözden geçirilecek.\n\n"
-                "Toplantı resmi bir sunum yerine kısa durum paylaşımları ve ihtiyaç odaklı kararlarla ilerleyecek. Herkesin aynı resmi görmesi, sahaya çıkmadan önce beklenmedik kopuklukları azaltacağı için katılım önemli görülüyor."
+                "Bu çalışma; ekip içi koordinasyon, temel saha düzeni, görev öncesi hazırlık alışkanlığı ve ortak uygulama pratiğini canlı tutmayı amaçlamaktadır."
             ),
             "cover_image": DEMO_IMAGE_LIBRARY["announcement_meeting"],
             "published_at": now - timedelta(days=9, hours=3),
-            "is_published": True,
-        },
-        {
-            "title": "Güvenlik ve etik çizgi hatırlatması",
-            "slug": "demo-guvenlik-ve-etik-cizgi-hatirlatmasi",
-            "summary": "Her görevde önce insan güvenliği, sonra ekip bütünlüğü ve net sorumluluk zinciri korunacak.",
-            "content": (
-                "Tüm saha çalışmalarında önce insan güvenliği, sonra ekip bütünlüğü ve son olarak görev verimliliği sırasıyla hareket edilmesi beklenir.\n\n"
-                "Kimsenin yalnız bırakılmadığı, teyitsiz bilgiyle hareket edilmediği ve görev dışı görüntü paylaşımında dikkatli davranıldığı çizgi timin güven duygusunu korur. Bu hatırlatma yeni bir kural koymak için değil, mevcut kültürün sesini tazelemek için paylaşıldı."
-            ),
-            "cover_image": DEMO_IMAGE_LIBRARY["announcement_ethics"],
-            "published_at": now - timedelta(days=12, hours=5),
             "is_published": True,
         },
     ]
@@ -459,33 +443,33 @@ def _announcement_payloads():
 def _stat_payloads():
     return [
         {
-            "title": "Hazır Ekip",
-            "value_text": "18 Kişi",
-            "subtitle": "Toplanma çağrılarına kısa sürede cevap verebilen aktif tim.",
+            "title": "Aktif Ekipman",
+            "value_text": "0",
+            "subtitle": "Göreve hazır kayıtlı ekipman ve destek malzemesi.",
             "icon": "●",
             "order_index": 0,
             "is_active": True,
         },
         {
-            "title": "Ekipman",
-            "value_text": "146 Kalem",
-            "subtitle": "Sahaya çıkış öncesi kontrol listesine dahil kritik ve destek ekipmanları.",
+            "title": "Gönüllü Personel",
+            "value_text": "0",
+            "subtitle": "Hazırlık ve eğitim süreçlerine katılan ekip üyeleri.",
             "icon": "▲",
             "order_index": 1,
             "is_active": True,
         },
         {
-            "title": "Eğitim",
-            "value_text": "24 Oturum",
-            "subtitle": "Yıllık tekrar takviminde kayıtlı teknik ve koordinasyon çalışmaları.",
+            "title": "Planlı Eğitim",
+            "value_text": "0",
+            "subtitle": "Yıl içine yayılan tekrar, hazırlık ve uygulama programı.",
             "icon": "■",
             "order_index": 2,
             "is_active": True,
         },
         {
-            "title": "Gönüllü Destek",
-            "value_text": "32 Görev",
-            "subtitle": "Saha dışı hazırlık, lojistik ve bilgi akışını taşıyan gönüllü destek katkısı.",
+            "title": "Hazırlık Kontrolü",
+            "value_text": "0",
+            "subtitle": "Sürekliliği izlenen ekipman ve görev öncesi kontrol akışı.",
             "icon": "✦",
             "order_index": 3,
             "is_active": True,
@@ -497,11 +481,11 @@ def _section_payloads():
     return [
         {
             "section_key": "about",
-            "title": "Biz Kimiz?",
-            "subtitle": "Gönüllü tim yapısı",
+            "title": "Biz Kimiz",
+            "subtitle": "Ekip Yapısı",
             "content": (
-                "ARFF Arama Kurtarma Timi; sahaya çıkılması gereken anda birbirini bekletmeden harekete geçebilmek için hazır kalan, görev sırasında sakin iletişimi önceliklendiren ve ekip ruhunu gündelik tekrarlarla büyüten gönüllülerden oluşur.\n\n"
-                "Ekibin gücü yalnızca teknik bilgiye değil, birbirinin temposunu tanıyan insanların kurduğu güvene dayanır. Bu yüzden hazırlık bizim için sadece ekipman değil; rol paylaşımı, güvenli davranış ve birbirine destek kültürü anlamına gelir."
+                "ARFF özel arama kurtarma gönüllülerinin birlikte hareket ettiği, hazırlığı canlı tutmayı önemseyen ve sahaya yakın çalışan ekip yapısını temsil ediyoruz. "
+                "Eğitim, tekrar, ekipman disiplini ve ortak sorumluluk anlayışıyla görev öncesi hazırlığı sürekli kılmaya odaklanıyoruz."
             ),
             "image_url": DEMO_IMAGE_LIBRARY["about_team"],
             "order_index": 0,
@@ -510,9 +494,9 @@ def _section_payloads():
         {
             "section_key": "mission",
             "title": "Misyon",
-            "subtitle": "Hazırlığı canlı tutmak",
+            "subtitle": "Odak",
             "content": (
-                "Misyonumuz; eğitim, tekrar ve sade koordinasyonla timi her zaman göreve yaklaşabilecek bir çizgide tutmak. Hazırlık anlık değil süreklidir; bu nedenle küçük tekrarların ve düzenli iletişim akışının değerini koruruz."
+                "Hazırlığı canlı tutmak, ekip içi uyumu güçlendirmek, doğru ekipman kullanımını desteklemek ve ihtiyaç anında düzenli, güvenli ve koordineli hareket edebilmek için sürekli gelişen bir çalışma kültürü sürdürmek."
             ),
             "order_index": 1,
             "is_active": True,
@@ -520,9 +504,9 @@ def _section_payloads():
         {
             "section_key": "vision",
             "title": "Vizyon",
-            "subtitle": "Güven veren saha kültürü",
+            "subtitle": "Bakış",
             "content": (
-                "Vizyonumuz; hızlı tepki verirken aceleci davranmayan, farklı deneyim düzeylerini aynı dayanışma çizgisinde buluşturan ve görev anında güven veren bir saha kültürü oluşturmak."
+                "Güven, süreklilik, ekip dayanışması ve saha disipliniyle güçlü bir arama kurtarma kültürü oluşturmak; eğitim ve hazırlık sürekliliğini koruyarak örnek bir ekip yapısı ortaya koymak."
             ),
             "order_index": 2,
             "is_active": True,
@@ -530,19 +514,19 @@ def _section_payloads():
         {
             "section_key": "ethics",
             "title": "Etik Değerler",
-            "subtitle": "Güven, saygı, sorumluluk",
+            "subtitle": "İlke",
             "content": (
-                "Etik çizgimiz; doğrulanmamış bilgiyle hareket etmemek, her ekip arkadaşına saygı göstermek, görev sırasında görünür olmayan emeği de sahiplenmek ve güvenliği hiçbir hız baskısına feda etmemek üzerine kurulur."
+                "Sorumluluk, saygı, gönüllülük, güven, şeffaflık ve ekip ruhu; tüm hazırlık, eğitim ve saha çalışmalarımızın temelini oluşturur."
             ),
             "order_index": 3,
             "is_active": True,
         },
         {
             "section_key": "training",
-            "title": "Temel enkaz arama eğitimi",
-            "subtitle": "Sakin ilerleyen temel tekrar",
+            "title": "Temel Arama Kurtarma Hazırlık Eğitimi",
+            "subtitle": "Eğitim Modülü",
             "content": (
-                "Arama hattına giriş, güvenli yaklaşım ve ekip içi kısa teyit adımları bu modülde birlikte çalışılır. Amaç, herkesin aynı dili konuşması ve yeni katılan gönüllülerin ritme rahatça dahil olmasıdır."
+                "Ekip içi görev dağılımı, güvenli hareket prensipleri, ekipman kontrolü ve görev öncesi hazırlık alışkanlıkları üzerine yapılandırılmış tekrar eğitimi."
             ),
             "image_url": DEMO_IMAGE_LIBRARY["training_search"],
             "order_index": 10,
@@ -550,79 +534,35 @@ def _section_payloads():
         },
         {
             "section_key": "training",
-            "title": "Kişisel koruyucu donanım eğitimi",
-            "subtitle": "Güvenlik önce gelir",
+            "title": "Uygulamalı Saha Koordinasyon Çalışması",
+            "subtitle": "Faaliyet Modülü",
             "content": (
-                "Kask, gözlük, eldiven ve temel koruyucu setlerin doğru kullanım adımları ekip halinde tekrar edilir. Kişisel hazırlık düzgün olduğunda timin genel hareketi de daha sakin ve hızlı olur."
+                "Kısa saha senaryoları üzerinden iletişim, yönlendirme, ekip dizilimi ve kontrollü müdahale akışını geliştirmeye yönelik ortak uygulama."
             ),
             "image_url": DEMO_IMAGE_LIBRARY["training_ppe"],
             "order_index": 11,
             "is_active": True,
         },
         {
-            "section_key": "training",
-            "title": "Ekipman tanıma ve bakım farkındalığı",
-            "subtitle": "Erişim hızı ve doğru kullanım",
+            "section_key": "exercise",
+            "title": "Ekipman Düzeni ve Hazırlık Kontrolü",
+            "subtitle": "Tatbikat Modülü",
             "content": (
-                "Sık kullanılan ekipmanların erişim noktası, görünür kontrol adımı ve kullanım öncesi kısa bakım alışkanlığı bu modülü besler. Ekipmanla kurulan sakin ilişki, sahadaki gereksiz gecikmeleri azaltır."
+                "Görevde kullanılabilecek ekipmanların sınıflandırılması, hazır tutulması, eksiklerin tespiti ve kayıt düzeninin güçlendirilmesine yönelik çalışma."
             ),
-            "image_url": DEMO_IMAGE_LIBRARY["training_equipment"],
+            "image_url": DEMO_IMAGE_LIBRARY["drill_access"],
             "order_index": 12,
             "is_active": True,
         },
         {
-            "section_key": "training",
-            "title": "Olay yeri koordinasyon eğitimi",
-            "subtitle": "Rol dağılımı ve iletişim akışı",
-            "content": (
-                "Toplanma, bilgi aktarımı, görev dağılımı ve geri bildirim halkası bu oturumda bir araya gelir. Ekip içi iletişim netleştikçe sahadaki gerilim azalır, karar hızı ise doğal biçimde artar."
-            ),
-            "image_url": DEMO_IMAGE_LIBRARY["training_command"],
-            "order_index": 13,
-            "is_active": True,
-        },
-        {
             "section_key": "exercise",
-            "title": "Gece operasyon hazırlık tatbikatı",
-            "subtitle": "Düşük görüşte net koordinasyon",
+            "title": "Tatbikat Öncesi Ortak Tekrar",
+            "subtitle": "Hazırlık Oturumu",
             "content": (
-                "Aydınlatma, sessiz iletişim ve sınırlı görüş koşullarında görev paylaşımı bu tatbikatın odağındadır. Timin birbirini duymadan da tamamlayabilmesi için kısa ve net akışlar tekrarlanır."
-            ),
-            "image_url": DEMO_IMAGE_LIBRARY["drill_night"],
-            "order_index": 20,
-            "is_active": True,
-        },
-        {
-            "section_key": "exercise",
-            "title": "Kutu ve ünite erişim tatbikatı",
-            "subtitle": "Hızlı dağıtım, düzenli hareket",
-            "content": (
-                "Kutu ve ünite erişiminde doğru sıra, doğru ekipman seçimi ve dağıtım akışı birlikte çalışılır. Amaç sadece hız değil, hızlı kalırken karışıklığa düşmemektir."
-            ),
-            "image_url": DEMO_IMAGE_LIBRARY["drill_access"],
-            "order_index": 21,
-            "is_active": True,
-        },
-        {
-            "section_key": "exercise",
-            "title": "Saha içi iletişim ve görev paylaşımı tatbikatı",
-            "subtitle": "Teyitli bilgi akışı",
-            "content": (
-                "Kısa raporlama, geri çağrılar ve ekip lideri teyitleri bu senaryoda tekrar edilir. Net bilgi akışının ekip güvenini nasıl koruduğu uygulamalı olarak görülür."
+                "Planlı tatbikat öncesinde ekip uyumu, görev paylaşımı, güvenlik hatırlatmaları ve saha akışının yeniden gözden geçirilmesine yönelik hazırlık oturumu."
             ),
             "image_url": DEMO_IMAGE_LIBRARY["drill_communication"],
-            "order_index": 22,
-            "is_active": True,
-        },
-        {
-            "section_key": "exercise",
-            "title": "Toplanma ve sevk koordinasyonu senaryosu",
-            "subtitle": "Saha öncesi düzen",
-            "content": (
-                "Toplanma noktasından sevk anına kadar geçen sürede kim neyi taşır, kim kimi teyit eder ve çıkış öncesi son kontrol nasıl yapılır soruları bu senaryoda sade bir akışla denenir."
-            ),
-            "image_url": DEMO_IMAGE_LIBRARY["drill_dispatch"],
-            "order_index": 23,
+            "order_index": 13,
             "is_active": True,
         },
     ]
