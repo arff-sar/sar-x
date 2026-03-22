@@ -6,7 +6,7 @@
 <style>
   .hero {
     position: relative;
-    padding: 20px 0 0;
+    padding: 14px 0 0;
   }
   .hero-shell {
     position: relative;
@@ -18,7 +18,7 @@
   }
   .hero-stage {
     position: relative;
-    min-height: 560px;
+    min-height: 520px;
   }
   .hero-slide {
     position: absolute;
@@ -106,18 +106,19 @@
     position: relative;
     z-index: 3;
     width: min(1120px, calc(100% - 40px));
-    margin: -82px auto 0;
-    padding-bottom: 30px;
+    margin: -70px auto 0;
+    padding-bottom: 24px;
   }
   .about-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 16px;
+    align-items: stretch;
   }
   .about-card {
     position: relative;
     overflow: hidden;
-    min-height: 100%;
+    height: 188px;
     padding: 20px 20px 18px;
     border-radius: 24px;
     background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(249,251,254,.95));
@@ -125,6 +126,8 @@
     box-shadow: 0 20px 36px rgba(8,27,49,.09);
     backdrop-filter: blur(14px);
     scroll-margin-top: 110px;
+    display: flex;
+    flex-direction: column;
   }
   .about-card::before {
     content: "";
@@ -145,12 +148,21 @@
     font-size: clamp(13px, 1.2vw, 14px);
     font-weight: 800;
     letter-spacing: .01em;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
   .about-card p {
-    margin: 14px 0 0;
+    margin: 12px 0 0;
     color: var(--ink-500);
     font-size: 13.5px;
-    line-height: 1.72;
+    line-height: 1.68;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .announcement-shell {
@@ -423,10 +435,9 @@
     position: relative;
     overflow: hidden;
     min-height: 196px;
-    display: grid;
-    grid-template-columns: 112px minmax(0, 1fr);
-    align-items: center;
-    gap: 18px;
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
     padding: 20px 22px;
     border-radius: 24px;
     background:
@@ -460,15 +471,36 @@
     box-shadow: 0 22px 38px rgba(249,115,22,.12);
     border-color: rgba(249,115,22,.24);
   }
-  .stat-media {
+  .stat-copy {
     position: relative;
     z-index: 1;
-    width: 104px;
-    height: 104px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    min-width: 0;
+    width: 100%;
+    min-height: 152px;
+    padding: 2px 0 0;
+    text-align: center;
+  }
+  .stat-inline {
     display: flex;
     align-items: center;
     justify-content: center;
-    margin: 0 auto;
+    gap: 18px;
+    width: 100%;
+    flex: 1;
+  }
+  .stat-media {
+    position: relative;
+    z-index: 1;
+    width: 112px;
+    height: 112px;
+    flex: 0 0 112px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
     isolation: isolate;
   }
@@ -486,30 +518,18 @@
   .stat-card[data-homepage-stat="total_assets"] .stat-media img,
   .stat-card[data-homepage-stat="total_personnel"] .stat-media img,
   .stat-card[data-homepage-stat="total_airports"] .stat-media img {
-    transform: scale(1.08);
+    transform: scale(1.1);
   }
   .stat-card[data-homepage-stat="completed_trainings"] .stat-media {
-    width: 116px;
-    height: 116px;
+    width: 122px;
+    height: 122px;
+    flex-basis: 122px;
   }
   .stat-card[data-homepage-stat="completed_trainings"] .stat-media img {
-    transform: scale(1.24);
-  }
-  .stat-copy {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: space-between;
-    min-width: 0;
-    width: 100%;
-    min-height: 144px;
-    padding: 2px 0;
-    text-align: center;
+    transform: scale(1.22);
   }
   .stat-value {
-    margin: auto 0 0;
+    margin: 0;
     font-size: clamp(38px, 4vw, 48px);
     line-height: .95;
     letter-spacing: -.065em;
@@ -521,9 +541,9 @@
     margin: 0;
     color: var(--accent-dark);
     width: 100%;
-    min-height: 52px;
+    min-height: 54px;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: center;
     font-size: 19px;
     line-height: 1.2;
@@ -532,7 +552,7 @@
 
   @media (max-width: 1100px) {
     .hero-stage {
-      min-height: 520px;
+      min-height: 480px;
     }
     .about-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -562,7 +582,7 @@
     }
     .about-strip {
       width: calc(100% - 24px);
-      margin-top: -60px;
+      margin-top: -52px;
       padding-bottom: 20px;
     }
     .about-grid,
@@ -576,19 +596,29 @@
     .stat-card {
       border-radius: 18px;
     }
+    .about-card {
+      height: auto;
+      min-height: 156px;
+    }
+    .about-card p {
+      -webkit-line-clamp: 5;
+    }
     .stat-card {
       min-height: 170px;
-      grid-template-columns: 88px minmax(0, 1fr);
-      gap: 14px;
       padding: 18px;
     }
+    .stat-inline {
+      gap: 14px;
+    }
     .stat-media {
-      width: 86px;
-      height: 86px;
+      width: 96px;
+      height: 96px;
+      flex-basis: 96px;
     }
     .stat-card[data-homepage-stat="completed_trainings"] .stat-media {
-      width: 94px;
-      height: 94px;
+      width: 104px;
+      height: 104px;
+      flex-basis: 104px;
     }
     .stat-copy {
       min-height: 122px;
@@ -788,14 +818,16 @@
           {% set display_title = card.title %}
         {% endif %}
         <article class="stat-card public-card" data-homepage-stat="{{ card.metric_key or 'custom' }}">
-          <div class="stat-media">
-            {% if stat_image %}
-              <img src="{{ stat_image }}" alt="{{ display_title }} simgesi" loading="lazy">
-            {% endif %}
-          </div>
           <div class="stat-copy">
             <h3 class="stat-title">{{ display_title }}</h3>
-            <div class="stat-value" data-stat-final="{{ card.value_text }}">{{ card.value_text }}</div>
+            <div class="stat-inline">
+              <div class="stat-media">
+                {% if stat_image %}
+                  <img src="{{ stat_image }}" alt="{{ display_title }} simgesi" loading="lazy">
+                {% endif %}
+              </div>
+              <div class="stat-value" data-stat-final="{{ card.value_text }}">{{ card.value_text }}</div>
+            </div>
           </div>
         </article>
       {% endfor %}

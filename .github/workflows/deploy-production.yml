@@ -1,0 +1,201 @@
+name: SAR-X Production Deploy
+
+on:
+  workflow_run:
+    workflows: ["SAR-X CI"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main'
+      )
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: sar-x-production-deploy
+      cancel-in-progress: true
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      ARTIFACT_REGISTRY_REPOSITORY: ${{ vars.ARTIFACT_REGISTRY_REPOSITORY }}
+      CLOUD_RUN_SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+      CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT: ${{ vars.CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT }}
+      CLOUD_SQL_CONNECTION_NAME: ${{ vars.CLOUD_SQL_CONNECTION_NAME }}
+      SECRET_KEY_SECRET_NAME: ${{ vars.SECRET_KEY_SECRET_NAME }}
+      DATABASE_URL_SECRET_NAME: ${{ vars.DATABASE_URL_SECRET_NAME }}
+      SMTP_PASSWORD_SECRET_NAME: ${{ vars.SMTP_PASSWORD_SECRET_NAME }}
+      STORAGE_BACKEND: ${{ vars.STORAGE_BACKEND }}
+      GCS_BUCKET_NAME: ${{ vars.GCS_BUCKET_NAME }}
+      GCS_PROJECT_ID: ${{ vars.GCS_PROJECT_ID }}
+      GCS_UPLOAD_PREFIX: ${{ vars.GCS_UPLOAD_PREFIX }}
+      GCS_PUBLIC_BASE_URL: ${{ vars.GCS_PUBLIC_BASE_URL }}
+      GCS_CACHE_CONTROL: ${{ vars.GCS_CACHE_CONTROL }}
+      REDIS_URL: ${{ vars.REDIS_URL }}
+      PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+      MAIL_HOST: ${{ vars.MAIL_HOST }}
+      MAIL_PORT: ${{ vars.MAIL_PORT }}
+      MAIL_USE_TLS: ${{ vars.MAIL_USE_TLS }}
+      MAIL_USERNAME: ${{ vars.MAIL_USERNAME }}
+      MAIL_FROM_EMAIL: ${{ vars.MAIL_FROM_EMAIL }}
+      MAIL_REPLY_TO: ${{ vars.MAIL_REPLY_TO }}
+      SESSION_COOKIE_SAMESITE: ${{ vars.SESSION_COOKIE_SAMESITE }}
+      CLOUD_RUN_MIN_INSTANCES: ${{ vars.CLOUD_RUN_MIN_INSTANCES }}
+      CLOUD_RUN_MAX_INSTANCES: ${{ vars.CLOUD_RUN_MAX_INSTANCES }}
+      CLOUD_RUN_CONCURRENCY: ${{ vars.CLOUD_RUN_CONCURRENCY }}
+      CLOUD_RUN_TIMEOUT_SECONDS: ${{ vars.CLOUD_RUN_TIMEOUT_SECONDS }}
+      CLOUD_RUN_CPU: ${{ vars.CLOUD_RUN_CPU }}
+      CLOUD_RUN_MEMORY: ${{ vars.CLOUD_RUN_MEMORY }}
+      WORKFLOW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_DEPLOYER_SERVICE_ACCOUNT: ${{ secrets.GCP_DEPLOYER_SERVICE_ACCOUNT }}
+    steps:
+      - name: Checkout target revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Validate deploy configuration
+        run: |
+          set -euo pipefail
+          : "${GCP_PROJECT_ID:?Missing production variable GCP_PROJECT_ID}"
+          : "${GCP_REGION:?Missing production variable GCP_REGION}"
+          : "${ARTIFACT_REGISTRY_REPOSITORY:?Missing production variable ARTIFACT_REGISTRY_REPOSITORY}"
+          : "${CLOUD_RUN_SERVICE:?Missing production variable CLOUD_RUN_SERVICE}"
+          : "${CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT:?Missing production variable CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT}"
+          : "${CLOUD_SQL_CONNECTION_NAME:?Missing production variable CLOUD_SQL_CONNECTION_NAME}"
+          : "${SECRET_KEY_SECRET_NAME:?Missing production variable SECRET_KEY_SECRET_NAME}"
+          : "${DATABASE_URL_SECRET_NAME:?Missing production variable DATABASE_URL_SECRET_NAME}"
+          : "${SMTP_PASSWORD_SECRET_NAME:?Missing production variable SMTP_PASSWORD_SECRET_NAME}"
+          : "${GCS_BUCKET_NAME:?Missing production variable GCS_BUCKET_NAME}"
+          : "${PUBLIC_BASE_URL:?Missing production variable PUBLIC_BASE_URL}"
+          : "${MAIL_USERNAME:?Missing production variable MAIL_USERNAME}"
+          : "${MAIL_FROM_EMAIL:?Missing production variable MAIL_FROM_EMAIL}"
+          : "${GCP_WORKLOAD_IDENTITY_PROVIDER:?Missing GitHub secret GCP_WORKLOAD_IDENTITY_PROVIDER}"
+          : "${GCP_DEPLOYER_SERVICE_ACCOUNT:?Missing GitHub secret GCP_DEPLOYER_SERVICE_ACCOUNT}"
+
+          echo "STORAGE_BACKEND=${STORAGE_BACKEND:-gcs}" >> "$GITHUB_ENV"
+          echo "GCS_PROJECT_ID=${GCS_PROJECT_ID:-$GCP_PROJECT_ID}" >> "$GITHUB_ENV"
+          echo "GCS_UPLOAD_PREFIX=${GCS_UPLOAD_PREFIX:-uploads}" >> "$GITHUB_ENV"
+          echo "GCS_CACHE_CONTROL=${GCS_CACHE_CONTROL:-public, max-age=3600}" >> "$GITHUB_ENV"
+          echo "MAIL_HOST=${MAIL_HOST:-smtp.gmail.com}" >> "$GITHUB_ENV"
+          echo "MAIL_PORT=${MAIL_PORT:-587}" >> "$GITHUB_ENV"
+          echo "MAIL_USE_TLS=${MAIL_USE_TLS:-1}" >> "$GITHUB_ENV"
+          echo "MAIL_REPLY_TO=${MAIL_REPLY_TO:-$MAIL_FROM_EMAIL}" >> "$GITHUB_ENV"
+          echo "SESSION_COOKIE_SAMESITE=${SESSION_COOKIE_SAMESITE:-Lax}" >> "$GITHUB_ENV"
+          echo "CLOUD_RUN_MIN_INSTANCES=${CLOUD_RUN_MIN_INSTANCES:-0}" >> "$GITHUB_ENV"
+          echo "CLOUD_RUN_MAX_INSTANCES=${CLOUD_RUN_MAX_INSTANCES:-4}" >> "$GITHUB_ENV"
+          echo "CLOUD_RUN_CONCURRENCY=${CLOUD_RUN_CONCURRENCY:-80}" >> "$GITHUB_ENV"
+          echo "CLOUD_RUN_TIMEOUT_SECONDS=${CLOUD_RUN_TIMEOUT_SECONDS:-300}" >> "$GITHUB_ENV"
+          echo "CLOUD_RUN_CPU=${CLOUD_RUN_CPU:-1}" >> "$GITHUB_ENV"
+          echo "CLOUD_RUN_MEMORY=${CLOUD_RUN_MEMORY:-512Mi}" >> "$GITHUB_ENV"
+          echo "DEPLOY_SHA=${WORKFLOW_HEAD_SHA:-$GITHUB_SHA}" >> "$GITHUB_ENV"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Configure Artifact Registry auth
+        run: |
+          gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+
+      - name: Build production image
+        run: |
+          set -euo pipefail
+          IMAGE_URI="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPOSITORY}/sar-x:${DEPLOY_SHA}"
+          echo "IMAGE_URI=${IMAGE_URI}" >> "$GITHUB_ENV"
+          gcloud builds submit --tag "${IMAGE_URI}" .
+
+      - name: Render Cloud Run service manifest
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          template_path = Path(".github/cloudrun/service.production.yaml.tmpl")
+          output_path = Path(".github/cloudrun/service.production.rendered.yaml")
+          template = template_path.read_text(encoding="utf-8")
+
+          def repl(match):
+              key = match.group(1)
+              value = os.getenv(key)
+              if value is None:
+                  raise SystemExit(f"Missing template variable: {key}")
+              return value
+
+          rendered = re.sub(r"\$\{([A-Z0-9_]+)\}", repl, template)
+          output_path.write_text(rendered, encoding="utf-8")
+          print(f"Rendered {output_path}")
+          PY
+
+      - name: Deploy declarative Cloud Run service
+        run: |
+          set -euo pipefail
+          gcloud run services replace .github/cloudrun/service.production.rendered.yaml \
+            --region "${GCP_REGION}" \
+            --project "${GCP_PROJECT_ID}" \
+            --quiet
+
+      - name: Verify deployed service configuration
+        run: |
+          set -euo pipefail
+          gcloud run services describe "${CLOUD_RUN_SERVICE}" \
+            --region "${GCP_REGION}" \
+            --project "${GCP_PROJECT_ID}" \
+            --format=json > /tmp/sarx-service.json
+
+          python - <<'PY'
+          import json
+          import os
+
+          with open("/tmp/sarx-service.json", "r", encoding="utf-8") as fh:
+              data = json.load(fh)
+
+          env_items = data["spec"]["template"]["spec"]["containers"][0].get("env", [])
+          env_by_name = {item["name"]: item for item in env_items}
+          required_envs = [
+              "APP_ENV",
+              "SECRET_KEY",
+              "DATABASE_URL",
+              "ENABLE_SCHEDULER",
+              "ALLOW_SQLITE_IN_PRODUCTION",
+              "STORAGE_BACKEND",
+              "MAIL_USERNAME",
+              "MAIL_FROM_EMAIL",
+              "SMTP_PASSWORD",
+          ]
+          missing = [name for name in required_envs if name not in env_by_name]
+          if missing:
+              raise SystemExit(f"Missing runtime env entries: {', '.join(missing)}")
+
+          for secret_name in ("SECRET_KEY", "DATABASE_URL", "SMTP_PASSWORD"):
+              if "valueFrom" not in env_by_name[secret_name]:
+                  raise SystemExit(f"{secret_name} is not wired from Secret Manager")
+
+          annotations = data["spec"]["template"]["metadata"].get("annotations", {})
+          if annotations.get("run.googleapis.com/cloudsql-instances") != os.environ["CLOUD_SQL_CONNECTION_NAME"]:
+              raise SystemExit("Cloud SQL annotation is missing or incorrect")
+
+          print("Cloud Run production configuration verified.")
+          PY

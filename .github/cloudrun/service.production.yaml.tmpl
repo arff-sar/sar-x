@@ -1,0 +1,89 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: ${CLOUD_RUN_SERVICE}
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "${CLOUD_RUN_MIN_INSTANCES}"
+        autoscaling.knative.dev/maxScale: "${CLOUD_RUN_MAX_INSTANCES}"
+        run.googleapis.com/client-name: github-actions
+        run.googleapis.com/cloudsql-instances: ${CLOUD_SQL_CONNECTION_NAME}
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      containerConcurrency: ${CLOUD_RUN_CONCURRENCY}
+      timeoutSeconds: ${CLOUD_RUN_TIMEOUT_SECONDS}
+      serviceAccountName: ${CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT}
+      containers:
+        - image: ${IMAGE_URI}
+          ports:
+            - name: http1
+              containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: APP_ENV
+              value: "production"
+            - name: ENABLE_SCHEDULER
+              value: "0"
+            - name: ALLOW_CLOUD_RUN_WEB_SCHEDULER
+              value: "0"
+            - name: ALLOW_SQLITE_IN_PRODUCTION
+              value: "0"
+            - name: SESSION_COOKIE_SECURE
+              value: "1"
+            - name: REMEMBER_COOKIE_SECURE
+              value: "1"
+            - name: SESSION_COOKIE_SAMESITE
+              value: "${SESSION_COOKIE_SAMESITE}"
+            - name: STORAGE_BACKEND
+              value: "${STORAGE_BACKEND}"
+            - name: GCS_BUCKET_NAME
+              value: "${GCS_BUCKET_NAME}"
+            - name: GCS_PROJECT_ID
+              value: "${GCS_PROJECT_ID}"
+            - name: GCS_UPLOAD_PREFIX
+              value: "${GCS_UPLOAD_PREFIX}"
+            - name: GCS_PUBLIC_BASE_URL
+              value: "${GCS_PUBLIC_BASE_URL}"
+            - name: GCS_CACHE_CONTROL
+              value: "${GCS_CACHE_CONTROL}"
+            - name: REDIS_URL
+              value: "${REDIS_URL}"
+            - name: PUBLIC_BASE_URL
+              value: "${PUBLIC_BASE_URL}"
+            - name: MAIL_HOST
+              value: "${MAIL_HOST}"
+            - name: MAIL_PORT
+              value: "${MAIL_PORT}"
+            - name: MAIL_USE_TLS
+              value: "${MAIL_USE_TLS}"
+            - name: MAIL_USERNAME
+              value: "${MAIL_USERNAME}"
+            - name: MAIL_FROM_EMAIL
+              value: "${MAIL_FROM_EMAIL}"
+            - name: MAIL_REPLY_TO
+              value: "${MAIL_REPLY_TO}"
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ${SECRET_KEY_SECRET_NAME}
+                  key: latest
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ${DATABASE_URL_SECRET_NAME}
+                  key: latest
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ${SMTP_PASSWORD_SECRET_NAME}
+                  key: latest
+          resources:
+            limits:
+              cpu: "${CLOUD_RUN_CPU}"
+              memory: "${CLOUD_RUN_MEMORY}"
+  traffic:
+    - percent: 100
+      latestRevision: true
