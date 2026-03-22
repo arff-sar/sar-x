@@ -21,6 +21,52 @@ def _current_captcha_token(client):
         return session.get("login_visual_captcha_token")
 
 
+def test_login_get_rotates_captcha_token_on_each_render(client):
+    first_response = client.get("/login")
+    first_token = _current_captcha_token(client)
+    first_challenge = LoginVisualChallenge.query.filter_by(token=first_token).first()
+
+    second_response = client.get("/login")
+    second_token = _current_captcha_token(client)
+    second_challenge = LoginVisualChallenge.query.filter_by(token=second_token).first()
+    db.session.refresh(first_challenge)
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert first_token
+    assert second_token
+    assert first_token != second_token
+    assert first_challenge.invalidated_at is not None
+    assert second_challenge.invalidated_at is None
+
+
+def test_old_challenge_cannot_be_reused_after_login_page_refresh(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    user = KullaniciFactory(kullanici_adi="refresh-cycle@sarx.com", is_deleted=False, rol="sahip")
+    db.session.add(user)
+    db.session.commit()
+
+    client.get("/login")
+    old_token = _current_captcha_token(client)
+    old_challenge = LoginVisualChallenge.query.filter_by(token=old_token).first()
+    old_code = old_challenge.code
+
+    client.get("/login")
+    current_token = _current_captcha_token(client)
+    db.session.refresh(old_challenge)
+
+    assert current_token != old_token
+    assert old_challenge.invalidated_at is not None
+
+    response = client.post(
+        "/login",
+        data={"kullanici_adi": "refresh-cycle@sarx.com", "sifre": "123456", "security_verification": old_code},
+        follow_redirects=True,
+    )
+    assert response.status_code == 400
+    assert "Güvenlik doğrulaması yanlış" in response.data.decode("utf-8")
+
+
 def test_login_page_renders_visual_captcha_block(client):
     response = client.get("/login")
     html = response.data.decode("utf-8")
@@ -130,3 +176,12 @@ def test_expired_captcha_requires_new_code(client, app):
 
     assert response.status_code == 400
     assert "süresi doldu" in response.data.decode("utf-8")
+
+
+def test_login_page_renders_with_snapshot_loader_failure(client):
+    def broken_loader(*_args, **_kwargs):
+        raise RuntimeError("temporary db issue")
+
+    client.application.extensions["public_site_snapshot_loader"] = broken_loader
+    response = client.get("/login")
+    assert response.status_code == 200

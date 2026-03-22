@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import time
 from datetime import datetime
 from types import SimpleNamespace
 from urllib.parse import urlsplit, urlunsplit
@@ -259,6 +260,25 @@ def _ensure_runtime_schema_compatibility(app):
     app.logger.warning("Legacy sqlite şeması güncellendi: kullanici.telefon_numarasi eklendi.")
 
 
+CRITICAL_RUNTIME_TABLES = (
+    "kullanici",
+    "site_ayarlari",
+    "auth_lockout",
+    "login_visual_challenge",
+)
+
+
+def _missing_runtime_tables():
+    return [table_name for table_name in CRITICAL_RUNTIME_TABLES if not table_exists(table_name)]
+
+
+def _site_settings_seed_ready():
+    if not table_exists("site_ayarlari"):
+        return False
+    row = db.session.execute(text("SELECT 1 FROM site_ayarlari LIMIT 1")).first()
+    return row is not None
+
+
 def create_app(config_name=None):
     app = Flask(__name__)
 
@@ -326,38 +346,78 @@ def create_app(config_name=None):
         except (ValueError, TypeError, SQLAlchemyError):
             return None
 
-    def _load_public_site_meta():
-        if not table_exists("site_ayarlari"):
-            return None, {}
-        try:
-            from models import SiteAyarlari
+    def _normalize_public_site_settings(row):
+        if row is None:
+            return None
+        return SimpleNamespace(
+            id=getattr(row, "id", None),
+            baslik=getattr(row, "baslik", "") or "",
+            alt_metin=getattr(row, "alt_metin", "") or "",
+            iletisim_notu=getattr(row, "iletisim_notu", "") or "",
+        )
 
-            ayarlar = SiteAyarlari.query.first()
-        except Exception:
-            return None, {}
-
+    def _parse_public_site_meta(ayarlar):
         raw_value = getattr(ayarlar, "iletisim_notu", "") if ayarlar else ""
         if not raw_value:
-            return ayarlar, {}
-
+            return {}
         try:
             parsed = json.loads(raw_value)
             if isinstance(parsed, dict):
-                return ayarlar, parsed
+                return parsed
         except (TypeError, ValueError):
             pass
-
         legacy_note = str(raw_value).strip()
-        return ayarlar, {"public_contact_note": legacy_note} if legacy_note else {}
+        return {"public_contact_note": legacy_note} if legacy_note else {}
+
+    def _empty_public_site_snapshot():
+        return {"ayarlar": None, "site_meta": {}}
+
+    def _load_public_site_snapshot(force_refresh=False):
+        cache_ttl = max(int(app.config.get("PUBLIC_SITE_CACHE_TTL_SECONDS", 90)), 5)
+        cache = app.extensions.setdefault(
+            "public_site_snapshot_cache",
+            {"snapshot": _empty_public_site_snapshot(), "fetched_at": 0.0},
+        )
+        now = time.monotonic()
+        if (
+            not force_refresh
+            and cache.get("snapshot") is not None
+            and (now - float(cache.get("fetched_at") or 0.0)) < cache_ttl
+        ):
+            return cache["snapshot"]
+
+        try:
+            if not table_exists("site_ayarlari"):
+                snapshot = _empty_public_site_snapshot()
+            else:
+                from models import SiteAyarlari
+
+                row = SiteAyarlari.query.first()
+                ayarlar = _normalize_public_site_settings(row)
+                snapshot = {
+                    "ayarlar": ayarlar,
+                    "site_meta": _parse_public_site_meta(ayarlar),
+                }
+            cache["snapshot"] = snapshot
+            cache["fetched_at"] = now
+            return snapshot
+        except Exception:
+            db.session.rollback()
+            return cache.get("snapshot") or _empty_public_site_snapshot()
+
+    app.extensions["public_site_snapshot_loader"] = _load_public_site_snapshot
 
     @app.context_processor
     def inject_user_info():
         from flask_login import current_user
         unread_notifications = []
         unread_notification_count = 0
-        rol_etiketleri = get_role_labels()
-        rol_aciklamalari = get_role_descriptions()
-        ayarlar, site_meta = _load_public_site_meta()
+        try:
+            snapshot = _load_public_site_snapshot()
+        except Exception:
+            snapshot = _empty_public_site_snapshot()
+        ayarlar = snapshot.get("ayarlar")
+        site_meta = snapshot.get("site_meta") or {}
         public_logo = str(site_meta.get("public_logo_url") or "").strip()
         demo_logo = str(site_meta.get("homepage_demo_logo_url") or "").strip()
         public_contact_note = str(site_meta.get("public_contact_note") or site_meta.get("site_notu") or "").strip()
@@ -372,6 +432,8 @@ def create_app(config_name=None):
         }
 
         if current_user.is_authenticated:
+            rol_etiketleri = get_role_labels()
+            rol_aciklamalari = get_role_descriptions()
             if table_exists("notification"):
                 try:
                     from models import Notification
@@ -408,8 +470,8 @@ def create_app(config_name=None):
         return {
             "rol": None,
             "rol_etiketi": None,
-            "rol_etiketleri": rol_etiketleri,
-            "rol_aciklamalari": rol_aciklamalari,
+            "rol_etiketleri": {},
+            "rol_aciklamalari": {},
             "kullanici_ad": None,
             "giren_user": None,
             "effective_permissions": [],
@@ -622,8 +684,8 @@ def create_app(config_name=None):
                 for index, metric in enumerate(metrics)
             ]
 
-        ayarlar = SiteAyarlari.query.first()
-        menuler = NavMenu.query.order_by(NavMenu.sira.asc()).all()
+        ayarlar = None
+        menuler = []
         homepage_demo_active = homepage_demo_is_active()
 
         sliders = HomeSlider.query.filter_by(is_active=True).order_by(
@@ -825,10 +887,15 @@ def create_app(config_name=None):
 
     @app.route("/ready")
     def ready():
+        missing_tables = []
+        site_settings_seed_ready = False
         try:
             db.session.execute(text("SELECT 1"))
-            db_status = "ok"
-            http_status = 200
+            missing_tables = _missing_runtime_tables()
+            if not missing_tables:
+                site_settings_seed_ready = _site_settings_seed_ready()
+            db_status = "ok" if (not missing_tables and site_settings_seed_ready) else "schema_incomplete"
+            http_status = 200 if db_status == "ok" else 503
         except Exception:
             db_status = "error"
             http_status = 503
@@ -837,6 +904,8 @@ def create_app(config_name=None):
             {
                 "status": "ready" if db_status == "ok" else "degraded",
                 "database": db_status,
+                "missing_tables": missing_tables,
+                "seed_ready": site_settings_seed_ready,
                 "scheduler_enabled": bool(app.config.get("ENABLE_SCHEDULER")),
             }
         ), http_status

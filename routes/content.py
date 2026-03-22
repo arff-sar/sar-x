@@ -30,8 +30,6 @@ from models import (
     HomeSlider,
     HomeStatCard,
     MediaAsset,
-    NavMenu,
-    SiteAyarlari,
     get_tr_now,
 )
 
@@ -172,10 +170,17 @@ def _validate_link_url(value):
 
 
 def _public_layout_context():
-    return {
-        "ayarlar": SiteAyarlari.query.first(),
-        "menuler": NavMenu.query.order_by(NavMenu.sira.asc()).all(),
-    }
+    loader = current_app.extensions.get("public_site_snapshot_loader")
+    if callable(loader):
+        try:
+            snapshot = loader()
+        except Exception:
+            snapshot = {}
+        return {
+            "ayarlar": snapshot.get("ayarlar"),
+            "menuler": [],
+        }
+    return {"ayarlar": None, "menuler": []}
 
 
 def _published_sections_for_keys(*keys):

@@ -282,7 +282,7 @@ def login():
         audit_log("auth.login", outcome="failed", username=kullanici_adi, ip=_client_ip())
         return _render_login_page(force_new=True)
         
-    return _render_login_page(force_new=False)
+    return _render_login_page(force_new=True)
 
 
 @auth_bp.route("/login/captcha/refresh", methods=["POST"])

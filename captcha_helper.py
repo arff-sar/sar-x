@@ -4,6 +4,8 @@ from datetime import timedelta
 from html import escape
 
 from flask import current_app, session, url_for
+from sqlalchemy import or_
+from sqlalchemy.exc import SQLAlchemyError
 
 from extensions import db, table_exists
 from models import LoginVisualChallenge, get_tr_now
@@ -12,6 +14,7 @@ LOGIN_CAPTCHA_SESSION_KEY = "login_visual_captcha_token"
 LOGIN_CAPTCHA_DEFAULT_TTL = 60
 LOGIN_CAPTCHA_CODE_LENGTH = 5
 LOGIN_CAPTCHA_CHARSET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+LOGIN_CAPTCHA_CLEANUP_MIN_AGE_SECONDS = 300
 
 
 def _now():
@@ -51,13 +54,39 @@ def _invalidate_db_record(token):
     record.invalidated_at = _now()
 
 
+def _cleanup_db_records():
+    if not _use_db_store():
+        return
+
+    try:
+        cutoff_seconds = max(_ttl_seconds() * 4, LOGIN_CAPTCHA_CLEANUP_MIN_AGE_SECONDS)
+        cleanup_before = _now() - timedelta(seconds=cutoff_seconds)
+        deleted_count = (
+            LoginVisualChallenge.query.filter(
+                or_(
+                    LoginVisualChallenge.expires_at < cleanup_before,
+                    LoginVisualChallenge.invalidated_at < cleanup_before,
+                )
+            )
+            .delete(synchronize_session=False)
+        )
+        if deleted_count:
+            db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+
+
 def invalidate_login_captcha(token=None, clear_session=False):
     token = token or session.get(LOGIN_CAPTCHA_SESSION_KEY)
     if not token:
         return
     if _use_db_store():
-        _invalidate_db_record(token)
-        db.session.commit()
+        try:
+            _invalidate_db_record(token)
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+            _invalidate_extension_record(token)
     else:
         _invalidate_extension_record(token)
     if clear_session:
@@ -65,16 +94,21 @@ def invalidate_login_captcha(token=None, clear_session=False):
 
 
 def _create_db_record():
+    _cleanup_db_records()
     code = "".join(secrets.choice(LOGIN_CAPTCHA_CHARSET) for _ in range(LOGIN_CAPTCHA_CODE_LENGTH))
     token = secrets.token_urlsafe(24)
-    record = LoginVisualChallenge(
-        token=token,
-        code=code,
-        expires_at=_now() + timedelta(seconds=_ttl_seconds()),
-    )
-    db.session.add(record)
-    db.session.commit()
-    return record
+    try:
+        record = LoginVisualChallenge(
+            token=token,
+            code=code,
+            expires_at=_now() + timedelta(seconds=_ttl_seconds()),
+        )
+        db.session.add(record)
+        db.session.commit()
+        return record
+    except SQLAlchemyError:
+        db.session.rollback()
+        return _create_extension_record()
 
 
 def _create_extension_record():
@@ -94,7 +128,11 @@ def _get_record(token):
     if not token:
         return None
     if _use_db_store():
-        return LoginVisualChallenge.query.filter_by(token=token).first()
+        try:
+            return LoginVisualChallenge.query.filter_by(token=token).first()
+        except SQLAlchemyError:
+            db.session.rollback()
+            return _store().get(token)
     return _store().get(token)
 
 
@@ -175,8 +213,11 @@ def render_login_captcha_svg(token):
         return _build_placeholder_svg("YOK", "Kod bulunamadı")
 
     if _use_db_store():
-        record.last_rendered_at = _now()
-        db.session.commit()
+        try:
+            record.last_rendered_at = _now()
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
     else:
         record["last_rendered_at"] = _now()
 

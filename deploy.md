@@ -35,6 +35,11 @@ Zorunlu:
 - `SECRET_KEY_SECRET_NAME`
 - `DATABASE_URL_SECRET_NAME`
 - `SMTP_PASSWORD_SECRET_NAME`
+- `SECRET_KEY_SECRET_VERSION`
+- `DATABASE_URL_SECRET_VERSION`
+- `SMTP_PASSWORD_SECRET_VERSION`
+- `DATABASE_URL_EXPECTED_USERNAME`
+- `DATABASE_URL_EXPECTED_DB_NAME`
 - `GCS_BUCKET_NAME`
 - `PUBLIC_BASE_URL`
 - `MAIL_USERNAME`
@@ -57,6 +62,7 @@ Opsiyonel ama önerilen:
 - `CLOUD_RUN_TIMEOUT_SECONDS`
 - `CLOUD_RUN_CPU`
 - `CLOUD_RUN_MEMORY`
+- `MIGRATION_JOB_NAME` (varsayılan: `${CLOUD_RUN_SERVICE}-db-migrate`)
 
 ### GitHub Environment Secrets
 - `GCP_WORKLOAD_IDENTITY_PROVIDER`
@@ -70,21 +76,42 @@ Zorunlu secret’lar:
   İçerik: güçlü uygulama `SECRET_KEY`
 - `DATABASE_URL_SECRET_NAME`
   İçerik: production PostgreSQL / Cloud SQL `DATABASE_URL`
+  Format: `postgresql+psycopg2://USER:PASSWORD@/DB?host=/cloudsql/PROJECT:REGION:INSTANCE`
 - `SMTP_PASSWORD_SECRET_NAME`
   İçerik: SMTP parola değeri
 
-Örnek:
+`*_SECRET_VERSION` değişkenleri için açık sürüm numarası kullanın (örn: `3`, `12`, `7`).
+
+İdempotent secret yönetimi örneği:
 
 ```bash
-printf '%s' 'VERY-LONG-RANDOM-SECRET-KEY' | gcloud secrets create sar-x-secret-key --data-file=-
-printf '%s' 'postgresql+psycopg2://USER:PASSWORD@/DB?host=/cloudsql/PROJECT:REGION:INSTANCE' | gcloud secrets create sar-x-database-url --data-file=-
-printf '%s' 'YOUR_SMTP_PASSWORD' | gcloud secrets create sar-x-smtp-password --data-file=-
+GCP_PROJECT_ID="YOUR_PROJECT_ID"
+
+upsert_secret() {
+  local secret_name="$1"
+  local payload="$2"
+  if gcloud secrets describe "${secret_name}" --project "${GCP_PROJECT_ID}" >/dev/null 2>&1; then
+    printf '%s' "${payload}" | gcloud secrets versions add "${secret_name}" --project "${GCP_PROJECT_ID}" --data-file=-
+  else
+    printf '%s' "${payload}" | gcloud secrets create "${secret_name}" --project "${GCP_PROJECT_ID}" --replication-policy="automatic" --data-file=-
+  fi
+}
+
+upsert_secret "sar-x-secret-key" "VERY-LONG-RANDOM-SECRET-KEY"
+upsert_secret "sar-x-database-url" "postgresql+psycopg2://USER:PASSWORD@/DB?host=/cloudsql/PROJECT:REGION:INSTANCE"
+upsert_secret "sar-x-smtp-password" "YOUR_SMTP_PASSWORD"
 ```
 
-Var olan secret için yeni versiyon eklemek isterseniz:
+Sürüm numaralarını okuyup GitHub `production` environment variable’larına yazın:
 
 ```bash
-printf '%s' 'NEW-VALUE' | gcloud secrets versions add sar-x-secret-key --data-file=-
+SECRET_KEY_SECRET_VERSION="$(gcloud secrets versions list sar-x-secret-key --project "${GCP_PROJECT_ID}" --sort-by='~name' --limit=1 --format='value(name)')"
+DATABASE_URL_SECRET_VERSION="$(gcloud secrets versions list sar-x-database-url --project "${GCP_PROJECT_ID}" --sort-by='~name' --limit=1 --format='value(name)')"
+SMTP_PASSWORD_SECRET_VERSION="$(gcloud secrets versions list sar-x-smtp-password --project "${GCP_PROJECT_ID}" --sort-by='~name' --limit=1 --format='value(name)')"
+
+gh variable set SECRET_KEY_SECRET_VERSION --repo arff-sar/sar-x --env production --body "${SECRET_KEY_SECRET_VERSION}"
+gh variable set DATABASE_URL_SECRET_VERSION --repo arff-sar/sar-x --env production --body "${DATABASE_URL_SECRET_VERSION}"
+gh variable set SMTP_PASSWORD_SECRET_VERSION --repo arff-sar/sar-x --env production --body "${SMTP_PASSWORD_SECRET_VERSION}"
 ```
 
 ## 5) IAM Gereksinimleri
@@ -94,6 +121,7 @@ printf '%s' 'NEW-VALUE' | gcloud secrets versions add sar-x-secret-key --data-fi
 - `roles/iam.serviceAccountUser`
 - `roles/cloudbuild.builds.editor`
 - `roles/artifactregistry.writer`
+- `roles/logging.viewer`
 
 ### Cloud Run runtime service account
 `CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT` için en az:
@@ -112,23 +140,31 @@ Deploy workflow:
 Akış sırası:
 1. doğru commit checkout edilir
 2. GitHub OIDC ile Google Cloud’a bağlanılır
-3. image Cloud Build ile Artifact Registry’ye build edilir
-4. Cloud Run service manifesti repo içindeki şablondan üretilir
-5. `gcloud run services replace` ile service tam konfigürasyonla güncellenir
-6. deploy sonrası env/secrets/cloudsql bağlantısı doğrulanır
+3. Secret Manager payload’ları (SECRET_KEY, DATABASE_URL, SMTP_PASSWORD) erişilebilirlik ve format açısından doğrulanır
+   - boş payload kontrolü
+   - `DATABASE_URL` için beklenen kullanıcı, beklenen db adı, unix socket host ve placeholder kontrolü
+4. image Cloud Build ile Artifact Registry’ye build edilir
+5. build edilen image ile Cloud Run Job üzerinden migration (`flask --app app:create_app db upgrade`) çalıştırılır
+6. Cloud Run service manifesti repo içindeki şablondan üretilir
+7. `gcloud run services replace` ile service tam konfigürasyonla güncellenir
+8. deploy sonrası env/secrets/cloudsql bağlantısı ve secret ad+sürüm eşleşmesi doğrulanır
+9. aktif revision `Ready=True` doğrulanır
+10. runtime `/health`, `/ready` ve `/login` endpoint’leri doğrulanır
+11. `/login` için challenge token rotasyonu smoke-check yapılır (ardışık iki GET isteğinde token farklı olmalı)
+12. yalnızca deploy edilen revision loglarında kritik kalıplar taranır (`Güçlü bir SECRET_KEY zorunludur`, `Worker failed to boot`, `password authentication failed`, `OperationalError`, `RuntimeError`)
 
 ## 7) Migration
 Production’da `db.create_all()` kapalı kalmalıdır.
-Deploy sonrası migration ayrı ve kontrollü çalıştırılmalıdır:
+Deploy workflow migration adımını **pre-deploy Cloud Run Job** olarak çalıştırır.
 
-```bash
-flask db upgrade
-```
+Varsayılan job adı:
+- `${CLOUD_RUN_SERVICE}-db-migrate`
 
-Bu adımı:
-- ayrı GitHub Actions migration workflow’unda
-- veya Cloud Run Job içinde
-ayrı yürütün.
+İsteğe bağlı override:
+- `MIGRATION_JOB_NAME` (GitHub production variable)
+
+Migration komutu workflow içinde:
+- `flask --app app:create_app db upgrade`
 
 ## 8) Scheduler Ayrımı
 Web servis içinde scheduler kapalı kalmalıdır:
@@ -144,10 +180,14 @@ Günlük işler için Cloud Run Job + Cloud Scheduler kullanın.
 
 ## 10) Deploy Sonrası Doğrulama
 Deploy tamamlandıktan sonra en az şunları kontrol edin:
-- Cloud Run revision sağlıklı mı
-- `/health` ve `/ready` dönüyor mu
+- Cloud Run revision `Ready=True` mi
+- `/health` ve `/ready` 200 dönüyor mu
+- `/login` 200 veya 302 dönüyor mu
+- `/login` ardışık iki GET çağrısında captcha token değişiyor mu
 - service config içinde `SECRET_KEY` ve `DATABASE_URL` secret env olarak bağlı mı
+- service config içinde `SECRET_KEY`/`DATABASE_URL`/`SMTP_PASSWORD` secret ad+sürüm eşleşmesi doğru mu
 - `run.googleapis.com/cloudsql-instances` annotation doğru mu
+- yalnızca aktif revision loglarında `Güçlü bir SECRET_KEY zorunludur`, `Worker failed to boot`, `password authentication failed`, `OperationalError`, `RuntimeError` kalıpları geçiyor mu
 - login sayfası açılıyor mu
 - production veritabanı gerçekten doğru Cloud SQL instance’ına bağlı mı
 
@@ -155,5 +195,95 @@ Deploy tamamlandıktan sonra en az şunları kontrol edin:
 Production ayarları artık elle `gcloud run services update --update-env-vars ...` ile taşınmamalıdır.
 Kalıcı yöntem:
 - Secret Manager secret değerini güncelle
+- Gerekirse ilgili `*_SECRET_VERSION` değişkenini hedef sürüme güncelle
+- `DATABASE_URL_EXPECTED_USERNAME` ve `DATABASE_URL_EXPECTED_DB_NAME` değerlerini gerçek üretim bilgileriyle tutarlı tut
 - GitHub production variable/secrets’ı güncelle
 - workflow’u yeniden çalıştır
+
+## 12) Tekrar Çalıştırılabilir Operasyon Akışı (Örnek)
+```bash
+set -euo pipefail
+
+GCP_PROJECT_ID="YOUR_PROJECT_ID"
+GCP_REGION="YOUR_REGION"
+CLOUD_RUN_SERVICE="YOUR_SERVICE_NAME"
+
+SECRET_KEY_SECRET_NAME="sar-x-secret-key"
+DATABASE_URL_SECRET_NAME="sar-x-database-url"
+SMTP_PASSWORD_SECRET_NAME="sar-x-smtp-password"
+
+SECRET_KEY_VALUE="VERY_LONG_RANDOM_SECRET_KEY"
+DATABASE_URL_VALUE="postgresql+psycopg2://EXPECTED_DB_USER:STRONG_DB_PASSWORD@/EXPECTED_DB_NAME?host=/cloudsql/YOUR_PROJECT_ID:YOUR_REGION:YOUR_INSTANCE"
+SMTP_PASSWORD_VALUE="YOUR_SMTP_PASSWORD"
+
+upsert_secret() {
+  local secret_name="$1"
+  local payload="$2"
+  if gcloud secrets describe "${secret_name}" --project "${GCP_PROJECT_ID}" >/dev/null 2>&1; then
+    printf '%s' "${payload}" | gcloud secrets versions add "${secret_name}" --project "${GCP_PROJECT_ID}" --data-file=-
+  else
+    printf '%s' "${payload}" | gcloud secrets create "${secret_name}" --project "${GCP_PROJECT_ID}" --replication-policy="automatic" --data-file=-
+  fi
+}
+
+upsert_secret "${SECRET_KEY_SECRET_NAME}" "${SECRET_KEY_VALUE}"
+upsert_secret "${DATABASE_URL_SECRET_NAME}" "${DATABASE_URL_VALUE}"
+upsert_secret "${SMTP_PASSWORD_SECRET_NAME}" "${SMTP_PASSWORD_VALUE}"
+
+SECRET_KEY_SECRET_VERSION="$(gcloud secrets versions list "${SECRET_KEY_SECRET_NAME}" --project "${GCP_PROJECT_ID}" --sort-by='~name' --limit=1 --format='value(name)')"
+DATABASE_URL_SECRET_VERSION="$(gcloud secrets versions list "${DATABASE_URL_SECRET_NAME}" --project "${GCP_PROJECT_ID}" --sort-by='~name' --limit=1 --format='value(name)')"
+SMTP_PASSWORD_SECRET_VERSION="$(gcloud secrets versions list "${SMTP_PASSWORD_SECRET_NAME}" --project "${GCP_PROJECT_ID}" --sort-by='~name' --limit=1 --format='value(name)')"
+
+gh variable set SECRET_KEY_SECRET_NAME --repo arff-sar/sar-x --env production --body "${SECRET_KEY_SECRET_NAME}"
+gh variable set DATABASE_URL_SECRET_NAME --repo arff-sar/sar-x --env production --body "${DATABASE_URL_SECRET_NAME}"
+gh variable set SMTP_PASSWORD_SECRET_NAME --repo arff-sar/sar-x --env production --body "${SMTP_PASSWORD_SECRET_NAME}"
+
+gh variable set SECRET_KEY_SECRET_VERSION --repo arff-sar/sar-x --env production --body "${SECRET_KEY_SECRET_VERSION}"
+gh variable set DATABASE_URL_SECRET_VERSION --repo arff-sar/sar-x --env production --body "${DATABASE_URL_SECRET_VERSION}"
+gh variable set SMTP_PASSWORD_SECRET_VERSION --repo arff-sar/sar-x --env production --body "${SMTP_PASSWORD_SECRET_VERSION}"
+
+gh variable set DATABASE_URL_EXPECTED_USERNAME --repo arff-sar/sar-x --env production --body "EXPECTED_DB_USER"
+gh variable set DATABASE_URL_EXPECTED_DB_NAME --repo arff-sar/sar-x --env production --body "EXPECTED_DB_NAME"
+
+gh workflow run "SAR-X Production Deploy" --repo arff-sar/sar-x --ref main
+
+SERVICE_URL="$(gcloud run services describe "${CLOUD_RUN_SERVICE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')"
+READY_STATUS="$(gcloud run services describe "${CLOUD_RUN_SERVICE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.conditions[?type=Ready].status)')"
+REVISION_NAME="$(gcloud run services describe "${CLOUD_RUN_SERVICE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.latestReadyRevisionName)')"
+[ -n "${REVISION_NAME}" ] || REVISION_NAME="$(gcloud run services describe "${CLOUD_RUN_SERVICE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.latestCreatedRevisionName)')"
+[ "${READY_STATUS}" = "True" ]
+[ -n "${REVISION_NAME}" ]
+
+curl -sS -o /tmp/sarx-health-body.txt -w "%{http_code}" "${SERVICE_URL}/health" | grep -x "200"
+curl -sS -o /tmp/sarx-ready-body.txt -w "%{http_code}" "${SERVICE_URL}/ready" | grep -x "200"
+curl -sS -o /tmp/sarx-login-body.txt -w "%{http_code}" "${SERVICE_URL}/login" | grep -E "^(200|302)$"
+
+COOKIE_JAR="$(mktemp)"
+curl -L -sS -c "${COOKIE_JAR}" -b "${COOKIE_JAR}" -o /tmp/sarx-login-1.html "${SERVICE_URL}/login" >/dev/null
+curl -L -sS -c "${COOKIE_JAR}" -b "${COOKIE_JAR}" -o /tmp/sarx-login-2.html "${SERVICE_URL}/login" >/dev/null
+TOKEN_ONE="$(python - <<'PY'
+import re
+text=open('/tmp/sarx-login-1.html','r',encoding='utf-8',errors='ignore').read()
+m=re.search(r'data-captcha-token="([^"]+)"', text)
+print(m.group(1) if m else "")
+PY
+)"
+TOKEN_TWO="$(python - <<'PY'
+import re
+text=open('/tmp/sarx-login-2.html','r',encoding='utf-8',errors='ignore').read()
+m=re.search(r'data-captcha-token="([^"]+)"', text)
+print(m.group(1) if m else "")
+PY
+)"
+[ -n "${TOKEN_ONE}" ]
+[ -n "${TOKEN_TWO}" ]
+[ "${TOKEN_ONE}" != "${TOKEN_TWO}" ]
+
+START_TIME="$(date -u -d '20 minutes ago' +%Y-%m-%dT%H:%M:%SZ)"
+LOG_OUTPUT="$(mktemp)"
+gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"${CLOUD_RUN_SERVICE}\" AND resource.labels.location=\"${GCP_REGION}\" AND resource.labels.revision_name=\"${REVISION_NAME}\" AND timestamp>=\"${START_TIME}\"" --project "${GCP_PROJECT_ID}" --limit=300 --format='value(textPayload, jsonPayload.message)' > "${LOG_OUTPUT}"
+if grep -Ein "Güçlü bir SECRET_KEY zorunludur|Worker failed to boot|password authentication failed|OperationalError|RuntimeError" "${LOG_OUTPUT}"; then
+  echo "Kritik log kalıbı bulundu, deploy doğrulaması başarısız."
+  exit 1
+fi
+```

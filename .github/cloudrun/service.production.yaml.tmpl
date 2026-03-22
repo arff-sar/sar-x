@@ -69,17 +69,17 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: ${SECRET_KEY_SECRET_NAME}
-                  key: latest
+                  key: ${SECRET_KEY_SECRET_VERSION}
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: ${DATABASE_URL_SECRET_NAME}
-                  key: latest
+                  key: ${DATABASE_URL_SECRET_VERSION}
             - name: SMTP_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: ${SMTP_PASSWORD_SECRET_NAME}
-                  key: latest
+                  key: ${SMTP_PASSWORD_SECRET_VERSION}
           resources:
             limits:
               cpu: "${CLOUD_RUN_CPU}"
