@@ -126,7 +126,7 @@ def test_homepage_demo_routes_render_demo_content_without_mixing_real_content(cl
     assert "ARFF Özel Arama Kurtarma Timi" in home_page
     assert "Hazırlık sahada değil, her gün birlikte başlar" not in home_page
     assert "Hafta sonu ortak eğitim buluşması" in home_page
-    assert "Hazır Ekip" in home_page
+    assert "Toplam Malzeme" in home_page
     assert "Gerçek Slider Başlığı" not in home_page
     assert "Gerçek Duyuru Başlığı" not in home_page
     assert "Gerçek İstatistik" not in home_page

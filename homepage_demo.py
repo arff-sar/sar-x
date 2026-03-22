@@ -393,48 +393,62 @@ def _announcement_payloads():
     now = get_tr_now()
     return [
         {
-            "title": "Aylık Ekipman Kontrol ve Hazırlık Günü",
-            "slug": "demo-aylik-ekipman-kontrol-ve-hazirlik-gunu",
-            "summary": "Tim envanterinde yer alan kritik ekipmanların gözden geçirilmesi, eksiklerin tespiti ve kullanım hazırlığının güncellenmesi amacıyla aylık kontrol çalışması yapılacaktır.",
+            "title": "Hafta sonu ortak eğitim buluşması",
+            "slug": "demo-hafta-sonu-ortak-egitim-bulusmasi",
+            "summary": "Hafta sonu yapılacak ortak eğitim buluşmasında saha düzeni, ekip içi koordinasyon ve güvenli hareket tekrarları birlikte uygulanacaktır.",
             "content": (
-                "Kontrol günü kapsamında kişisel koruyucu donanımlar, saha çantaları, aydınlatma ve destek ekipmanları gözden geçirilecek; "
-                "kayıtlar güncellenecek ve ihtiyaç listesi oluşturulacaktır."
+                "Buluşma kapsamında ekip görev paylaşımı, kısa saha senaryoları ve temel güvenlik adımları üzerinden "
+                "uygulamalı tekrar yapılacak; katılım listesi eğitim öncesi güncellenecektir."
             ),
             "cover_image": DEMO_IMAGE_LIBRARY["announcement_training"],
             "published_at": now - timedelta(days=1, hours=2),
             "is_published": True,
         },
         {
-            "title": "Temel Saha Koordinasyon Eğitimi",
-            "slug": "demo-temel-saha-koordinasyon-egitimi",
-            "summary": "Ekip içi iletişim, görev dağılımı, güvenli alan disiplini ve ortak hareket pratiğini güçlendirmeye yönelik eğitim planlanmıştır.",
+            "title": "Gönüllü koordinasyon toplantısı",
+            "slug": "demo-gonullu-koordinasyon-toplantisi",
+            "summary": "Gönüllü tim üyeleriyle görev öncesi hazırlık, iletişim akışı ve vardiya koordinasyonunu netleştirmek için toplantı yapılacaktır.",
             "content": (
-                "Eğitim kapsamında ekip içi haberleşme, görev önceliği, kısa saha brifingi düzeni ve uygulamalı koordinasyon senaryoları ele alınacaktır."
+                "Toplantıda görev dağılımı, iletişim kanalları, sahaya çıkış öncelikleri ve destek ekiplerinin eşleştirilmesi "
+                "başlıkları ele alınarak güncel plan duyurulacaktır."
             ),
             "cover_image": DEMO_IMAGE_LIBRARY["announcement_night"],
             "published_at": now - timedelta(days=3, hours=4),
             "is_published": True,
         },
         {
-            "title": "Haftalık Tatbikat Hazırlık Toplantısı",
-            "slug": "demo-haftalik-tatbikat-hazirlik-toplantisi",
-            "summary": "Planlanan saha tatbikatı öncesinde görev akışı, ekipman dağılımı ve uygulama sahası hazırlıkları değerlendirilecektir.",
+            "title": "Tatbikat hazırlık duyurusu",
+            "slug": "demo-tatbikat-hazirlik-duyurusu",
+            "summary": "Yaklaşan tatbikat öncesi görev akışı, ekipman dağılımı ve saha güvenlik adımları için son hazırlık paylaşımı yapılmıştır.",
             "content": (
-                "Toplantıda görev grupları, tatbikat akışı, emniyet önlemleri ve ihtiyaç duyulan destek malzemeleri üzerinden son hazırlık gözden geçirilecektir."
+                "Tatbikat gününde görev alacak ekipler, toplanma saatleri, sorumluluk alanları ve emniyet kuralları bu duyuru ile kesinleştirilmiştir."
             ),
             "cover_image": DEMO_IMAGE_LIBRARY["announcement_equipment"],
             "published_at": now - timedelta(days=6, hours=1),
             "is_published": True,
         },
         {
-            "title": "Gönüllü Ekip Uyum ve Tekrar Çalışması",
-            "slug": "demo-gonullu-ekip-uyum-ve-tekrar-calismasi",
-            "summary": "Tim içi uyumu ve uygulama sürekliliğini desteklemek amacıyla kısa tekrar ve ortak çalışma oturumu düzenlenecektir.",
+            "title": "Ekipman kontrol haftası",
+            "slug": "demo-ekipman-kontrol-haftasi",
+            "summary": "Ekipman kontrol haftasında kritik malzeme, kişisel koruyucu donanım ve saha çantası kontrolleri planlı biçimde tamamlanacaktır.",
             "content": (
-                "Bu çalışma; ekip içi koordinasyon, temel saha düzeni, görev öncesi hazırlık alışkanlığı ve ortak uygulama pratiğini canlı tutmayı amaçlamaktadır."
+                "Her birim kendi ekipman listesini güncelleyecek, eksik ve bakım ihtiyacı olan kayıtları sistemde işaretleyerek "
+                "hazırlık durumunu görünür hale getirecektir."
             ),
             "cover_image": DEMO_IMAGE_LIBRARY["announcement_meeting"],
             "published_at": now - timedelta(days=9, hours=3),
+            "is_published": True,
+        },
+        {
+            "title": "Güvenlik ve etik prensip hatırlatması",
+            "slug": "demo-guvenlik-ve-etik-prensip-hatirlatmasi",
+            "summary": "Saha görevlerinde güvenli davranış, ekip içi saygı ve etik ilkelere bağlılık için kısa bir hatırlatma paylaşılmıştır.",
+            "content": (
+                "Tüm görevlerde iletişim disiplini, güvenlik önceliği ve ekip dayanışmasını korumak kritik önem taşır. "
+                "Uygulama sırasında etik ilkelere uygun hareket edilmesi beklenmektedir."
+            ),
+            "cover_image": DEMO_IMAGE_LIBRARY["announcement_ethics"],
+            "published_at": now - timedelta(days=12, hours=2),
             "is_published": True,
         },
     ]
@@ -443,33 +457,33 @@ def _announcement_payloads():
 def _stat_payloads():
     return [
         {
-            "title": "Aktif Ekipman",
+            "title": "Hazır Ekip",
             "value_text": "0",
-            "subtitle": "Göreve hazır kayıtlı ekipman ve destek malzemesi.",
+            "subtitle": "Görev çağrısına hazır tim personeli.",
             "icon": "●",
             "order_index": 0,
             "is_active": True,
         },
         {
-            "title": "Gönüllü Personel",
+            "title": "Ekipman",
             "value_text": "0",
-            "subtitle": "Hazırlık ve eğitim süreçlerine katılan ekip üyeleri.",
+            "subtitle": "Kontrolü tamamlanan kritik malzeme.",
             "icon": "▲",
             "order_index": 1,
             "is_active": True,
         },
         {
-            "title": "Planlı Eğitim",
+            "title": "Eğitim",
             "value_text": "0",
-            "subtitle": "Yıl içine yayılan tekrar, hazırlık ve uygulama programı.",
+            "subtitle": "Tamamlanan eğitim ve tekrar oturumu.",
             "icon": "■",
             "order_index": 2,
             "is_active": True,
         },
         {
-            "title": "Hazırlık Kontrolü",
+            "title": "Gönüllü Destek",
             "value_text": "0",
-            "subtitle": "Sürekliliği izlenen ekipman ve görev öncesi kontrol akışı.",
+            "subtitle": "Koordinasyona aktif destek veren gönüllü.",
             "icon": "✦",
             "order_index": 3,
             "is_active": True,
@@ -523,10 +537,10 @@ def _section_payloads():
         },
         {
             "section_key": "training",
-            "title": "Temel Arama Kurtarma Hazırlık Eğitimi",
+            "title": "Temel enkaz arama eğitimi",
             "subtitle": "Eğitim Modülü",
             "content": (
-                "Ekip içi görev dağılımı, güvenli hareket prensipleri, ekipman kontrolü ve görev öncesi hazırlık alışkanlıkları üzerine yapılandırılmış tekrar eğitimi."
+                "Arama düzeni, ekip güvenliği, görev paylaşımı ve temel saha yaklaşımı üzerine uygulamalı başlangıç eğitimi."
             ),
             "image_url": DEMO_IMAGE_LIBRARY["training_search"],
             "order_index": 10,
@@ -534,35 +548,79 @@ def _section_payloads():
         },
         {
             "section_key": "training",
-            "title": "Uygulamalı Saha Koordinasyon Çalışması",
+            "title": "Kişisel koruyucu donanım eğitimi",
             "subtitle": "Faaliyet Modülü",
             "content": (
-                "Kısa saha senaryoları üzerinden iletişim, yönlendirme, ekip dizilimi ve kontrollü müdahale akışını geliştirmeye yönelik ortak uygulama."
+                "KKD kullanım sırası, kontrol adımları, doğru ekipman eşleştirmesi ve güvenli çalışma alışkanlığına odaklanan eğitim."
             ),
             "image_url": DEMO_IMAGE_LIBRARY["training_ppe"],
             "order_index": 11,
             "is_active": True,
         },
         {
-            "section_key": "exercise",
-            "title": "Ekipman Düzeni ve Hazırlık Kontrolü",
-            "subtitle": "Tatbikat Modülü",
+            "section_key": "training",
+            "title": "Ekipman tanıma ve bakım farkındalığı",
+            "subtitle": "Eğitim Modülü",
             "content": (
-                "Görevde kullanılabilecek ekipmanların sınıflandırılması, hazır tutulması, eksiklerin tespiti ve kayıt düzeninin güçlendirilmesine yönelik çalışma."
+                "Sahada kullanılan ekipmanların temel işlevleri, günlük kontrol noktaları ve bakım sorumluluğuna yönelik farkındalık çalışması."
             ),
-            "image_url": DEMO_IMAGE_LIBRARY["drill_access"],
+            "image_url": DEMO_IMAGE_LIBRARY["training_equipment"],
             "order_index": 12,
             "is_active": True,
         },
         {
+            "section_key": "training",
+            "title": "Olay yeri koordinasyon eğitimi",
+            "subtitle": "Eğitim Modülü",
+            "content": (
+                "Olay yerinde rol dağılımı, iletişim hiyerarşisi, yönlendirme ve güvenli yaklaşım adımlarını birleştiren koordinasyon eğitimi."
+            ),
+            "image_url": DEMO_IMAGE_LIBRARY["training_command"],
+            "order_index": 13,
+            "is_active": True,
+        },
+        {
             "section_key": "exercise",
-            "title": "Tatbikat Öncesi Ortak Tekrar",
+            "title": "Gece operasyon hazırlık tatbikatı",
+            "subtitle": "Tatbikat Modülü",
+            "content": (
+                "Gece senaryosunda ekip toplanması, aydınlatma hazırlığı ve görev dağılımı adımlarını içeren uygulama tatbikatı."
+            ),
+            "image_url": DEMO_IMAGE_LIBRARY["drill_night"],
+            "order_index": 20,
+            "is_active": True,
+        },
+        {
+            "section_key": "exercise",
+            "title": "Kutu ve ünite erişim tatbikatı",
             "subtitle": "Hazırlık Oturumu",
             "content": (
-                "Planlı tatbikat öncesinde ekip uyumu, görev paylaşımı, güvenlik hatırlatmaları ve saha akışının yeniden gözden geçirilmesine yönelik hazırlık oturumu."
+                "Operasyon kutuları ve ünite ekipmanlarına hızlı erişim, dağıtım ve geri toplama adımlarını geliştirmeye yönelik tatbikat."
+            ),
+            "image_url": DEMO_IMAGE_LIBRARY["drill_access"],
+            "order_index": 21,
+            "is_active": True,
+        },
+        {
+            "section_key": "exercise",
+            "title": "Saha içi iletişim ve görev paylaşımı tatbikatı",
+            "subtitle": "Tatbikat Modülü",
+            "content": (
+                "Kısa saha senaryosunda ekipler arası iletişim, görev devri ve kontrol noktası bildirimlerinin standartlaştırıldığı uygulama."
             ),
             "image_url": DEMO_IMAGE_LIBRARY["drill_communication"],
-            "order_index": 13,
+            "order_index": 22,
+            "is_active": True,
+        },
+        {
+            "section_key": "exercise",
+            "title": "Toplanma ve sevk koordinasyonu senaryosu",
+            "subtitle": "Tatbikat Modülü",
+            "content": (
+                "Toplanma alanından saha sevkine kadar geçen adımlarda zaman yönetimi, güvenlik teyidi ve koordinasyon akışının test edildiği senaryo."
+            ),
+            "image_url": DEMO_IMAGE_LIBRARY["drill_dispatch"],
+            "order_index": 23,
             "is_active": True,
         },
     ]

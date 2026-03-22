@@ -14,9 +14,10 @@ def test_login_page_contains_mobile_friendly_captcha_and_actions_rules(client):
     html = response.data.decode("utf-8")
 
     assert response.status_code == 200
-    assert ".captcha-input-shell { grid-column: 1 / -1; }" in html
-    assert ".account-actions-row { gap: 8px; flex-direction: column; align-items: stretch; }" in html
-    assert ".forgot-password-link { min-height: 44px; width: 100%;" in html
+    assert ".captcha-box { grid-template-columns: minmax(0, 1fr) 42px 124px; gap: 6px; }" in html
+    assert ".captcha-input-shell { grid-column: 3; }" in html
+    assert ".account-actions-row { gap: 8px; }" in html
+    assert ".forgot-password-link { min-height: 44px; border-radius: 12px;" in html
 
 
 def test_dashboard_page_contains_mobile_compaction_rules(client, app):

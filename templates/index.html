@@ -682,7 +682,7 @@
         </div>
         {% for slide in sliders %}
           {% set slide_bg = safe_media(slide.image_path if slide.image_path is defined else slide.image_url, hero_fallback_image) %}
-          <article class="hero-slide {% if loop.first %}active{% endif %}" style="background-image:url('{{ slide_bg }}')"></article>
+          <article class="hero-slide {% if loop.first %}active{% endif %}" data-slide-title="{{ slide.title }}" style="background-image:url('{{ slide_bg }}')"></article>
         {% else %}
           <article class="hero-slide active" style="background-image:url('{{ hero_fallback_image }}')"></article>
         {% endfor %}
