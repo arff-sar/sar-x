@@ -22,7 +22,7 @@ jobs:
         github.event.workflow_run.event == 'push' &&
         github.event.workflow_run.head_branch == 'main'
       )
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: production
     concurrency:
       group: sar-x-production-deploy
@@ -33,10 +33,16 @@ jobs:
       ARTIFACT_REGISTRY_REPOSITORY: ${{ vars.ARTIFACT_REGISTRY_REPOSITORY }}
       CLOUD_RUN_SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
       CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT: ${{ vars.CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT }}
+      MIGRATION_JOB_NAME: ${{ vars.MIGRATION_JOB_NAME }}
       CLOUD_SQL_CONNECTION_NAME: ${{ vars.CLOUD_SQL_CONNECTION_NAME }}
       SECRET_KEY_SECRET_NAME: ${{ vars.SECRET_KEY_SECRET_NAME }}
       DATABASE_URL_SECRET_NAME: ${{ vars.DATABASE_URL_SECRET_NAME }}
       SMTP_PASSWORD_SECRET_NAME: ${{ vars.SMTP_PASSWORD_SECRET_NAME }}
+      SECRET_KEY_SECRET_VERSION: ${{ vars.SECRET_KEY_SECRET_VERSION }}
+      DATABASE_URL_SECRET_VERSION: ${{ vars.DATABASE_URL_SECRET_VERSION }}
+      SMTP_PASSWORD_SECRET_VERSION: ${{ vars.SMTP_PASSWORD_SECRET_VERSION }}
+      DATABASE_URL_EXPECTED_USERNAME: ${{ vars.DATABASE_URL_EXPECTED_USERNAME }}
+      DATABASE_URL_EXPECTED_DB_NAME: ${{ vars.DATABASE_URL_EXPECTED_DB_NAME }}
       STORAGE_BACKEND: ${{ vars.STORAGE_BACKEND }}
       GCS_BUCKET_NAME: ${{ vars.GCS_BUCKET_NAME }}
       GCS_PROJECT_ID: ${{ vars.GCS_PROJECT_ID }}
@@ -79,6 +85,11 @@ jobs:
           : "${SECRET_KEY_SECRET_NAME:?Missing production variable SECRET_KEY_SECRET_NAME}"
           : "${DATABASE_URL_SECRET_NAME:?Missing production variable DATABASE_URL_SECRET_NAME}"
           : "${SMTP_PASSWORD_SECRET_NAME:?Missing production variable SMTP_PASSWORD_SECRET_NAME}"
+          : "${SECRET_KEY_SECRET_VERSION:?Missing production variable SECRET_KEY_SECRET_VERSION}"
+          : "${DATABASE_URL_SECRET_VERSION:?Missing production variable DATABASE_URL_SECRET_VERSION}"
+          : "${SMTP_PASSWORD_SECRET_VERSION:?Missing production variable SMTP_PASSWORD_SECRET_VERSION}"
+          : "${DATABASE_URL_EXPECTED_USERNAME:?Missing production variable DATABASE_URL_EXPECTED_USERNAME}"
+          : "${DATABASE_URL_EXPECTED_DB_NAME:?Missing production variable DATABASE_URL_EXPECTED_DB_NAME}"
           : "${GCS_BUCKET_NAME:?Missing production variable GCS_BUCKET_NAME}"
           : "${PUBLIC_BASE_URL:?Missing production variable PUBLIC_BASE_URL}"
           : "${MAIL_USERNAME:?Missing production variable MAIL_USERNAME}"
@@ -95,6 +106,9 @@ jobs:
           echo "MAIL_USE_TLS=${MAIL_USE_TLS:-1}" >> "$GITHUB_ENV"
           echo "MAIL_REPLY_TO=${MAIL_REPLY_TO:-$MAIL_FROM_EMAIL}" >> "$GITHUB_ENV"
           echo "SESSION_COOKIE_SAMESITE=${SESSION_COOKIE_SAMESITE:-Lax}" >> "$GITHUB_ENV"
+          echo "SECRET_KEY_SECRET_VERSION=${SECRET_KEY_SECRET_VERSION}" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_SECRET_VERSION=${DATABASE_URL_SECRET_VERSION}" >> "$GITHUB_ENV"
+          echo "SMTP_PASSWORD_SECRET_VERSION=${SMTP_PASSWORD_SECRET_VERSION}" >> "$GITHUB_ENV"
           echo "CLOUD_RUN_MIN_INSTANCES=${CLOUD_RUN_MIN_INSTANCES:-0}" >> "$GITHUB_ENV"
           echo "CLOUD_RUN_MAX_INSTANCES=${CLOUD_RUN_MAX_INSTANCES:-4}" >> "$GITHUB_ENV"
           echo "CLOUD_RUN_CONCURRENCY=${CLOUD_RUN_CONCURRENCY:-80}" >> "$GITHUB_ENV"
@@ -102,6 +116,14 @@ jobs:
           echo "CLOUD_RUN_CPU=${CLOUD_RUN_CPU:-1}" >> "$GITHUB_ENV"
           echo "CLOUD_RUN_MEMORY=${CLOUD_RUN_MEMORY:-512Mi}" >> "$GITHUB_ENV"
           echo "DEPLOY_SHA=${WORKFLOW_HEAD_SHA:-$GITHUB_SHA}" >> "$GITHUB_ENV"
+          if [ -n "${MIGRATION_JOB_NAME:-}" ]; then
+            resolved_job_name="${MIGRATION_JOB_NAME}"
+          else
+            resolved_job_name="${CLOUD_RUN_SERVICE}-db-migrate"
+          fi
+          resolved_job_name="$(printf '%s' "${resolved_job_name}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-' | sed -E 's/^-+//; s/-+$//' | cut -c1-63)"
+          : "${resolved_job_name:?Failed to resolve MIGRATION_JOB_NAME}"
+          echo "MIGRATION_JOB_NAME=${resolved_job_name}" >> "$GITHUB_ENV"
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -114,16 +136,137 @@ jobs:
         with:
           project_id: ${{ vars.GCP_PROJECT_ID }}
 
+      - name: Force active gcloud project
+        run: |
+          set -euo pipefail
+          gcloud config set project "${GCP_PROJECT_ID}"
+          gcloud config list project
+
       - name: Configure Artifact Registry auth
         run: |
           gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+
+      - name: Validate Secret Manager payloads
+        run: |
+          set -euo pipefail
+
+          SECRET_KEY_VALUE="$(gcloud secrets versions access "${SECRET_KEY_SECRET_VERSION}" --secret "${SECRET_KEY_SECRET_NAME}" --project "${GCP_PROJECT_ID}")"
+          DATABASE_URL_VALUE="$(gcloud secrets versions access "${DATABASE_URL_SECRET_VERSION}" --secret "${DATABASE_URL_SECRET_NAME}" --project "${GCP_PROJECT_ID}")"
+          SMTP_PASSWORD_VALUE="$(gcloud secrets versions access "${SMTP_PASSWORD_SECRET_VERSION}" --secret "${SMTP_PASSWORD_SECRET_NAME}" --project "${GCP_PROJECT_ID}")"
+
+          if [ -z "${SECRET_KEY_VALUE}" ]; then
+            echo "SECRET_KEY secret payload is empty"
+            exit 1
+          fi
+          if [ -z "${DATABASE_URL_VALUE}" ]; then
+            echo "DATABASE_URL secret payload is empty"
+            exit 1
+          fi
+          if [ -z "${SMTP_PASSWORD_VALUE}" ]; then
+            echo "SMTP_PASSWORD secret payload is empty"
+            exit 1
+          fi
+
+          DATABASE_URL_VALUE="${DATABASE_URL_VALUE}" CLOUD_SQL_CONNECTION_NAME="${CLOUD_SQL_CONNECTION_NAME}" DATABASE_URL_EXPECTED_USERNAME="${DATABASE_URL_EXPECTED_USERNAME}" DATABASE_URL_EXPECTED_DB_NAME="${DATABASE_URL_EXPECTED_DB_NAME}" python - <<'PY'
+          import os
+          from urllib.parse import parse_qs, urlsplit
+
+          db_url = os.environ["DATABASE_URL_VALUE"].strip()
+          conn_name = os.environ["CLOUD_SQL_CONNECTION_NAME"].strip()
+          expected_username = os.environ["DATABASE_URL_EXPECTED_USERNAME"].strip()
+          expected_db_name = os.environ["DATABASE_URL_EXPECTED_DB_NAME"].strip()
+          lowered = db_url.lower()
+
+          if not lowered.startswith(("postgres://", "postgresql://", "postgresql+psycopg2://")):
+              raise SystemExit("DATABASE_URL must use a PostgreSQL scheme.")
+
+          parsed = urlsplit(db_url)
+          if not parsed.username:
+              raise SystemExit("DATABASE_URL is missing username.")
+          if parsed.password is None or parsed.password == "":
+              raise SystemExit("DATABASE_URL is missing password.")
+          if parsed.path in ("", "/"):
+              raise SystemExit("DATABASE_URL is missing database name.")
+          actual_db_name = parsed.path.lstrip("/")
+
+          if parsed.username != expected_username:
+              raise SystemExit(
+                  "DATABASE_URL username mismatch. "
+                  f"Expected '{expected_username}', got '{parsed.username}'."
+              )
+          if actual_db_name != expected_db_name:
+              raise SystemExit(
+                  "DATABASE_URL database name mismatch. "
+                  f"Expected '{expected_db_name}', got '{actual_db_name}'."
+              )
+
+          query = parse_qs(parsed.query, keep_blank_values=True)
+          socket_host = (query.get("host") or [""])[0]
+          expected_socket = f"/cloudsql/{conn_name}"
+
+          if socket_host != expected_socket:
+              raise SystemExit(
+                  "DATABASE_URL must point to Cloud SQL Unix socket host "
+                  f"'{expected_socket}'."
+              )
+
+          placeholder_fragments = ("<", ">", "{", "}", "changeme", "replace-me", "replace_me", "example", "your_", "your-")
+          if any(fragment in lowered for fragment in placeholder_fragments):
+              raise SystemExit("DATABASE_URL appears to contain placeholder text.")
+
+          print("Secret payload validation passed.")
+          PY
 
       - name: Build production image
         run: |
           set -euo pipefail
           IMAGE_URI="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPOSITORY}/sar-x:${DEPLOY_SHA}"
           echo "IMAGE_URI=${IMAGE_URI}" >> "$GITHUB_ENV"
-          gcloud builds submit --tag "${IMAGE_URI}" .
+          gcloud builds submit --project "${GCP_PROJECT_ID}" --tag "${IMAGE_URI}" .
+
+      - name: Run database migrations (pre-deploy Cloud Run Job)
+        run: |
+          set -euo pipefail
+          gcloud run jobs deploy "${MIGRATION_JOB_NAME}" \
+            --image "${IMAGE_URI}" \
+            --region "${GCP_REGION}" \
+            --project "${GCP_PROJECT_ID}" \
+            --service-account "${CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT}" \
+            --set-cloudsql-instances "${CLOUD_SQL_CONNECTION_NAME}" \
+            --set-env-vars "APP_ENV=production,ENABLE_SCHEDULER=0,ALLOW_CLOUD_RUN_WEB_SCHEDULER=0,ALLOW_SQLITE_IN_PRODUCTION=0,SESSION_COOKIE_SECURE=1,REMEMBER_COOKIE_SECURE=1,SESSION_COOKIE_SAMESITE=${SESSION_COOKIE_SAMESITE}" \
+            --set-secrets "SECRET_KEY=${SECRET_KEY_SECRET_NAME}:${SECRET_KEY_SECRET_VERSION},DATABASE_URL=${DATABASE_URL_SECRET_NAME}:${DATABASE_URL_SECRET_VERSION}" \
+            --command "flask" \
+            --args "--app,app:create_app,db,upgrade" \
+            --max-retries 0 \
+            --tasks 1 \
+            --parallelism 1 \
+            --quiet
+
+          migration_execution_name="$(gcloud run jobs execute "${MIGRATION_JOB_NAME}" \
+            --region "${GCP_REGION}" \
+            --project "${GCP_PROJECT_ID}" \
+            --wait \
+            --format='value(metadata.name)')"
+
+          if [ -z "${migration_execution_name}" ]; then
+            echo "Migration execution name could not be resolved."
+            exit 1
+          fi
+
+          migration_failed_count="$(gcloud run jobs executions describe "${migration_execution_name}" \
+            --region "${GCP_REGION}" \
+            --project "${GCP_PROJECT_ID}" \
+            --format='value(status.failedCount)')"
+          migration_failed_count="${migration_failed_count:-0}"
+          if [ "${migration_failed_count}" != "0" ]; then
+            echo "Migration execution reported failed tasks: ${migration_failed_count}"
+            gcloud run jobs executions describe "${migration_execution_name}" \
+              --region "${GCP_REGION}" \
+              --project "${GCP_PROJECT_ID}" \
+              --format='json(status.conditions,status.logUri)'
+            exit 1
+          fi
+          echo "Migration execution completed: ${migration_execution_name}"
 
       - name: Render Cloud Run service manifest
         run: |
@@ -193,9 +336,180 @@ jobs:
               if "valueFrom" not in env_by_name[secret_name]:
                   raise SystemExit(f"{secret_name} is not wired from Secret Manager")
 
+          expected_secret_refs = {
+              "SECRET_KEY": (os.environ["SECRET_KEY_SECRET_NAME"], os.environ["SECRET_KEY_SECRET_VERSION"]),
+              "DATABASE_URL": (os.environ["DATABASE_URL_SECRET_NAME"], os.environ["DATABASE_URL_SECRET_VERSION"]),
+              "SMTP_PASSWORD": (os.environ["SMTP_PASSWORD_SECRET_NAME"], os.environ["SMTP_PASSWORD_SECRET_VERSION"]),
+          }
+          for env_name, (expected_name, expected_version) in expected_secret_refs.items():
+              secret_ref = env_by_name[env_name]["valueFrom"].get("secretKeyRef", {})
+              actual_name = secret_ref.get("name")
+              actual_version = secret_ref.get("key")
+              if actual_name != expected_name:
+                  raise SystemExit(
+                      f"{env_name} secret name mismatch: expected {expected_name}, got {actual_name}"
+                  )
+              if actual_version != expected_version:
+                  raise SystemExit(
+                      f"{env_name} secret version mismatch: expected {expected_version}, got {actual_version}"
+                  )
+
           annotations = data["spec"]["template"]["metadata"].get("annotations", {})
           if annotations.get("run.googleapis.com/cloudsql-instances") != os.environ["CLOUD_SQL_CONNECTION_NAME"]:
               raise SystemExit("Cloud SQL annotation is missing or incorrect")
 
+          conditions = {
+              item.get("type"): item.get("status")
+              for item in data.get("status", {}).get("conditions", [])
+          }
+          if conditions.get("Ready") != "True":
+              raise SystemExit("Active revision is not Ready.")
+
+          service_url = data.get("status", {}).get("url")
+          if not service_url:
+              raise SystemExit("Cloud Run service URL is missing.")
+          revision_name = (
+              data.get("status", {}).get("latestReadyRevisionName")
+              or data.get("status", {}).get("latestCreatedRevisionName")
+          )
+          if not revision_name:
+              raise SystemExit("Cloud Run revision name is missing.")
+          with open("/tmp/sarx-service-url.txt", "w", encoding="utf-8") as fh:
+              fh.write(service_url.strip())
+          with open("/tmp/sarx-revision-name.txt", "w", encoding="utf-8") as fh:
+              fh.write(revision_name.strip())
+
           print("Cloud Run production configuration verified.")
           PY
+
+      - name: Verify runtime endpoints (/health, /ready, /login)
+        run: |
+          set -euo pipefail
+          SERVICE_URL="$(cat /tmp/sarx-service-url.txt)"
+          REVISION_NAME="$(cat /tmp/sarx-revision-name.txt)"
+
+          dump_recent_logs() {
+            local start_time
+            start_time="$(date -u -d '10 minutes ago' +%Y-%m-%dT%H:%M:%SZ)"
+            echo "Recent Cloud Run logs for revision ${REVISION_NAME} (last 10 minutes):"
+            gcloud logging read \
+              "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"${CLOUD_RUN_SERVICE}\" AND resource.labels.location=\"${GCP_REGION}\" AND resource.labels.revision_name=\"${REVISION_NAME}\" AND timestamp>=\"${start_time}\"" \
+              --project "${GCP_PROJECT_ID}" \
+              --limit=80 \
+              --format='value(timestamp, textPayload, jsonPayload.message)' || true
+          }
+
+          check_endpoint() {
+            local path="$1"
+            local allowed_codes="$2"
+            local status_code
+            local body_file
+            local headers_file
+
+            body_file="$(mktemp)"
+            headers_file="$(mktemp)"
+
+            status_code="$(curl -sS -o "${body_file}" -D "${headers_file}" -w "%{http_code}" "${SERVICE_URL}${path}")"
+
+            IFS=',' read -r -a expected_codes <<< "${allowed_codes}"
+            local is_allowed=0
+            for code in "${expected_codes[@]}"; do
+              if [ "${status_code}" = "${code}" ]; then
+                is_allowed=1
+                break
+              fi
+            done
+
+            if [ "${is_allowed}" -ne 1 ]; then
+              echo "Runtime endpoint check failed for ${path}. Expected [${allowed_codes}], got ${status_code}."
+              echo "Response headers for ${path}:"
+              cat "${headers_file}" || true
+              echo "Response body for ${path}:"
+              cat "${body_file}" || true
+              dump_recent_logs
+              exit 1
+            fi
+
+            echo "Runtime endpoint check passed for ${path} (${status_code})."
+          }
+
+          check_endpoint "/health" "200"
+          check_endpoint "/ready" "200"
+          check_endpoint "/login" "200,302"
+
+          check_login_challenge_rotation() {
+            local cookie_jar
+            local body_first
+            local body_second
+            local status_first
+            local status_second
+            local token_first
+            local token_second
+
+            cookie_jar="$(mktemp)"
+            body_first="$(mktemp)"
+            body_second="$(mktemp)"
+
+            status_first="$(curl -L -sS -c "${cookie_jar}" -b "${cookie_jar}" -o "${body_first}" -w "%{http_code}" "${SERVICE_URL}/login")"
+            status_second="$(curl -L -sS -c "${cookie_jar}" -b "${cookie_jar}" -o "${body_second}" -w "%{http_code}" "${SERVICE_URL}/login")"
+
+            if [ "${status_first}" != "200" ] || [ "${status_second}" != "200" ]; then
+              echo "Challenge rotation check failed: expected final 200 from /login after redirects, got ${status_first} and ${status_second}."
+              dump_recent_logs
+              exit 1
+            fi
+
+            token_first="$(python - "${body_first}" <<'PY'
+import re
+import sys
+
+text = open(sys.argv[1], "r", encoding="utf-8", errors="ignore").read()
+match = re.search(r'data-captcha-token="([^"]+)"', text)
+print(match.group(1) if match else "")
+PY
+)"
+            token_second="$(python - "${body_second}" <<'PY'
+import re
+import sys
+
+text = open(sys.argv[1], "r", encoding="utf-8", errors="ignore").read()
+match = re.search(r'data-captcha-token="([^"]+)"', text)
+print(match.group(1) if match else "")
+PY
+)"
+
+            if [ -z "${token_first}" ] || [ -z "${token_second}" ]; then
+              echo "Challenge rotation check failed: captcha token not found in login HTML."
+              dump_recent_logs
+              exit 1
+            fi
+            if [ "${token_first}" = "${token_second}" ]; then
+              echo "Challenge rotation check failed: login captcha token did not rotate across GET /login requests."
+              dump_recent_logs
+              exit 1
+            fi
+            echo "Challenge rotation check passed for /login."
+          }
+
+          check_login_challenge_rotation
+
+      - name: Scan recent logs for critical runtime failures
+        run: |
+          set -euo pipefail
+          REVISION_NAME="$(cat /tmp/sarx-revision-name.txt)"
+          START_TIME="$(date -u -d '20 minutes ago' +%Y-%m-%dT%H:%M:%SZ)"
+          LOG_DUMP="$(mktemp)"
+          gcloud logging read \
+            "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"${CLOUD_RUN_SERVICE}\" AND resource.labels.location=\"${GCP_REGION}\" AND resource.labels.revision_name=\"${REVISION_NAME}\" AND timestamp>=\"${START_TIME}\"" \
+            --project "${GCP_PROJECT_ID}" \
+            --limit=300 \
+            --format='value(textPayload, jsonPayload.message)' > "${LOG_DUMP}"
+
+          CRITICAL_PATTERN="Güçlü bir SECRET_KEY zorunludur|Worker failed to boot|password authentication failed|OperationalError|RuntimeError"
+          if grep -Ein "${CRITICAL_PATTERN}" "${LOG_DUMP}" >/tmp/sarx-critical-log-matches.txt; then
+            echo "Critical runtime error patterns detected in recent logs:"
+            cat /tmp/sarx-critical-log-matches.txt
+            exit 1
+          fi
+
+          echo "Recent log scan passed: no critical runtime patterns detected."
