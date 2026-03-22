@@ -15,8 +15,10 @@ def test_security_verification_visible_on_login(client):
 def test_login_rejects_missing_security_verification(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
     response = client.post("/login", data={"kullanici_adi": "x@sarx.com", "sifre": "123456"}, follow_redirects=True)
+    html = response.data.decode("utf-8")
     assert response.status_code == 400
-    assert "Güvenlik doğrulamasını tamamlayın" in response.data.decode("utf-8")
+    assert "Güvenlik doğrulaması başarısız oldu." in html
+    assert "SAR-X-AUTH-1202" in html
 
 
 def test_login_rejects_invalid_security_verification(client, app):
@@ -27,8 +29,10 @@ def test_login_rejects_invalid_security_verification(client, app):
         data={"kullanici_adi": "x@sarx.com", "sifre": "123456", "security_verification": "999"},
         follow_redirects=True,
     )
+    html = response.data.decode("utf-8")
     assert response.status_code == 400
-    assert "Güvenlik doğrulaması yanlış" in response.data.decode("utf-8")
+    assert "Güvenlik doğrulaması başarısız oldu." in html
+    assert "SAR-X-AUTH-1202" in html
 
 
 def test_login_accepts_valid_security_verification(client, app):
@@ -71,5 +75,7 @@ def test_expired_visual_captcha_is_rejected(client, app):
         follow_redirects=True,
     )
 
+    html = response.data.decode("utf-8")
     assert response.status_code == 400
-    assert "süresi doldu" in response.data.decode("utf-8")
+    assert "Güvenlik doğrulama süresi doldu." in html
+    assert "SAR-X-AUTH-1201" in html

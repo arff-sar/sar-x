@@ -63,8 +63,10 @@ def test_old_challenge_cannot_be_reused_after_login_page_refresh(client, app):
         data={"kullanici_adi": "refresh-cycle@sarx.com", "sifre": "123456", "security_verification": old_code},
         follow_redirects=True,
     )
+    html = response.data.decode("utf-8")
     assert response.status_code == 400
-    assert "Güvenlik doğrulaması yanlış" in response.data.decode("utf-8")
+    assert "Güvenlik doğrulaması başarısız oldu." in html
+    assert "SAR-X-AUTH-1202" in html
 
 
 def test_login_page_renders_visual_captcha_block(client):
@@ -133,8 +135,10 @@ def test_captcha_refresh_invalidates_previous_code(client, app):
         follow_redirects=True,
     )
 
+    html = response.data.decode("utf-8")
     assert response.status_code == 400
-    assert "Güvenlik doğrulaması yanlış" in response.data.decode("utf-8")
+    assert "Güvenlik doğrulaması başarısız oldu." in html
+    assert "SAR-X-AUTH-1202" in html
 
 
 def test_refresh_returns_working_new_captcha(client, app):
@@ -189,8 +193,10 @@ def test_stale_hidden_token_requests_new_code(client, app):
         follow_redirects=True,
     )
 
+    html = response.data.decode("utf-8")
     assert response.status_code == 400
-    assert "Güvenlik doğrulaması doğrulanamadı. Lütfen yeni kod alın." in response.data.decode("utf-8")
+    assert "Güvenlik doğrulaması başarısız oldu." in html
+    assert "SAR-X-AUTH-1202" in html
 
 
 def test_valid_challenge_is_consumed_before_password_check(client, app):
@@ -231,8 +237,10 @@ def test_valid_challenge_is_consumed_before_password_check(client, app):
         follow_redirects=True,
     )
 
+    second_html = second_response.data.decode("utf-8")
     assert second_response.status_code == 400
-    assert "Güvenlik doğrulaması doğrulanamadı. Lütfen yeni kod alın." in second_response.data.decode("utf-8")
+    assert "Güvenlik doğrulaması başarısız oldu." in second_html
+    assert "SAR-X-AUTH-1202" in second_html
 
 
 def test_expired_captcha_requires_new_code(client, app):
@@ -253,8 +261,10 @@ def test_expired_captcha_requires_new_code(client, app):
         follow_redirects=True,
     )
 
+    html = response.data.decode("utf-8")
     assert response.status_code == 400
-    assert "süresi doldu" in response.data.decode("utf-8")
+    assert "Güvenlik doğrulama süresi doldu." in html
+    assert "SAR-X-AUTH-1201" in html
 
 
 def test_login_page_renders_with_snapshot_loader_failure(client):
