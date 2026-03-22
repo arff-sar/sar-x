@@ -129,3 +129,35 @@ def test_homepage_about_cards_render_requested_order(client, app):
     assert "Odak" not in page
     assert "Bakış" not in page
     assert "İlke" not in page
+
+
+def test_homepage_handles_missing_public_tables_without_crashing(client, monkeypatch):
+    import app as app_module
+
+    original_table_exists = app_module.table_exists
+    missing_tables = {
+        "content_workflow",
+        "home_slider",
+        "slider_resim",
+        "home_section",
+        "announcement",
+        "haber",
+        "document_resource",
+        "home_quick_link",
+        "inventory_asset",
+        "havalimani",
+    }
+
+    def patched_table_exists(table_name):
+        if table_name in missing_tables:
+            return False
+        return original_table_exists(table_name)
+
+    monkeypatch.setattr(app_module, "table_exists", patched_table_exists)
+
+    response = client.get("/")
+    page = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "ARFF Özel Arama Kurtarma Timi" in page
+    assert "Henüz yayınlanmış duyuru yok" in page

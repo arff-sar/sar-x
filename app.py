@@ -379,12 +379,16 @@ def create_app(config_name=None):
             {"snapshot": _empty_public_site_snapshot(), "fetched_at": 0.0},
         )
         now = time.monotonic()
+        cached_snapshot = cache.get("snapshot") or _empty_public_site_snapshot()
+        cache_is_fresh = (now - float(cache.get("fetched_at") or 0.0)) < cache_ttl
         if (
             not force_refresh
-            and cache.get("snapshot") is not None
-            and (now - float(cache.get("fetched_at") or 0.0)) < cache_ttl
+            and cache_is_fresh
         ):
-            return cache["snapshot"]
+            if cached_snapshot.get("ayarlar") is not None:
+                return cached_snapshot
+            if not table_exists("site_ayarlari"):
+                return cached_snapshot
 
         try:
             if not table_exists("site_ayarlari"):
@@ -616,7 +620,13 @@ def create_app(config_name=None):
         from homepage_demo import filter_homepage_demo_items, homepage_demo_is_active
 
         def _workflow_status_map(entity_type):
-            rows = ContentWorkflow.query.filter_by(entity_type=entity_type).all()
+            if not table_exists("content_workflow"):
+                return {}
+            try:
+                rows = ContentWorkflow.query.filter_by(entity_type=entity_type).all()
+            except SQLAlchemyError:
+                db.session.rollback()
+                return {}
             return {row.entity_id: row.status for row in rows}
 
         def _filter_by_workflow(items, entity_type):
@@ -632,6 +642,24 @@ def create_app(config_name=None):
 
         def _format_public_count(value):
             return f"{int(value):,}".replace(",", ".")
+
+        def _safe_public_collection(required_tables, factory, fallback=None):
+            if any(not table_exists(table_name) for table_name in required_tables):
+                return [] if fallback is None else fallback
+            try:
+                return factory()
+            except SQLAlchemyError:
+                db.session.rollback()
+                return [] if fallback is None else fallback
+
+        def _safe_public_count(required_tables, factory):
+            if any(not table_exists(table_name) for table_name in required_tables):
+                return 0
+            try:
+                return int(factory())
+            except (SQLAlchemyError, TypeError, ValueError):
+                db.session.rollback()
+                return 0
 
         def _build_public_stats(configured_cards, metric_registry):
             metrics = list(metric_registry.values())
@@ -688,13 +716,16 @@ def create_app(config_name=None):
         menuler = []
         homepage_demo_active = homepage_demo_is_active()
 
-        sliders = HomeSlider.query.filter_by(is_active=True).order_by(
-            HomeSlider.order_index.asc(), HomeSlider.id.asc()
-        ).all()
+        sliders = _safe_public_collection(
+            ("home_slider",),
+            lambda: HomeSlider.query.filter_by(is_active=True).order_by(
+                HomeSlider.order_index.asc(), HomeSlider.id.asc()
+            ).all(),
+        )
         sliders = _filter_by_workflow(sliders, "slider")
         sliders = filter_homepage_demo_items(sliders)
         if not sliders and not homepage_demo_active:
-            legacy_sliders = SliderResim.query.all()
+            legacy_sliders = _safe_public_collection(("slider_resim",), lambda: SliderResim.query.all())
             sliders = [
                 SimpleNamespace(
                     title=slider.baslik or "Operasyonel Hazırlık",
@@ -707,9 +738,12 @@ def create_app(config_name=None):
                 for slider in legacy_sliders
             ]
 
-        sections = HomeSection.query.filter_by(is_active=True).order_by(
-            HomeSection.order_index.asc(), HomeSection.id.asc()
-        ).all()
+        sections = _safe_public_collection(
+            ("home_section",),
+            lambda: HomeSection.query.filter_by(is_active=True).order_by(
+                HomeSection.order_index.asc(), HomeSection.id.asc()
+            ).all(),
+        )
         sections = _filter_by_workflow(sections, "section")
         sections = filter_homepage_demo_items(sections)
 
@@ -775,15 +809,21 @@ def create_app(config_name=None):
                 )
             )
 
-        announcement_pool = Announcement.query.filter_by(is_published=True).order_by(
-            Announcement.published_at.desc(), Announcement.id.desc()
-        ).all()
+        announcement_pool = _safe_public_collection(
+            ("announcement",),
+            lambda: Announcement.query.filter_by(is_published=True).order_by(
+                Announcement.published_at.desc(), Announcement.id.desc()
+            ).all(),
+        )
         announcement_pool = _filter_by_workflow(announcement_pool, "announcement")
         announcement_pool = filter_homepage_demo_items(announcement_pool)
         announcement_count = len(announcement_pool)
         announcements = announcement_pool[:6]
         if not announcement_pool and not homepage_demo_active:
-            legacy_news = Haber.query.order_by(Haber.tarih.desc()).limit(6).all()
+            legacy_news = _safe_public_collection(
+                ("haber",),
+                lambda: Haber.query.order_by(Haber.tarih.desc()).limit(6).all(),
+            )
             announcement_pool = [
                 SimpleNamespace(
                     title=item.baslik,
@@ -798,13 +838,19 @@ def create_app(config_name=None):
             announcement_count = len(announcement_pool)
             announcements = announcement_pool[:6]
 
-        documents = DocumentResource.query.filter_by(is_active=True).order_by(
-            DocumentResource.order_index.asc(), DocumentResource.id.asc()
-        ).all()
+        documents = _safe_public_collection(
+            ("document_resource",),
+            lambda: DocumentResource.query.filter_by(is_active=True).order_by(
+                DocumentResource.order_index.asc(), DocumentResource.id.asc()
+            ).all(),
+        )
         documents = _filter_by_workflow(documents, "document")
-        quick_links = HomeQuickLink.query.filter_by(is_active=True).order_by(
-            HomeQuickLink.order_index.asc(), HomeQuickLink.id.asc()
-        ).all()
+        quick_links = _safe_public_collection(
+            ("home_quick_link",),
+            lambda: HomeQuickLink.query.filter_by(is_active=True).order_by(
+                HomeQuickLink.order_index.asc(), HomeQuickLink.id.asc()
+            ).all(),
+        )
         quick_links = _filter_by_workflow(quick_links, "quicklink")
 
         completed_training_count = sum(
@@ -814,7 +860,9 @@ def create_app(config_name=None):
             SimpleNamespace(
                 metric_key="total_assets",
                 title="Toplam Malzeme",
-                value_text=_format_public_count(InventoryAsset.query.filter_by(is_deleted=False).count()),
+                value_text=_format_public_count(
+                    _safe_public_count(("inventory_asset",), lambda: InventoryAsset.query.filter_by(is_deleted=False).count())
+                ),
                 subtitle="Tüm havalimanlarında kayıtlı ekipman ve varlık sayısı.",
                 icon="◈",
                 order_index=0,
@@ -822,7 +870,9 @@ def create_app(config_name=None):
             SimpleNamespace(
                 metric_key="total_personnel",
                 title="Toplam Personel",
-                value_text=_format_public_count(Kullanici.query.filter_by(is_deleted=False).count()),
+                value_text=_format_public_count(
+                    _safe_public_count(("kullanici",), lambda: Kullanici.query.filter_by(is_deleted=False).count())
+                ),
                 subtitle="Sistemde görevli ARFF personeli ve ekip üyeleri.",
                 icon="◎",
                 order_index=1,
@@ -830,7 +880,9 @@ def create_app(config_name=None):
             SimpleNamespace(
                 metric_key="total_airports",
                 title="Aktif Havalimanı",
-                value_text=_format_public_count(Havalimani.query.filter_by(is_deleted=False).count()),
+                value_text=_format_public_count(
+                    _safe_public_count(("havalimani",), lambda: Havalimani.query.filter_by(is_deleted=False).count())
+                ),
                 subtitle="Envanter ve operasyon takibi yapılan lokasyon sayısı.",
                 icon="◇",
                 order_index=2,

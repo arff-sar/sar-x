@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import or_
+from sqlalchemy.exc import SQLAlchemyError
 
 from decorators import homepage_editor_required
 from extensions import (
@@ -17,6 +18,7 @@ from extensions import (
     limiter,
     log_kaydet,
     secure_upload_filename,
+    table_exists,
 )
 from homepage_demo import filter_homepage_demo_items, homepage_demo_is_active, is_homepage_demo_item
 from storage import get_storage_adapter
@@ -183,14 +185,28 @@ def _public_layout_context():
     return {"ayarlar": None, "menuler": []}
 
 
+def _safe_public_result(factory, required_tables, fallback):
+    if any(not table_exists(table_name) for table_name in required_tables):
+        return fallback
+    try:
+        return factory()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return fallback
+
+
 def _published_sections_for_keys(*keys):
     requested_keys = [key for key in keys if key]
     if not requested_keys:
         return []
-    rows = HomeSection.query.filter(
-        HomeSection.section_key.in_(requested_keys),
-        HomeSection.is_active.is_(True),
-    ).order_by(HomeSection.order_index.asc(), HomeSection.id.asc()).all()
+    rows = _safe_public_result(
+        lambda: HomeSection.query.filter(
+            HomeSection.section_key.in_(requested_keys),
+            HomeSection.is_active.is_(True),
+        ).order_by(HomeSection.order_index.asc(), HomeSection.id.asc()).all(),
+        ("home_section",),
+        [],
+    )
     rows = [item for item in rows if _current_workflow_status("section", item) == WORKFLOW_PUBLISHED]
     rows = filter_homepage_demo_items(rows)
     order_map = {key: idx for idx, key in enumerate(requested_keys)}
@@ -214,7 +230,13 @@ def _legacy_visibility_status(content_type, item):
 
 
 def _get_workflow(content_type, entity_id):
-    return ContentWorkflow.query.filter_by(entity_type=content_type, entity_id=entity_id).first()
+    if not table_exists("content_workflow"):
+        return None
+    try:
+        return ContentWorkflow.query.filter_by(entity_type=content_type, entity_id=entity_id).first()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return None
 
 
 def _ensure_workflow(content_type, item, default_status=None):
@@ -277,11 +299,28 @@ def _workflow_map(content_type, entities):
     entity_ids = [entity.id for entity in entities]
     if not entity_ids:
         return {}
+    if not table_exists("content_workflow"):
+        return {
+            entity.id: SimpleNamespace(
+                entity_type=content_type,
+                entity_id=entity.id,
+                status=_legacy_visibility_status(content_type, entity),
+                published_at=getattr(entity, "published_at", None),
+                published_by_id=None,
+                last_edited_by_id=None,
+                last_action="virtual_fallback",
+            )
+            for entity in entities
+        }
 
-    rows = ContentWorkflow.query.filter(
-        ContentWorkflow.entity_type == content_type,
-        ContentWorkflow.entity_id.in_(entity_ids),
-    ).all()
+    try:
+        rows = ContentWorkflow.query.filter(
+            ContentWorkflow.entity_type == content_type,
+            ContentWorkflow.entity_id.in_(entity_ids),
+        ).all()
+    except SQLAlchemyError:
+        db.session.rollback()
+        rows = []
     mapped = {row.entity_id: row for row in rows}
     for entity in entities:
         if entity.id not in mapped:
@@ -298,7 +337,13 @@ def _workflow_map(content_type, entities):
 
 
 def _seo_for_announcement(announcement_id):
-    return ContentSEO.query.filter_by(entity_type="announcement", entity_id=announcement_id).first()
+    if not table_exists("content_seo"):
+        return None
+    try:
+        return ContentSEO.query.filter_by(entity_type="announcement", entity_id=announcement_id).first()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return None
 
 
 def _ensure_announcement_seo(announcement_id):
@@ -314,10 +359,16 @@ def _seo_map_for_announcements(announcements):
     ids = [item.id for item in announcements]
     if not ids:
         return {}
-    rows = ContentSEO.query.filter(
-        ContentSEO.entity_type == "announcement",
-        ContentSEO.entity_id.in_(ids),
-    ).all()
+    if not table_exists("content_seo"):
+        return {}
+    try:
+        rows = ContentSEO.query.filter(
+            ContentSEO.entity_type == "announcement",
+            ContentSEO.entity_id.in_(ids),
+        ).all()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return {}
     return {row.entity_id: row for row in rows}
 
 
@@ -391,7 +442,13 @@ def _is_allowed_upload_mimetype(upload):
 @content_bp.route("/duyurular/<string:slug>")
 @content_bp.route("/duyuru/<string:slug>")
 def public_announcement_detail(slug):
-    announcement = Announcement.query.filter_by(slug=slug, is_published=True).first_or_404()
+    announcement = _safe_public_result(
+        lambda: Announcement.query.filter_by(slug=slug, is_published=True).first(),
+        ("announcement",),
+        None,
+    )
+    if announcement is None:
+        abort(404)
     if _current_workflow_status("announcement", announcement) != WORKFLOW_PUBLISHED:
         abort(404)
     if homepage_demo_is_active() and not is_homepage_demo_item(announcement):
@@ -402,9 +459,13 @@ def public_announcement_detail(slug):
 
 @content_bp.route("/duyurular")
 def public_announcements():
-    announcements = Announcement.query.filter_by(is_published=True).order_by(
-        Announcement.published_at.desc(), Announcement.id.desc()
-    ).all()
+    announcements = _safe_public_result(
+        lambda: Announcement.query.filter_by(is_published=True).order_by(
+            Announcement.published_at.desc(), Announcement.id.desc()
+        ).all(),
+        ("announcement",),
+        [],
+    )
     announcements = [item for item in announcements if _current_workflow_status("announcement", item) == WORKFLOW_PUBLISHED]
     announcements = filter_homepage_demo_items(announcements)
     seo_map = _seo_map_for_announcements(announcements)
@@ -414,9 +475,13 @@ def public_announcements():
 @content_bp.route("/dokumanlar")
 @content_bp.route("/formlar")
 def public_documents():
-    documents = DocumentResource.query.filter_by(is_active=True).order_by(
-        DocumentResource.order_index.asc(), DocumentResource.id.asc()
-    ).all()
+    documents = _safe_public_result(
+        lambda: DocumentResource.query.filter_by(is_active=True).order_by(
+            DocumentResource.order_index.asc(), DocumentResource.id.asc()
+        ).all(),
+        ("document_resource",),
+        [],
+    )
     documents = [item for item in documents if _current_workflow_status("document", item) == WORKFLOW_PUBLISHED]
     return render_template("documents.html", documents=documents, **_public_layout_context())
 

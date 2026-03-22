@@ -61,3 +61,27 @@ def test_public_announcements_empty_state_renders_with_refined_copy(client, app)
     assert "Henüz yayınlanmış duyuru yok" in page
     assert "Duyuru Akışı" in page
     assert "Tim içi duyurular" in page
+
+
+def test_public_announcement_routes_degrade_safely_when_tables_missing(client, monkeypatch):
+    import routes.content as content_module
+
+    original_table_exists = content_module.table_exists
+
+    def patched_table_exists(table_name):
+        if table_name in {"announcement", "content_seo", "content_workflow", "document_resource", "home_section"}:
+            return False
+        return original_table_exists(table_name)
+
+    monkeypatch.setattr(content_module, "table_exists", patched_table_exists)
+
+    list_response = client.get("/duyurular")
+    detail_response = client.get("/duyurular/olmayan-duyuru")
+    documents_response = client.get("/dokumanlar")
+    training_response = client.get("/faaliyetlerimiz/egitimler")
+
+    assert list_response.status_code == 200
+    assert "Henüz yayınlanmış duyuru yok" in list_response.data.decode("utf-8")
+    assert detail_response.status_code == 404
+    assert documents_response.status_code == 200
+    assert training_response.status_code == 200
