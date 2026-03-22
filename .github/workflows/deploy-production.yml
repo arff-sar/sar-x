@@ -459,24 +459,8 @@ jobs:
               exit 1
             fi
 
-            token_first="$(python - "${body_first}" <<'PY'
-import re
-import sys
-
-text = open(sys.argv[1], "r", encoding="utf-8", errors="ignore").read()
-match = re.search(r'data-captcha-token="([^"]+)"', text)
-print(match.group(1) if match else "")
-PY
-)"
-            token_second="$(python - "${body_second}" <<'PY'
-import re
-import sys
-
-text = open(sys.argv[1], "r", encoding="utf-8", errors="ignore").read()
-match = re.search(r'data-captcha-token="([^"]+)"', text)
-print(match.group(1) if match else "")
-PY
-)"
+            token_first="$(python3 -c "import re,sys; text=open(sys.argv[1],'r',encoding='utf-8',errors='ignore').read(); m=re.search(r'data-captcha-token=\"([^\"]+)\"', text); print(m.group(1) if m else '')" "${body_first}")"
+            token_second="$(python3 -c "import re,sys; text=open(sys.argv[1],'r',encoding='utf-8',errors='ignore').read(); m=re.search(r'data-captcha-token=\"([^\"]+)\"', text); print(m.group(1) if m else '')" "${body_second}")"
 
             if [ -z "${token_first}" ] || [ -z "${token_second}" ]; then
               echo "Challenge rotation check failed: captcha token not found in login HTML."
