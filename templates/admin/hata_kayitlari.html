@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+{% block title %}Hata Kayıtları{% endblock %}
+
+{% block extra_css %}
+<style>
+  .error-log-shell { display:grid; gap:20px; }
+  .error-log-filters { display:grid; grid-template-columns: 1.6fr repeat(3, minmax(160px, 1fr)) auto; gap:12px; align-items:end; }
+  .error-code-link { border:0; background:none; padding:0; color:var(--navy); font-weight:800; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
+  .error-code-link:hover { color:var(--orange); }
+  .error-summary { min-width:250px; }
+  .error-summary strong { display:block; color:var(--navy); font-size:13px; margin-bottom:6px; }
+  .error-meta-note { font-size:11.5px; color:var(--text4); margin-top:6px; }
+  .error-modal-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.44); display:none; align-items:center; justify-content:center; z-index:220; padding:24px; }
+  .error-modal-backdrop.is-open { display:flex; }
+  .error-modal { width:min(560px, 100%); background:var(--surface); border:1px solid var(--border); border-radius:18px; box-shadow:0 18px 40px rgba(15,23,42,.16); padding:24px; display:grid; gap:14px; }
+  .error-modal-head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; }
+  .error-modal-title { font-size:18px; font-weight:900; color:var(--navy); }
+  .error-modal-code { font-family:'JetBrains Mono', monospace; font-size:12px; color:var(--text3); }
+  .error-modal-grid { display:grid; gap:10px; }
+  .error-modal-item { border:1px solid var(--border); border-radius:14px; padding:12px 14px; background:var(--surface2); }
+  .error-modal-item strong { display:block; font-size:11px; text-transform:uppercase; color:var(--text4); margin-bottom:6px; letter-spacing:.05em; }
+  .error-modal-close { border:0; background:transparent; color:var(--text3); font-size:24px; line-height:1; cursor:pointer; }
+  .error-empty { padding:30px 24px; text-align:center; border:1px dashed var(--border-dark); border-radius:18px; color:var(--text3); }
+  .error-empty strong { display:block; color:var(--navy); margin-bottom:6px; }
+
+  @media (max-width: 980px) {
+    .error-log-filters { grid-template-columns:1fr 1fr; }
+  }
+
+  @media (max-width: 640px) {
+    .error-log-filters { grid-template-columns:1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+  <div>
+    <div class="page-title">Hata Kayıtları</div>
+    <div class="page-meta">Kullanıcıya gösterilen güvenli hata kodlarını ve merkezi hata kayıtlarını tek ekranda izleyin.</div>
+  </div>
+</div>
+
+<div class="error-log-shell">
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <div class="panel-title">Merkezi İzleme</div>
+        <div class="panel-subtitle">Normal kullanıcı yalnızca sade mesaj ve kod görür. Teknik detaylar yalnızca site sahibine açıktır.</div>
+      </div>
+    </div>
+    <div class="panel-body">
+      {% if has_schema_support %}
+      <form method="get" class="error-log-filters">
+        <div class="form-group">
+          <label for="errorLogSearch">Ara</label>
+          <input type="search" id="errorLogSearch" name="q" class="form-control" value="{{ search_query }}" placeholder="Hata kodu, başlık, request ID veya sayfa">
+        </div>
+        <div class="form-group">
+          <label for="errorLogModule">Modül</label>
+          <select id="errorLogModule" name="module" class="form-control">
+            <option value="">Tüm modüller</option>
+            {% for item in module_options %}
+            <option value="{{ item }}" {% if selected_module == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="errorLogSeverity">Severity</label>
+          <select id="errorLogSeverity" name="severity" class="form-control">
+            <option value="">Tüm seviyeler</option>
+            {% for item in severity_options %}
+            <option value="{{ item }}" {% if selected_severity == item %}selected{% endif %}>{{ item|capitalize }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="errorLogStatus">Durum</label>
+          <select id="errorLogStatus" name="status" class="form-control">
+            <option value="">Tümü</option>
+            <option value="open" {% if selected_status == 'open' %}selected{% endif %}>Açık</option>
+            <option value="resolved" {% if selected_status == 'resolved' %}selected{% endif %}>Çözüldü</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <button type="submit" class="btn btn-navy">Filtrele</button>
+        </div>
+      </form>
+      {% else %}
+      <div class="error-empty">
+        <strong>Hata kayıtları için şema desteği hazır değil</strong>
+        <div>İlgili migration tamamlandığında merkezi hata alanları bu ekranda listelenecektir.</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if has_schema_support %}
+  <div class="panel">
+    <div class="table-container">
+      {% if hata_kayitlari %}
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Durum</th>
+            <th>Tarih</th>
+            <th>Modül</th>
+            <th>Hata Kodu</th>
+            <th>Kısa Açıklama</th>
+            <th>Kullanıcı</th>
+            <th>Sayfa</th>
+            <th>Request ID</th>
+            <th>İncele</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in hata_kayitlari %}
+          <tr>
+            <td><span class="status-pill {{ item.status_class }}">{{ item.status_label }}</span></td>
+            <td>{{ item.created_at.strftime('%d.%m.%Y %H:%M:%S') if item.created_at else '-' }}</td>
+            <td>{{ item.module }}</td>
+            <td>
+              <button
+                type="button"
+                class="error-code-link"
+                data-error-modal-open
+                data-error-code="{{ item.error_code }}"
+                data-error-title="{{ item.title }}"
+                data-error-user-message="{{ item.user_message }}"
+                data-error-owner-message="{{ item.owner_message }}"
+                data-error-cause="{{ item.possible_cause }}"
+              >
+                {{ item.error_code }}
+              </button>
+            </td>
+            <td class="error-summary">
+              <strong>{{ item.title }}</strong>
+              <div>{{ item.summary }}</div>
+              <div class="error-meta-note">{{ item.severity_label }}</div>
+            </td>
+            <td>{{ item.user_label }}</td>
+            <td>{{ item.method }} {{ item.route }}</td>
+            <td><code>{{ item.request_id }}</code></td>
+            <td>
+              {% if item.can_view_detail %}
+              <a href="{{ item.detail_url }}" class="row-btn">Detay</a>
+              {% else %}
+              <span class="status-pill status-pasif">Özet</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="error-empty">
+        <strong>Hata kaydı bulunamadı</strong>
+        <div>Seçili filtrelerle eşleşen kayıt yok. Daha geniş bir aralıkla tekrar deneyin.</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="error-modal-backdrop" id="errorCodeModal" aria-hidden="true">
+  <div class="error-modal" role="dialog" aria-modal="true" aria-labelledby="errorCodeModalTitle">
+    <div class="error-modal-head">
+      <div>
+        <div class="error-modal-title" id="errorCodeModalTitle">Hata Kodu</div>
+        <div class="error-modal-code" id="errorCodeModalCode"></div>
+      </div>
+      <button type="button" class="error-modal-close" data-error-modal-close aria-label="Kapat">×</button>
+    </div>
+    <div class="error-modal-grid">
+      <div class="error-modal-item">
+        <strong>İnsan Diliyle Açıklama</strong>
+        <div id="errorCodeModalOwnerMessage">-</div>
+      </div>
+      <div class="error-modal-item">
+        <strong>Kullanıcı Mesajı</strong>
+        <div id="errorCodeModalUserMessage">-</div>
+      </div>
+      <div class="error-modal-item">
+        <strong>Olası Neden</strong>
+        <div id="errorCodeModalCause">-</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    const modal = document.getElementById('errorCodeModal');
+    if (!modal) return;
+    const titleEl = document.getElementById('errorCodeModalTitle');
+    const codeEl = document.getElementById('errorCodeModalCode');
+    const ownerMessageEl = document.getElementById('errorCodeModalOwnerMessage');
+    const userMessageEl = document.getElementById('errorCodeModalUserMessage');
+    const causeEl = document.getElementById('errorCodeModalCause');
+
+    const closeModal = function () {
+      modal.classList.remove('is-open');
+      modal.setAttribute('aria-hidden', 'true');
+    };
+
+    document.querySelectorAll('[data-error-modal-open]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        titleEl.textContent = button.dataset.errorTitle || 'Hata Kaydı';
+        codeEl.textContent = button.dataset.errorCode || '-';
+        ownerMessageEl.textContent = button.dataset.errorOwnerMessage || '-';
+        userMessageEl.textContent = button.dataset.errorUserMessage || '-';
+        causeEl.textContent = button.dataset.errorCause || '-';
+        modal.classList.add('is-open');
+        modal.setAttribute('aria-hidden', 'false');
+      });
+    });
+
+    document.querySelectorAll('[data-error-modal-close]').forEach(function (button) {
+      button.addEventListener('click', closeModal);
+    });
+
+    modal.addEventListener('click', function (event) {
+      if (event.target === modal) closeModal();
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && modal.classList.contains('is-open')) {
+        closeModal();
+      }
+    });
+  })();
+</script>
+{% endblock %}

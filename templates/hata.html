@@ -138,7 +138,7 @@
     margin-right: auto;
 }
 
-/* ─── Hata Ref Etiketi (yalnızca 500) ──────────────────────── */
+/* ─── Hata Ref Etiketi ──────────────────────────────────────── */
 .error-ref {
     display: inline-flex;
     align-items: center;
@@ -271,12 +271,18 @@
             {% endif %}
         </p>
 
-        {# ── 500 için hata referans kimliği ──────────────────────── #}
-        {% if kod == 500 %}
+        {% if error_code %}
         <div class="error-ref">
             <span class="error-ref-dot"></span>
-            HATA REF: SAR-{{ now().strftime('%Y%m%d') if now is defined else '——' }}-{{ range(1000,9999) | random }}
+            Hata Kodu: {{ error_code }}
         </div>
+        {% endif %}
+
+        {% if support_note %}
+        <p class="error-message" style="margin-top:-10px; margin-bottom:24px;">
+            {{ support_note }}
+            {% if request_id %}<br>Request ID: <strong>{{ request_id }}</strong>{% endif %}
+        </p>
         {% endif %}
 
         {# ── Aksiyonlar ──────────────────────────────────────────── #}

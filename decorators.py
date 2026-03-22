@@ -560,6 +560,7 @@ MENU_GROUPS = [
             {"label": "Kullanıcılar", "endpoint": "admin.kullanicilar", "endpoints": ["admin.kullanicilar"], "permission": "users.manage"},
             {"label": "Roller / Yetkiler", "endpoint": "admin.roles", "endpoints": ["admin.roles", "admin.permissions"], "prefixes": ["admin.role_detail"], "permission": "roles.manage"},
             {"label": "Site Ayarları", "endpoint": "admin.site_yonetimi", "endpoints": ["admin.site_yonetimi"], "permission": "settings.manage"},
+            {"label": "Hata Kayıtları", "endpoint": "admin.hata_kayitlari", "endpoints": ["admin.hata_kayitlari"], "prefixes": ["admin.hata_kaydi_detay"], "permission": "logs.view"},
             {"label": "İşlem Logları", "endpoint": "admin.loglari_gor", "endpoints": ["admin.loglari_gor"], "permission": "logs.view"},
             {"label": "Arşiv", "endpoint": "admin.arsiv_listesi", "endpoints": ["admin.arsiv_listesi"], "permission": "archive.manage"},
         ],

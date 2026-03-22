@@ -18,6 +18,9 @@
     <div class="card">
         <h1>413 · İstek Boyutu Aşıldı</h1>
         <p>{{ mesaj or "Gönderdiğiniz dosya veya form verisi izin verilen sınırı aşıyor." }}</p>
+        {% if error_code %}
+        <p><strong>Hata kodu:</strong> {{ error_code }}<br>{% if support_note %}{{ support_note }}{% endif %}</p>
+        {% endif %}
         <a href="{{ url_for('ana_sayfa') }}">Ana Sayfaya Dön</a>
     </div>
 </div>

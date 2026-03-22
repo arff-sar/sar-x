@@ -120,7 +120,16 @@ def column_exists(table_name, column_name):
         return False
 
 
-def log_kaydet(tip, detay, event_key=None, target_model=None, target_id=None, outcome="success", commit=True):
+def log_kaydet(
+    tip,
+    detay,
+    event_key=None,
+    target_model=None,
+    target_id=None,
+    outcome="success",
+    commit=True,
+    **extra_fields,
+):
     """Sistemdeki işlemleri IP ve Cihaz bilgisiyle Kara Kutuya kaydeder."""
     from models import IslemLog
 
@@ -144,10 +153,32 @@ def log_kaydet(tip, detay, event_key=None, target_model=None, target_id=None, ou
         "target_model": target_model,
         "target_id": target_id,
         "outcome": outcome,
+        "error_code": extra_fields.get("error_code"),
+        "title": extra_fields.get("title"),
+        "user_message": extra_fields.get("user_message"),
+        "owner_message": extra_fields.get("owner_message"),
+        "module": extra_fields.get("module"),
+        "severity": extra_fields.get("severity"),
+        "exception_type": extra_fields.get("exception_type"),
+        "exception_message": extra_fields.get("exception_message"),
+        "traceback_summary": extra_fields.get("traceback_summary"),
+        "route": extra_fields.get("route"),
+        "method": extra_fields.get("method"),
+        "request_id": extra_fields.get("request_id"),
+        "user_email": extra_fields.get("user_email"),
+        "ip_address": extra_fields.get("ip_address"),
+        "resolved": extra_fields.get("resolved", False),
+        "resolution_note": extra_fields.get("resolution_note"),
     }
     for field_name, value in optional_fields.items():
         if column_exists("islem_log", field_name):
             payload[field_name] = value
+    if column_exists("islem_log", "kullanici_id") and extra_fields.get("user_id") is not None:
+        payload["kullanici_id"] = extra_fields.get("user_id")
+    if column_exists("islem_log", "ip_address") and extra_fields.get("ip_address"):
+        payload["ip_address"] = extra_fields.get("ip_address")
+    if column_exists("islem_log", "user_agent") and extra_fields.get("user_agent"):
+        payload["user_agent"] = extra_fields.get("user_agent")
     try:
         if commit:
             db.session.execute(IslemLog.__table__.insert().values(**payload))

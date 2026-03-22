@@ -18,6 +18,9 @@
     <div class="card">
         <h1>429 · İstek Limiti Aşıldı</h1>
         <p>{{ mesaj or "Kısa süre içinde çok fazla istek gönderildi. Lütfen bir süre bekleyip tekrar deneyin." }}</p>
+        {% if error_code %}
+        <p><strong>Hata kodu:</strong> {{ error_code }}<br>{% if support_note %}{{ support_note }}{% endif %}</p>
+        {% endif %}
         <a href="{{ url_for('ana_sayfa') }}">Ana Sayfaya Dön</a>
     </div>
 </div>

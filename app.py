@@ -2,18 +2,21 @@ import json
 import logging
 import os
 import time
+import uuid
 from datetime import datetime
 from types import SimpleNamespace
 from urllib.parse import urlsplit, urlunsplit
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, make_response, redirect, render_template, request, send_file, url_for
+from flask import Flask, g, jsonify, make_response, redirect, render_template, request, send_file, url_for
 from flask_wtf.csrf import CSRFError
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+from werkzeug.exceptions import HTTPException
 
 from config import DevelopmentConfig, config_by_name
 from extensions import csrf, db, executor, limiter, login_manager, migrate
+from error_handling import capture_error, format_user_error_message, resolve_error_code
 from routes.admin import admin_bp
 from routes.api import api_bp
 from routes.auth import auth_bp
@@ -253,11 +256,43 @@ def _ensure_runtime_schema_compatibility(app):
 
     mevcut_kolonlar = _sqlite_column_names("kullanici")
     if "telefon_numarasi" in mevcut_kolonlar:
+        pass
+    else:
+        db.session.execute(text("ALTER TABLE kullanici ADD COLUMN telefon_numarasi VARCHAR(32)"))
+        db.session.commit()
+        app.logger.warning("Legacy sqlite şeması güncellendi: kullanici.telefon_numarasi eklendi.")
+
+    if not table_exists("islem_log"):
         return
 
-    db.session.execute(text("ALTER TABLE kullanici ADD COLUMN telefon_numarasi VARCHAR(32)"))
-    db.session.commit()
-    app.logger.warning("Legacy sqlite şeması güncellendi: kullanici.telefon_numarasi eklendi.")
+    islem_log_kolonlari = _sqlite_column_names("islem_log")
+    required_columns = {
+        "error_code": "ALTER TABLE islem_log ADD COLUMN error_code VARCHAR(32)",
+        "title": "ALTER TABLE islem_log ADD COLUMN title VARCHAR(180)",
+        "user_message": "ALTER TABLE islem_log ADD COLUMN user_message VARCHAR(255)",
+        "owner_message": "ALTER TABLE islem_log ADD COLUMN owner_message TEXT",
+        "module": "ALTER TABLE islem_log ADD COLUMN module VARCHAR(24)",
+        "severity": "ALTER TABLE islem_log ADD COLUMN severity VARCHAR(20)",
+        "exception_type": "ALTER TABLE islem_log ADD COLUMN exception_type VARCHAR(120)",
+        "exception_message": "ALTER TABLE islem_log ADD COLUMN exception_message TEXT",
+        "traceback_summary": "ALTER TABLE islem_log ADD COLUMN traceback_summary TEXT",
+        "route": "ALTER TABLE islem_log ADD COLUMN route VARCHAR(255)",
+        "method": "ALTER TABLE islem_log ADD COLUMN method VARCHAR(12)",
+        "request_id": "ALTER TABLE islem_log ADD COLUMN request_id VARCHAR(64)",
+        "user_email": "ALTER TABLE islem_log ADD COLUMN user_email VARCHAR(150)",
+        "resolved": "ALTER TABLE islem_log ADD COLUMN resolved BOOLEAN DEFAULT 0",
+        "resolution_note": "ALTER TABLE islem_log ADD COLUMN resolution_note TEXT",
+        "ip_address": "ALTER TABLE islem_log ADD COLUMN ip_address VARCHAR(45)",
+    }
+    added_columns = []
+    for column_name, ddl in required_columns.items():
+        if column_name in islem_log_kolonlari:
+            continue
+        db.session.execute(text(ddl))
+        added_columns.append(column_name)
+    if added_columns:
+        db.session.commit()
+        app.logger.warning("Legacy sqlite şeması güncellendi: islem_log alanları eklendi: %s", ", ".join(added_columns))
 
 
 CRITICAL_RUNTIME_TABLES = (
@@ -497,6 +532,12 @@ def create_app(config_name=None):
     app.register_blueprint(reports_bp)
 
     @app.before_request
+    def assign_request_id():
+        incoming = str(request.headers.get("X-Request-ID") or "").strip()
+        g.request_id = incoming[:64] if incoming else f"sarx-{uuid.uuid4().hex[:20]}"
+        return None
+
+    @app.before_request
     def hydrate_authorization_registry():
         if table_exists("role") and table_exists("permission"):
             state = app.extensions.setdefault("authorization_registry_state", {"hydrated": False})
@@ -531,6 +572,7 @@ def create_app(config_name=None):
 
     @app.after_request
     def apply_security_headers(response):
+        response.headers.setdefault("X-Request-ID", str(getattr(g, "request_id", "") or ""))
         response.headers.setdefault("Content-Security-Policy", app.config.get("CSP_POLICY"))
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -540,64 +582,101 @@ def create_app(config_name=None):
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response
 
-    @app.errorhandler(400)
-    def bad_request(_):
-        return _error_response(400, "Geçersiz istek. Lütfen form alanlarını kontrol edin.")
-
-    @app.errorhandler(401)
-    def unauthorized(_):
-        return _error_response(401, "Bu işlem için kimlik doğrulaması gereklidir.")
-
-    @app.errorhandler(403)
-    def forbidden(_):
-        return _error_response(403, "Bu sayfayı veya işlemi görüntüleme yetkiniz bulunmuyor.")
-
-    @app.errorhandler(404)
-    def not_found(_):
-        return _error_response(404, "Aradığınız sayfa mevcut değil veya taşınmış olabilir.")
-
-    @app.errorhandler(413)
-    def request_too_large(_):
+    def _render_safe_error(error_code, status_code=None, exception=None, retry_after=None):
+        payload = capture_error(exception=exception, error_code=error_code, status_code=status_code)
+        spec = payload["spec"]
+        resolved_status = int(status_code or payload["status_code"] or spec.status_code)
+        user_message = format_user_error_message(spec.error_code)
         if _wants_json_response():
-            return jsonify(
+            response = jsonify(
                 {
                     "status": "error",
-                    "code": 413,
-                    "message": "Yüklenen içerik boyutu izin verilen sınırı aşıyor.",
+                    "message": spec.user_message,
+                    "error_code": spec.error_code,
+                    "request_id": str(getattr(g, "request_id", "") or ""),
                 }
-            ), 413
+            )
+            if retry_after:
+                response.headers["Retry-After"] = str(int(retry_after))
+            return response, resolved_status
+        if resolved_status == 413:
+            return render_template(
+                "413.html",
+                kod=resolved_status,
+                mesaj=spec.user_message,
+                error_code=spec.error_code,
+                request_id=str(getattr(g, "request_id", "") or ""),
+                support_note="Sorun devam ederse bu kodu bildiriniz.",
+            ), resolved_status
+        if resolved_status == 429:
+            response = make_response(
+                render_template(
+                    "429.html",
+                    kod=resolved_status,
+                    mesaj=spec.user_message,
+                    error_code=spec.error_code,
+                    request_id=str(getattr(g, "request_id", "") or ""),
+                    support_note="Sorun devam ederse bu kodu bildiriniz.",
+                ),
+                resolved_status,
+            )
+            if retry_after:
+                response.headers["Retry-After"] = str(int(retry_after))
+            return response
+        template_name = "csrf_hata.html" if isinstance(exception, CSRFError) else "hata.html"
         return render_template(
-            "413.html",
-            kod=413,
-            mesaj="Gönderdiğiniz dosya veya form verisi sistem limitini aşıyor.",
-        ), 413
+            template_name,
+            kod=resolved_status,
+            mesaj=spec.user_message,
+            error_code=spec.error_code,
+            request_id=str(getattr(g, "request_id", "") or ""),
+            support_note="Sorun devam ederse bu kodu bildiriniz.",
+            full_message=user_message,
+        ), resolved_status
+
+    @app.errorhandler(400)
+    def bad_request(error):
+        return _render_safe_error(resolve_error_code(status_code=400), status_code=400, exception=error)
+
+    @app.errorhandler(401)
+    def unauthorized(error):
+        return _render_safe_error("SAR-X-AUTH-6101", status_code=401, exception=error)
+
+    @app.errorhandler(403)
+    def forbidden(error):
+        return _render_safe_error(resolve_error_code(status_code=403), status_code=403, exception=error)
+
+    @app.errorhandler(404)
+    def not_found(error):
+        return _render_safe_error("SAR-X-PUBLIC-3201", status_code=404, exception=error)
+
+    @app.errorhandler(413)
+    def request_too_large(error):
+        return _render_safe_error("SAR-X-MEDIA-7101", status_code=413, exception=error)
 
     @app.errorhandler(429)
     def too_many_requests(error):
-        retry_after = getattr(error, "retry_after", None)
-        message = "Çok fazla istek gönderdiniz. Lütfen kısa süre sonra tekrar deneyin."
-        if retry_after:
-            message = f"Çok fazla istek gönderdiniz. Yaklaşık {int(retry_after)} saniye sonra tekrar deneyin."
-        if _wants_json_response():
-            payload = {"status": "error", "code": 429, "message": message}
-            response = jsonify(payload)
-            if retry_after:
-                response.headers["Retry-After"] = str(int(retry_after))
-            return response, 429
-        response = make_response(render_template("429.html", kod=429, mesaj=message), 429)
-        if retry_after:
-            response.headers["Retry-After"] = str(int(retry_after))
-        return response
+        return _render_safe_error(
+            "SAR-X-SYSTEM-5103",
+            status_code=429,
+            exception=error,
+            retry_after=getattr(error, "retry_after", None),
+        )
 
     @app.errorhandler(500)
-    def internal_server_error(_):
-        return _error_response(500, "Sunucu kaynaklı beklenmedik bir hata oluştu.")
+    def internal_server_error(error):
+        original = getattr(error, "original_exception", None) or error
+        return _render_safe_error("SAR-X-SYSTEM-5101", status_code=500, exception=original)
 
     @app.errorhandler(CSRFError)
-    def handle_csrf_error(e):
-        if _wants_json_response():
-            return jsonify({"status": "error", "message": "CSRF doğrulaması başarısız.", "detail": str(e)}), 400
-        return render_template("csrf_hata.html", mesaj="Güvenlik doğrulaması başarısız oldu. Lütfen tekrar deneyin."), 400
+    def handle_csrf_error(error):
+        return _render_safe_error("SAR-X-AUTH-1202", status_code=400, exception=error)
+
+    @app.errorhandler(Exception)
+    def handle_unexpected_exception(error):
+        if isinstance(error, HTTPException):
+            return error
+        return _render_safe_error(resolve_error_code(exception=error), exception=error)
 
     @app.route("/")
     def ana_sayfa():

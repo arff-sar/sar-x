@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Hata Kaydı Detayı{% endblock %}
+
+{% block extra_css %}
+<style>
+  .error-detail-shell { display:grid; gap:20px; }
+  .error-detail-grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:16px; }
+  .error-detail-card { border:1px solid var(--border); border-radius:18px; background:var(--surface); padding:18px; display:grid; gap:8px; }
+  .error-detail-label { font-size:11px; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; font-weight:800; }
+  .error-detail-value { color:var(--text2); line-height:1.6; word-break:break-word; }
+  .error-detail-pre { white-space:pre-wrap; font-family:'JetBrains Mono', monospace; font-size:12px; background:var(--surface2); border:1px solid var(--border); border-radius:14px; padding:14px; max-height:360px; overflow:auto; }
+  .error-detail-wide { grid-column:1 / -1; }
+
+  @media (max-width: 860px) {
+    .error-detail-grid { grid-template-columns:1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+  <div>
+    <div class="page-title">Hata Kaydı Detayı</div>
+    <div class="page-meta">{{ kayit.error_code }} kodlu kayıt için teknik özet ve çözüm bilgileri.</div>
+  </div>
+  <div>
+    <a href="{{ url_for('admin.hata_kayitlari') }}" class="btn btn-secondary">Listeye Dön</a>
+  </div>
+</div>
+
+<div class="error-detail-shell">
+  <div class="panel">
+    <div class="panel-body">
+      <div class="error-detail-grid">
+        <div class="error-detail-card">
+          <div class="error-detail-label">Hata Kodu</div>
+          <div class="error-detail-value"><code>{{ kayit.error_code }}</code></div>
+        </div>
+        <div class="error-detail-card">
+          <div class="error-detail-label">Durum</div>
+          <div class="error-detail-value">
+            <span class="status-pill {{ 'status-aktif' if kayit.resolved else 'status-ariza' }}">{{ 'Çözüldü' if kayit.resolved else 'Açık' }}</span>
+          </div>
+        </div>
+        <div class="error-detail-card">
+          <div class="error-detail-label">Başlık</div>
+          <div class="error-detail-value">{{ kayit.title }}</div>
+        </div>
+        <div class="error-detail-card">
+          <div class="error-detail-label">Kullanıcıya Gösterilen Mesaj</div>
+          <div class="error-detail-value">{{ kayit.user_message }}</div>
+        </div>
+        <div class="error-detail-card">
+          <div class="error-detail-label">Owner Açıklaması</div>
+          <div class="error-detail-value">{{ kayit.owner_message }}</div>
+        </div>
+        <div class="error-detail-card">
+          <div class="error-detail-label">Modül / Severity</div>
+          <div class="error-detail-value">{{ kayit.module }} / {{ kayit.severity }}</div>
+        </div>
+        <div class="error-detail-card">
+          <div class="error-detail-label">Exception Type</div>
+          <div class="error-detail-value">{{ kayit.exception_type }}</div>
+        </div>
+        <div class="error-detail-card">
+          <div class="error-detail-label">Exception Message</div>
+          <div class="error-detail-value">{{ kayit.exception_message }}</div>
+        </div>
+        <div class="error-detail-card">
+          <div class="error-detail-label">Route / Method</div>
+          <div class="error-detail-value">{{ kayit.method }} {{ kayit.route }}</div>
+        </div>
+        <div class="error-detail-card">
+          <div class="error-detail-label">Request ID</div>
+          <div class="error-detail-value"><code>{{ kayit.request_id }}</code></div>
+        </div>
+        <div class="error-detail-card">
+          <div class="error-detail-label">Kullanıcı</div>
+          <div class="error-detail-value">{{ kayit.user_label }}{% if kayit.user_id %} (#{{ kayit.user_id }}){% endif %}</div>
+        </div>
+        <div class="error-detail-card">
+          <div class="error-detail-label">E-posta</div>
+          <div class="error-detail-value">{{ kayit.user_email }}</div>
+        </div>
+        <div class="error-detail-card">
+          <div class="error-detail-label">IP Adresi</div>
+          <div class="error-detail-value">{{ kayit.ip_address }}</div>
+        </div>
+        <div class="error-detail-card">
+          <div class="error-detail-label">User Agent</div>
+          <div class="error-detail-value">{{ kayit.user_agent }}</div>
+        </div>
+        <div class="error-detail-card error-detail-wide">
+          <div class="error-detail-label">Traceback Özeti</div>
+          <div class="error-detail-pre">{{ kayit.traceback_summary }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <div class="panel-title">Çözüm Durumu</div>
+        <div class="panel-subtitle">Kayıt kapanışı ve çözüm notu yalnızca site sahibi tarafından güncellenir.</div>
+      </div>
+    </div>
+    <div class="panel-body">
+      <form method="post" action="{{ url_for('admin.hata_kaydi_durum', log_id=kayit.id) }}" class="form-grid">
+        <div class="form-group">
+          <label for="resolved">Durum</label>
+          <select id="resolved" name="resolved" class="form-control">
+            <option value="0" {% if not kayit.resolved %}selected{% endif %}>Açık</option>
+            <option value="1" {% if kayit.resolved %}selected{% endif %}>Çözüldü</option>
+          </select>
+        </div>
+        <div class="form-group" style="grid-column:1 / -1;">
+          <label for="resolutionNote">Çözüm Notu</label>
+          <textarea id="resolutionNote" name="resolution_note" class="form-control" rows="5" placeholder="İnceleme sonucu, kök neden ve uygulanan aksiyon">{{ kayit.resolution_note }}</textarea>
+        </div>
+        <div class="form-actions" style="grid-column:1 / -1;">
+          <button type="submit" class="btn btn-navy">Kaydı Güncelle</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

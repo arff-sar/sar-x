@@ -21,6 +21,9 @@
     <div class="card">
         <h1>CSRF Güvenlik Kontrolü</h1>
         <p>{{ mesaj or "İsteğiniz güvenlik doğrulamasından geçemedi. Sayfayı yenileyip tekrar deneyin." }}</p>
+        {% if error_code %}
+        <p><strong>Hata kodu:</strong> {{ error_code }}<br>{% if support_note %}{{ support_note }}{% endif %}</p>
+        {% endif %}
         <div class="actions">
             <a href="{{ url_for('auth.login') }}">Giriş Sayfasına Dön</a>
             <button type="button" onclick="history.back()">Geri Git</button>

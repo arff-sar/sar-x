@@ -165,7 +165,9 @@ def test_sifre_sifirla_talep_internal_error_does_not_return_500(client, app):
         )
 
     assert response.status_code == 200
-    assert "e-posta adresinize gönderildi" in response.data.decode('utf-8')
+    html = response.data.decode('utf-8')
+    assert "SAR-X-MAIL-4101" in html
+    assert "Şifre sıfırlama isteği şu an gönderilemedi." in html
 
 def test_sifre_sifirla_talep_uses_public_reset_base_url(client, app):
     app.config.update({
@@ -285,12 +287,16 @@ def test_sifre_yenile_token_is_single_use_after_password_change(client, app):
 
     reused = client.get(f'/sifre-yenile/{token}', follow_redirects=True)
     assert reused.status_code == 200
-    assert "daha önce kullanılmış" in reused.data.decode('utf-8')
+    reused_html = reused.data.decode('utf-8')
+    assert "SAR-X-AUTH-1301" in reused_html
+    assert "Şifre sıfırlama bağlantısı geçersiz veya süresi dolmuş." in reused_html
 
 def test_sifre_yenile_invalid_token(client, app):
     """Geçersiz veya bozuk token ile erişim denemesi"""
     response = client.get('/sifre-yenile/bu-gecersiz-bir-tokendir', follow_redirects=True)
-    assert "Geçersiz veya bozuk" in response.data.decode('utf-8')
+    html = response.data.decode('utf-8')
+    assert "SAR-X-AUTH-1301" in html
+    assert "Şifre sıfırlama bağlantısı geçersiz veya süresi dolmuş." in html
 
 
 def test_sifre_yenile_expired_token(client, app):
@@ -299,7 +305,9 @@ def test_sifre_yenile_expired_token(client, app):
         response = client.get('/sifre-yenile/suresi-dolmus-token', follow_redirects=True)
 
     assert response.status_code == 200
-    assert "süresi dolmuş" in response.data.decode('utf-8')
+    html = response.data.decode('utf-8')
+    assert "SAR-X-AUTH-1301" in html
+    assert "Şifre sıfırlama bağlantısı geçersiz veya süresi dolmuş." in html
 
 
 def test_sifre_yenile_invalid_password_feedback_is_rendered(client, app):

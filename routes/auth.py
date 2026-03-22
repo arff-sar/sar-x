@@ -17,6 +17,7 @@ from captcha_helper import (
     render_login_captcha_svg,
     validate_login_captcha,
 )
+from error_handling import capture_error, flash_safe_error
 from models import AuthLockout, Kullanici, get_tr_now
 from extensions import audit_log, db, limiter, log_kaydet
 from decorators import role_home_endpoint
@@ -62,8 +63,8 @@ def gizli_sifreyi_getir():
         ad = f"projects/{project_id}/secrets/{secret_name}/versions/{secret_version}"
         cevap = client.access_secret_version(request={"name": ad})
         return cevap.payload.data.decode("UTF-8")
-    except Exception as e:
-        current_app.logger.warning("Secret Manager erişim hatası: %s", e)
+    except Exception:
+        current_app.logger.warning("Secret Manager erişim hatası oluştu.")
         return None
 
 
@@ -74,6 +75,10 @@ def _client_ip():
 
 def _normalize_login_email(raw_value):
     return (raw_value or "").strip().lower()
+
+
+def _looks_like_email(value):
+    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", value or ""))
 
 
 def _auth_identifier(username):
@@ -265,8 +270,13 @@ def mail_gonder(alici_mail, konu, icerik):
         server.send_message(msg)
         server.quit()
         return True
+    except smtplib.SMTPAuthenticationError as e:
+        capture_error(e, error_code="SAR-X-MAIL-4102")
+        current_app.logger.warning("Mail gönderim kimlik doğrulama hatası oluştu.")
+        return False
     except Exception as e:
-        current_app.logger.warning("Mail gönderim hatası: %s", e)
+        capture_error(e, error_code="SAR-X-MAIL-4101")
+        current_app.logger.warning("Mail gönderim hatası oluştu.")
         return False
 
 
@@ -301,22 +311,17 @@ def login():
 
         captcha_valid, captcha_state = validate_login_captcha(security_answer, submitted_token=security_token)
         if not captcha_valid:
+            error_code = "SAR-X-AUTH-1201" if captcha_state == "expired" else "SAR-X-AUTH-1202"
             try:
                 record = _register_failed_login(identifier)
                 now = get_tr_now().replace(tzinfo=None)
                 if record.locked_until and record.locked_until > now:
-                    flash("Güvenlik doğrulaması nedeniyle hesabınız geçici olarak kilitlendi. Lütfen daha sonra tekrar deneyin.", "danger")
-                elif captcha_state == "expired":
-                    flash("Güvenlik doğrulamasının süresi doldu. Lütfen yeni doğrulama kodu alın.", "danger")
-                elif captcha_state == "missing":
-                    flash("Güvenlik doğrulamasını tamamlayın ve tekrar deneyin.", "danger")
-                elif captcha_state in {"stale", "used"}:
-                    flash("Güvenlik doğrulaması doğrulanamadı. Lütfen yeni kod alın.", "danger")
+                    flash_safe_error(error_code, include_help_note=True)
                 else:
-                    flash("Güvenlik doğrulaması yanlış. Lütfen kodu yeniden girin.", "danger")
+                    flash_safe_error(error_code, include_help_note=True)
             except Exception:
                 db.session.rollback()
-                flash("Güvenlik doğrulaması doğrulanamadı. Lütfen yeni kod alın.", "danger")
+                flash_safe_error(error_code, include_help_note=True)
             invalidate_login_captcha(clear_session=True)
             if captcha_state == "expired":
                 event_key = "auth.login.captcha_expired"
@@ -324,6 +329,7 @@ def login():
                 event_key = "auth.login.captcha_refresh_required"
             else:
                 event_key = "auth.login.captcha_failed"
+            capture_error(error_code=error_code, status_code=400, detail=f"Login captcha failed | state={captcha_state or 'unknown'}")
             log_kaydet("Güvenlik", f"Login captcha verification failed: {kullanici_adi}", event_key=event_key, outcome="failed")
             audit_log(event_key, outcome="failed", username=kullanici_adi, ip=_client_ip())
             return _render_login_page(status_code=400, force_new=True)
@@ -407,6 +413,11 @@ def sifre_sifirla_talep():
         flash(generic_message, "info")
         return redirect(url_for('auth.login'))
 
+    if not _looks_like_email(k_ad):
+        capture_error(error_code="SAR-X-AUTH-1101", status_code=400, detail="Invalid password reset email format")
+        flash_safe_error("SAR-X-AUTH-1101", include_help_note=True)
+        return redirect(url_for('auth.login'))
+
     user = _find_active_user_by_email(k_ad)
 
     if user:
@@ -427,10 +438,16 @@ def sifre_sifirla_talep():
             else:
                 current_app.logger.warning("Şifre sıfırlama e-postası gönderilemedi: %s", k_ad)
                 audit_log("auth.password_reset.request", outcome="delivery_failed", username=k_ad, ip=_client_ip())
+                capture_error(error_code="SAR-X-MAIL-4101", status_code=502, detail="Password reset email delivery failed")
+                flash_safe_error("SAR-X-MAIL-4101", include_help_note=True)
+                return redirect(url_for('auth.login'))
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Şifre sıfırlama akışı hazırlanırken hata oluştu: %s", k_ad)
             audit_log("auth.password_reset.request", outcome="error", username=k_ad, ip=_client_ip())
+            capture_error(error_code="SAR-X-MAIL-4101", status_code=502)
+            flash_safe_error("SAR-X-MAIL-4101", include_help_note=True)
+            return redirect(url_for('auth.login'))
     else:
         audit_log("auth.password_reset.request", outcome="user_not_found", username=k_ad, ip=_client_ip())
 
@@ -443,10 +460,12 @@ def sifre_yenile(token):
     try:
         user, email = _load_password_reset_user(token)
     except SignatureExpired:
-        flash("Şifre sıfırlama bağlantısının süresi dolmuş. Lütfen yeni bir talep oluşturun.", "danger")
+        capture_error(error_code="SAR-X-AUTH-1301", status_code=400, detail="Expired password reset token")
+        flash_safe_error("SAR-X-AUTH-1301", include_help_note=True)
         return redirect(url_for('auth.login'))
     except BadSignature:
-        flash("Geçersiz veya bozuk, süresi dolmuş ya da daha önce kullanılmış bir şifre sıfırlama bağlantısı.", "danger")
+        capture_error(error_code="SAR-X-AUTH-1301", status_code=400, detail="Invalid password reset token")
+        flash_safe_error("SAR-X-AUTH-1301", include_help_note=True)
         return redirect(url_for('auth.login'))
 
     if request.method == 'POST':
@@ -473,6 +492,7 @@ def sifre_yenile(token):
             db.session.rollback()
             current_app.logger.exception("Şifre yenileme kaydedilemedi: %s", email)
             audit_log("auth.password_reset.complete", outcome="error", username=email, ip=_client_ip())
-            flash("Şifre güncellenirken beklenmedik bir hata oluştu.", "danger")
+            capture_error(error_code="SAR-X-SYSTEM-5101", status_code=500)
+            flash_safe_error("SAR-X-SYSTEM-5101", include_help_note=True)
             
     return render_template('sifre_yenile.html', token=token, email=email)

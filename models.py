@@ -195,11 +195,35 @@ class IslemLog(db.Model):
     target_model = db.Column(db.String(80), index=True)
     target_id = db.Column(db.Integer, index=True)
     outcome = db.Column(db.String(20), default='success', index=True)
+    error_code = db.Column(db.String(32), nullable=True, index=True)
+    title = db.Column(db.String(180), nullable=True)
+    user_message = db.Column(db.String(255), nullable=True)
+    owner_message = db.Column(db.Text, nullable=True)
+    module = db.Column(db.String(24), nullable=True, index=True)
+    severity = db.Column(db.String(20), nullable=True, index=True)
+    exception_type = db.Column(db.String(120), nullable=True)
+    exception_message = db.Column(db.Text, nullable=True)
+    traceback_summary = db.Column(db.Text, nullable=True)
+    route = db.Column(db.String(255), nullable=True)
+    method = db.Column(db.String(12), nullable=True)
+    request_id = db.Column(db.String(64), nullable=True, index=True)
+    user_email = db.Column(db.String(150), nullable=True)
+    resolved = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    resolution_note = db.Column(db.Text, nullable=True)
     ip_adresi = db.Column(db.String(45)) 
     user_agent = db.Column(db.String(200))
+    ip_address = db.Column(db.String(45), nullable=True)
     zaman = db.Column(db.DateTime, default=get_tr_now, index=True)
 
     yapan_kullanici = db.relationship('Kullanici', backref='loglar')
+
+    @property
+    def created_at(self):
+        return self.zaman
+
+    @property
+    def short_user_message(self):
+        return (self.user_message or self.detay or "").strip()
 
 
 class AuthLockout(db.Model, TimestampMixin):
