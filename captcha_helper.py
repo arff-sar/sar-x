@@ -54,6 +54,46 @@ def _invalidate_db_record(token):
     record.invalidated_at = _now()
 
 
+def _consume_extension_record(token):
+    record = _store().get(token)
+    if not _record_is_active(record):
+        return False
+    record["invalidated_at"] = _now()
+    return True
+
+
+def _consume_db_record(token):
+    now = _now()
+    updated_count = (
+        LoginVisualChallenge.query.filter(
+            LoginVisualChallenge.token == token,
+            LoginVisualChallenge.invalidated_at.is_(None),
+            LoginVisualChallenge.expires_at > now,
+        )
+        .update({LoginVisualChallenge.invalidated_at: now}, synchronize_session=False)
+    )
+    return updated_count == 1
+
+
+def _consume_login_captcha(token, clear_session=False):
+    if not token:
+        return False
+    if _use_db_store():
+        try:
+            consumed = _consume_db_record(token)
+            db.session.commit()
+        except SQLAlchemyError:
+            current_app.logger.warning("Login captcha kaydi tuketilirken veritabani hatasi olustu.", exc_info=True)
+            db.session.rollback()
+            consumed = _consume_extension_record(token)
+    else:
+        consumed = _consume_extension_record(token)
+
+    if clear_session and session.get(LOGIN_CAPTCHA_SESSION_KEY) == token:
+        session.pop(LOGIN_CAPTCHA_SESSION_KEY, None)
+    return consumed
+
+
 def _cleanup_db_records():
     if not _use_db_store():
         return
@@ -73,6 +113,7 @@ def _cleanup_db_records():
         if deleted_count:
             db.session.commit()
     except SQLAlchemyError:
+        current_app.logger.warning("Login captcha cleanup sirasinda veritabani hatasi olustu.", exc_info=True)
         db.session.rollback()
 
 
@@ -85,6 +126,7 @@ def invalidate_login_captcha(token=None, clear_session=False):
             _invalidate_db_record(token)
             db.session.commit()
         except SQLAlchemyError:
+            current_app.logger.warning("Login captcha kaydi gecersiz kilinirken veritabani hatasi olustu.", exc_info=True)
             db.session.rollback()
             _invalidate_extension_record(token)
     else:
@@ -107,6 +149,7 @@ def _create_db_record():
         db.session.commit()
         return record
     except SQLAlchemyError:
+        current_app.logger.warning("Login captcha kaydi olusturulurken veritabani hatasi olustu.", exc_info=True)
         db.session.rollback()
         return _create_extension_record()
 
@@ -131,6 +174,7 @@ def _get_record(token):
         try:
             return LoginVisualChallenge.query.filter_by(token=token).first()
         except SQLAlchemyError:
+            current_app.logger.warning("Login captcha kaydi okunurken veritabani hatasi olustu.", exc_info=True)
             db.session.rollback()
             return _store().get(token)
     return _store().get(token)
@@ -178,18 +222,35 @@ def build_login_captcha(force_new=False):
     return payload
 
 
-def validate_login_captcha(answer):
-    token = session.get(LOGIN_CAPTCHA_SESSION_KEY)
+def validate_login_captcha(answer, submitted_token=None):
+    session_token = session.get(LOGIN_CAPTCHA_SESSION_KEY)
+    submitted_token = str(submitted_token or "").strip()
+    token = submitted_token or session_token
+    normalized_answer = _normalize_code(answer)
+
+    if not token or not normalized_answer:
+        return False, "missing"
+
+    if submitted_token and session_token and submitted_token != session_token:
+        invalidate_login_captcha(submitted_token, clear_session=False)
+        return False, "stale"
+
+    if submitted_token and not session_token:
+        invalidate_login_captcha(submitted_token, clear_session=False)
+        return False, "stale"
+
     record = _get_record(token)
     if not record:
         return False, "missing"
     if not _record_is_active(record):
-        invalidate_login_captcha(token, clear_session=True)
+        invalidate_login_captcha(token, clear_session=(token == session_token))
         return False, "expired"
 
     expected = getattr(record, "code", None) if not isinstance(record, dict) else record.get("code")
-    if _normalize_code(answer) != _normalize_code(expected):
+    if normalized_answer != _normalize_code(expected):
         return False, "invalid"
+    if not _consume_login_captcha(token, clear_session=(token == session_token)):
+        return False, "used"
     return True, "valid"
 
 
@@ -202,7 +263,7 @@ def get_login_captcha_code_for_token(token):
 
 def render_login_captcha_svg(token):
     active_token = session.get(LOGIN_CAPTCHA_SESSION_KEY)
-    if active_token and token != active_token:
+    if not active_token or token != active_token:
         return _build_placeholder_svg("YENILE", "Kod yenilendi")
     record = _get_record(token)
     if not _record_is_active(record):
@@ -217,6 +278,7 @@ def render_login_captcha_svg(token):
             record.last_rendered_at = _now()
             db.session.commit()
         except SQLAlchemyError:
+            current_app.logger.warning("Login captcha SVG render bilgisi guncellenirken veritabani hatasi olustu.", exc_info=True)
             db.session.rollback()
     else:
         record["last_rendered_at"] = _now()

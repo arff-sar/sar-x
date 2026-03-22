@@ -7,6 +7,7 @@ const ASSETS_TO_CACHE = [
   '/manifest.json',
   'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap'
 ];
+const AUTH_CACHE_BYPASS_PREFIXES = ['/login', '/logout', '/sifre-yenile', '/sifre-sifirla-talep'];
 
 // Yükleme sırasında kritik dosyaları önbelleğe al
 self.addEventListener('install', (event) => {
@@ -19,6 +20,14 @@ self.addEventListener('install', (event) => {
 // İnternet yoksa önbellekten getir (SADECE GET İSTEKLERİ İÇİN)
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return; // POST isteklerini önbellekte arama!
+  const requestUrl = new URL(event.request.url);
+
+  if (
+    requestUrl.origin === self.location.origin &&
+    AUTH_CACHE_BYPASS_PREFIXES.some((prefix) => requestUrl.pathname === prefix || requestUrl.pathname.startsWith(prefix + '/'))
+  ) {
+    return;
+  }
 
   event.respondWith(
     fetch(event.request).catch(() => {

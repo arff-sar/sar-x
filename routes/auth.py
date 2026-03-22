@@ -1,3 +1,4 @@
+import hashlib
 import smtplib
 import re
 from datetime import timedelta
@@ -8,6 +9,7 @@ from urllib.parse import urljoin
 from flask import Blueprint, current_app, flash, jsonify, make_response, redirect, render_template, request, session, url_for
 from flask_login import login_user, logout_user, login_required, current_user
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
+from sqlalchemy import func
 
 from captcha_helper import (
     build_login_captcha,
@@ -35,6 +37,7 @@ def _render_login_page(status_code=200, force_new=False):
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
+    response.headers["Vary"] = "Cookie"
     return response
 
 def gizli_sifreyi_getir():
@@ -69,9 +72,27 @@ def _client_ip():
     return forwarded or (request.remote_addr or "unknown")
 
 
+def _normalize_login_email(raw_value):
+    return (raw_value or "").strip().lower()
+
+
 def _auth_identifier(username):
-    normalized = (username or "").strip().lower()
+    normalized = _normalize_login_email(username)
     return f"{normalized}|{_client_ip()}"[:170]
+
+
+def _find_active_user_by_email(email):
+    normalized = _normalize_login_email(email)
+    if not normalized:
+        return None
+    return (
+        Kullanici.query.filter(
+            Kullanici.is_deleted.is_(False),
+            func.lower(func.trim(Kullanici.kullanici_adi)) == normalized,
+        )
+        .order_by(Kullanici.id.asc())
+        .first()
+    )
 
 
 def _get_lock_record(identifier):
@@ -155,6 +176,51 @@ def _build_password_reset_link(token):
     return urljoin(_get_password_reset_base_url(), reset_path.lstrip("/"))
 
 
+def _password_reset_state(user):
+    payload = f"{user.id}:{user.kullanici_adi}:{user.sifre_hash or ''}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
+
+
+def _build_password_reset_token(user):
+    serializer = _get_password_reset_serializer()
+    return serializer.dumps(
+        {
+            "user_id": user.id,
+            "email": _normalize_login_email(user.kullanici_adi),
+            "state": _password_reset_state(user),
+        },
+        salt=PASSWORD_RESET_SALT,
+    )
+
+
+def _load_password_reset_user(token):
+    payload = _get_password_reset_serializer().loads(
+        token,
+        salt=PASSWORD_RESET_SALT,
+        max_age=_get_password_reset_token_max_age(),
+    )
+
+    if isinstance(payload, str):
+        email = _normalize_login_email(payload)
+        return _find_active_user_by_email(email), email
+
+    if not isinstance(payload, dict):
+        raise BadSignature("Unsupported password reset payload.")
+
+    user_id = payload.get("user_id")
+    email = _normalize_login_email(payload.get("email"))
+    state = str(payload.get("state") or "").strip()
+
+    user = db.session.get(Kullanici, user_id) if user_id is not None else None
+    if not user or user.is_deleted:
+        raise BadSignature("Password reset user no longer exists.")
+    if _normalize_login_email(user.kullanici_adi) != email:
+        raise BadSignature("Password reset email mismatch.")
+    if not state or state != _password_reset_state(user):
+        raise BadSignature("Password reset token already used or superseded.")
+    return user, email
+
+
 def _validate_password_reset_value(password):
     if PASSWORD_RESET_PATTERN.match(password or ""):
         return None
@@ -213,10 +279,11 @@ def login():
         return redirect(url_for(role_home_endpoint(current_user)))
         
     if request.method == 'POST':
-        kullanici_adi = (request.form.get('kullanici_adi') or '').strip().lower()
+        kullanici_adi = _normalize_login_email(request.form.get('kullanici_adi'))
         sifre = request.form.get('sifre') or ''
         remember_me = request.form.get('remember_me') == 'on'
         security_answer = request.form.get('security_verification')
+        security_token = request.form.get('security_verification_token')
         identifier = _auth_identifier(kullanici_adi)
 
         try:
@@ -232,7 +299,7 @@ def login():
             audit_log("auth.login", outcome="locked", username=kullanici_adi, ip=_client_ip())
             return _render_login_page(status_code=429, force_new=True)
 
-        captcha_valid, captcha_state = validate_login_captcha(security_answer)
+        captcha_valid, captcha_state = validate_login_captcha(security_answer, submitted_token=security_token)
         if not captcha_valid:
             try:
                 record = _register_failed_login(identifier)
@@ -243,18 +310,25 @@ def login():
                     flash("Güvenlik doğrulamasının süresi doldu. Lütfen yeni doğrulama kodu alın.", "danger")
                 elif captcha_state == "missing":
                     flash("Güvenlik doğrulamasını tamamlayın ve tekrar deneyin.", "danger")
+                elif captcha_state in {"stale", "used"}:
+                    flash("Güvenlik doğrulaması doğrulanamadı. Lütfen yeni kod alın.", "danger")
                 else:
                     flash("Güvenlik doğrulaması yanlış. Lütfen kodu yeniden girin.", "danger")
             except Exception:
                 db.session.rollback()
                 flash("Güvenlik doğrulaması doğrulanamadı. Lütfen yeni kod alın.", "danger")
             invalidate_login_captcha(clear_session=True)
-            event_key = "auth.login.captcha_expired" if captcha_state == "expired" else "auth.login.captcha_failed"
+            if captcha_state == "expired":
+                event_key = "auth.login.captcha_expired"
+            elif captcha_state in {"stale", "used"}:
+                event_key = "auth.login.captcha_refresh_required"
+            else:
+                event_key = "auth.login.captcha_failed"
             log_kaydet("Güvenlik", f"Login captcha verification failed: {kullanici_adi}", event_key=event_key, outcome="failed")
             audit_log(event_key, outcome="failed", username=kullanici_adi, ip=_client_ip())
             return _render_login_page(status_code=400, force_new=True)
 
-        user = Kullanici.query.filter_by(kullanici_adi=kullanici_adi, is_deleted=False).first()
+        user = _find_active_user_by_email(kullanici_adi)
         
         if user and user.sifre_kontrol(sifre):
             login_user(user, remember=remember_me)
@@ -295,6 +369,7 @@ def login_captcha_refresh():
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
+    response.headers["Vary"] = "Cookie"
     return response
 
 
@@ -306,6 +381,7 @@ def login_captcha_image(token):
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
+    response.headers["Vary"] = "Cookie"
     return response
 
 @auth_bp.route('/logout', methods=['POST'])
@@ -324,53 +400,53 @@ def logout():
 @auth_bp.route('/sifre-sifirla-talep', methods=['POST'])
 @limiter.limit(lambda: current_app.config.get("RESET_RATE_LIMIT", "3 per minute"), methods=["POST"])
 def sifre_sifirla_talep():
-    k_ad = (request.form.get('kullanici_adi') or '').strip().lower()
+    k_ad = _normalize_login_email(request.form.get('kullanici_adi'))
     generic_message = "Şifre sıfırlama bağlantısı e-posta adresinize gönderildi."
 
     if not k_ad:
         flash(generic_message, "info")
         return redirect(url_for('auth.login'))
-        
-    user = Kullanici.query.filter_by(kullanici_adi=k_ad, is_deleted=False).first()
-    
+
+    user = _find_active_user_by_email(k_ad)
+
     if user:
-        serializer = _get_password_reset_serializer()
-        token = serializer.dumps(k_ad, salt=PASSWORD_RESET_SALT)
-        reset_link = _build_password_reset_link(token)
-        
-        log_kaydet('Şifre Sıfırlama', f'{k_ad} için şifre sıfırlama bağlantısı gönderildi.')
-        
-        kullanici_ismi = getattr(user, 'tam_ad', 'Personel')
-        konu = "SAR-X Şifre Sıfırlama Bağlantısı"
-        
-        icerik = render_template('email/sifre_sifirla.html', 
-                                 kullanici_ismi=kullanici_ismi, 
-                                 reset_link=reset_link)
-        
-        mail_sonuc = mail_gonder(k_ad, konu, icerik)
-        if not mail_sonuc:
-            current_app.logger.warning("Şifre sıfırlama e-postası gönderilemedi: %s", k_ad)
+        try:
+            token = _build_password_reset_token(user)
+            reset_link = _build_password_reset_link(token)
+            kullanici_ismi = getattr(user, 'tam_ad', 'Personel')
+            konu = "SAR-X Şifre Sıfırlama Bağlantısı"
+            icerik = render_template(
+                'email/sifre_sifirla.html',
+                kullanici_ismi=kullanici_ismi,
+                reset_link=reset_link,
+            )
+            mail_sonuc = mail_gonder(k_ad, konu, icerik)
+            if mail_sonuc:
+                log_kaydet('Şifre Sıfırlama', f'{k_ad} için şifre sıfırlama bağlantısı gönderildi.')
+                audit_log("auth.password_reset.request", outcome="success", username=k_ad, ip=_client_ip())
+            else:
+                current_app.logger.warning("Şifre sıfırlama e-postası gönderilemedi: %s", k_ad)
+                audit_log("auth.password_reset.request", outcome="delivery_failed", username=k_ad, ip=_client_ip())
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("Şifre sıfırlama akışı hazırlanırken hata oluştu: %s", k_ad)
+            audit_log("auth.password_reset.request", outcome="error", username=k_ad, ip=_client_ip())
+    else:
+        audit_log("auth.password_reset.request", outcome="user_not_found", username=k_ad, ip=_client_ip())
 
     flash(generic_message, "success")
-    
     return redirect(url_for('auth.login'))
 
 
 @auth_bp.route('/sifre-yenile/<token>', methods=['GET', 'POST'])
 def sifre_yenile(token):
-    serializer = _get_password_reset_serializer()
-    
     try:
-        email = serializer.loads(
-            token,
-            salt=PASSWORD_RESET_SALT,
-            max_age=_get_password_reset_token_max_age(),
-        )
+        user, email = _load_password_reset_user(token)
     except SignatureExpired:
         flash("Şifre sıfırlama bağlantısının süresi dolmuş. Lütfen yeni bir talep oluşturun.", "danger")
         return redirect(url_for('auth.login'))
     except BadSignature:
-        flash("Geçersiz veya bozuk bir şifre sıfırlama bağlantısı.", "danger")
+        flash("Geçersiz veya bozuk, süresi dolmuş ya da daha önce kullanılmış bir şifre sıfırlama bağlantısı.", "danger")
         return redirect(url_for('auth.login'))
 
     if request.method == 'POST':
@@ -381,21 +457,22 @@ def sifre_yenile(token):
             flash(password_error, "warning")
             return render_template('sifre_yenile.html', token=token, email=email)
 
-        user = Kullanici.query.filter_by(kullanici_adi=email, is_deleted=False).first()
-        
-        if user:
-            user.sifre_set(yeni_sifre)
-            
-            try:
-                db.session.commit()
-                log_kaydet('Şifre Yenileme', f'{email} şifresini başarıyla yeniledi.')
-                flash("Şifreniz başarıyla güncellendi! Giriş yapabilirsiniz.", "success")
-                return redirect(url_for('auth.login'))
-            except Exception as e:
-                db.session.rollback()
-                flash("Veritabanı hatası oluştu.", "danger")
-        else:
+        if not user:
             flash("Kullanıcı bulunamadı.", "danger")
             return redirect(url_for('auth.login'))
+
+        user.sifre_set(yeni_sifre)
+
+        try:
+            db.session.commit()
+            log_kaydet('Şifre Yenileme', f'{email} şifresini başarıyla yeniledi.')
+            audit_log("auth.password_reset.complete", outcome="success", user_id=user.id, ip=_client_ip())
+            flash("Şifreniz başarıyla güncellendi! Giriş yapabilirsiniz.", "success")
+            return redirect(url_for('auth.login'))
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("Şifre yenileme kaydedilemedi: %s", email)
+            audit_log("auth.password_reset.complete", outcome="error", username=email, ip=_client_ip())
+            flash("Şifre güncellenirken beklenmedik bir hata oluştu.", "danger")
             
     return render_template('sifre_yenile.html', token=token, email=email)

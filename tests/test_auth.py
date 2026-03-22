@@ -6,6 +6,7 @@ from werkzeug.security import generate_password_hash
 from flask import url_for, current_app
 from itsdangerous import SignatureExpired, URLSafeTimedSerializer
 from models import LoginVisualChallenge
+from routes import auth as auth_module
 
 
 def _extract_challenge_answer(client, app):
@@ -134,6 +135,38 @@ def test_sifre_sifirla_talep_success(client, app):
     assert response.status_code == 200
     assert "e-posta adresinize gönderildi" in response.data.decode('utf-8')
 
+
+def test_sifre_sifirla_talep_unknown_user_returns_generic_response_without_mail(client, app):
+    app.config['WTF_CSRF_ENABLED'] = False
+
+    with patch('routes.auth.mail_gonder', return_value=True) as mocked_mail:
+        response = client.post(
+            '/sifre-sifirla-talep',
+            data={'kullanici_adi': 'olmayan@sarx.com'},
+            follow_redirects=True,
+        )
+
+    assert response.status_code == 200
+    assert mocked_mail.call_count == 0
+    assert "e-posta adresinize gönderildi" in response.data.decode('utf-8')
+
+
+def test_sifre_sifirla_talep_internal_error_does_not_return_500(client, app):
+    app.config['WTF_CSRF_ENABLED'] = False
+    user = KullaniciFactory(kullanici_adi="broken@sarx.com", is_deleted=False)
+    db.session.add(user)
+    db.session.commit()
+
+    with patch('routes.auth.mail_gonder', side_effect=RuntimeError("smtp down")):
+        response = client.post(
+            '/sifre-sifirla-talep',
+            data={'kullanici_adi': 'broken@sarx.com'},
+            follow_redirects=True,
+        )
+
+    assert response.status_code == 200
+    assert "e-posta adresinize gönderildi" in response.data.decode('utf-8')
+
 def test_sifre_sifirla_talep_uses_public_reset_base_url(client, app):
     app.config.update({
         'WTF_CSRF_ENABLED': False,
@@ -231,6 +264,29 @@ def test_sifre_yenile_success(client, app):
     assert login_response.status_code == 200
     assert login_response.request.path == '/dashboard'
 
+
+def test_sifre_yenile_token_is_single_use_after_password_change(client, app):
+    app.config['WTF_CSRF_ENABLED'] = False
+    email = "single-use@sarx.com"
+    user = KullaniciFactory(kullanici_adi=email, is_deleted=False, rol="sahip", password="EskiSifre1!")
+    db.session.add(user)
+    db.session.commit()
+
+    with app.app_context():
+        token = auth_module._build_password_reset_token(user)
+
+    response = client.post(
+        f'/sifre-yenile/{token}',
+        data={'yeni_sifre': 'YeniSifre1!'},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "Şifreniz başarıyla güncellendi" in response.data.decode('utf-8')
+
+    reused = client.get(f'/sifre-yenile/{token}', follow_redirects=True)
+    assert reused.status_code == 200
+    assert "daha önce kullanılmış" in reused.data.decode('utf-8')
+
 def test_sifre_yenile_invalid_token(client, app):
     """Geçersiz veya bozuk token ile erişim denemesi"""
     response = client.get('/sifre-yenile/bu-gecersiz-bir-tokendir', follow_redirects=True)
@@ -270,3 +326,26 @@ def test_sifre_yenile_invalid_password_feedback_is_rendered(client, app):
     db.session.expire_all()
     refreshed_user = db.session.get(type(user), user.id)
     assert refreshed_user.sifre_kontrol(old_password)
+
+
+def test_login_normalizes_email_lookup_for_legacy_mixed_case_records(client, app):
+    app.config['WTF_CSRF_ENABLED'] = False
+
+    user = KullaniciFactory(
+        kullanici_adi="  MehmetCinocevi@Gmail.com ",
+        is_deleted=False,
+        rol="sahip",
+    )
+    user.sifre_hash = generate_password_hash('123456', method='pbkdf2:sha256')
+    db.session.add(user)
+    db.session.commit()
+
+    answer = _extract_challenge_answer(client, app)
+    response = client.post('/login', data={
+        'kullanici_adi': 'mehmetcinocevi@gmail.com',
+        'sifre': '123456',
+        'security_verification': answer,
+    }, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert response.request.path == '/dashboard'

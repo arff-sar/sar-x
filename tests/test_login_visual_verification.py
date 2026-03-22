@@ -70,6 +70,7 @@ def test_old_challenge_cannot_be_reused_after_login_page_refresh(client, app):
 def test_login_page_renders_visual_captcha_block(client):
     response = client.get("/login")
     html = response.data.decode("utf-8")
+    token = _current_captcha_token(client)
 
     assert response.status_code == 200
     assert 'meta name="csrf-token"' in html
@@ -77,6 +78,8 @@ def test_login_page_renders_visual_captcha_block(client):
     assert 'id="captchaRefresh"' in html
     assert 'id="captchaTimer"' in html
     assert 'id="captchaAnswer"' in html
+    assert 'id="captchaTokenField"' in html
+    assert f'value="{token}"' in html
     assert "autoRefreshStateMessage = 'Doğrulama kodu yenileniyor...'" in html
     assert "Yenile" not in html
     assert "/login/captcha/" in html
@@ -156,6 +159,82 @@ def test_refresh_returns_working_new_captcha(client, app):
     assert valid_response.request.path == "/dashboard"
 
 
+def test_stale_hidden_token_requests_new_code(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    user = KullaniciFactory(kullanici_adi="stale-token@sarx.com", is_deleted=False, rol="sahip")
+    db.session.add(user)
+    db.session.commit()
+
+    client.get("/login")
+    old_token = _current_captcha_token(client)
+    old_challenge = LoginVisualChallenge.query.filter_by(token=old_token).first()
+    assert old_challenge is not None
+
+    refresh_response = client.post("/login/captcha/refresh")
+    new_token = _current_captcha_token(client)
+    db.session.refresh(old_challenge)
+
+    assert refresh_response.status_code == 200
+    assert new_token != old_token
+    assert old_challenge.invalidated_at is not None
+
+    response = client.post(
+        "/login",
+        data={
+            "kullanici_adi": "stale-token@sarx.com",
+            "sifre": "123456",
+            "security_verification": old_challenge.code,
+            "security_verification_token": old_token,
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 400
+    assert "Güvenlik doğrulaması doğrulanamadı. Lütfen yeni kod alın." in response.data.decode("utf-8")
+
+
+def test_valid_challenge_is_consumed_before_password_check(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    user = KullaniciFactory(kullanici_adi="consume@sarx.com", is_deleted=False, rol="sahip")
+    db.session.add(user)
+    db.session.commit()
+
+    client.get("/login")
+    token = _current_captcha_token(client)
+    challenge = LoginVisualChallenge.query.filter_by(token=token).first()
+    assert challenge is not None
+
+    first_response = client.post(
+        "/login",
+        data={
+            "kullanici_adi": "consume@sarx.com",
+            "sifre": "yanlis-sifre",
+            "security_verification": challenge.code,
+            "security_verification_token": token,
+        },
+        follow_redirects=True,
+    )
+    db.session.refresh(challenge)
+
+    assert first_response.status_code == 200
+    assert "Şifre veya Kullanıcı Adı yanlış." in first_response.data.decode("utf-8")
+    assert challenge.invalidated_at is not None
+
+    second_response = client.post(
+        "/login",
+        data={
+            "kullanici_adi": "consume@sarx.com",
+            "sifre": "123456",
+            "security_verification": challenge.code,
+            "security_verification_token": token,
+        },
+        follow_redirects=True,
+    )
+
+    assert second_response.status_code == 400
+    assert "Güvenlik doğrulaması doğrulanamadı. Lütfen yeni kod alın." in second_response.data.decode("utf-8")
+
+
 def test_expired_captcha_requires_new_code(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
     user = KullaniciFactory(kullanici_adi="expire@sarx.com", is_deleted=False, rol="sahip")
@@ -185,3 +264,28 @@ def test_login_page_renders_with_snapshot_loader_failure(client):
     client.application.extensions["public_site_snapshot_loader"] = broken_loader
     response = client.get("/login")
     assert response.status_code == 200
+
+
+def test_captcha_svg_requires_active_session_token(client):
+    client.get("/login")
+    token = _current_captcha_token(client)
+    assert token
+
+    with client.session_transaction() as session:
+        session.pop("login_visual_captcha_token", None)
+
+    response = client.get(f"/login/captcha/{token}.svg")
+
+    assert response.status_code == 200
+    assert "Kod yenilendi" in response.data.decode("utf-8")
+    assert response.headers["Vary"] == "Cookie"
+
+
+def test_service_worker_skips_login_and_captcha_requests(client):
+    response = client.get("/sw.js")
+    body = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "AUTH_CACHE_BYPASS_PREFIXES" in body
+    assert "'/login'" in body
+    assert "requestUrl.pathname.startsWith(prefix + '/')" in body

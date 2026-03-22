@@ -946,6 +946,12 @@
                         </button>
                         <div class="captcha-input-shell">
                             <input
+                                type="hidden"
+                                name="security_verification_token"
+                                id="captchaTokenField"
+                                value="{{ login_captcha.token if login_captcha else '' }}"
+                            >
+                            <input
                                 type="text"
                                 name="security_verification"
                                 class="captcha-input"
@@ -1146,6 +1152,7 @@
             const refreshBtn = document.getElementById('captchaRefresh');
             const imageEl = document.getElementById('captchaImage');
             const answerInput = document.getElementById('captchaAnswer');
+            const tokenInput = document.getElementById('captchaTokenField');
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 
             if (!timerEl || !boxEl || !refreshBtn || !imageEl || !progressEl) {
@@ -1213,6 +1220,9 @@
                 const imageUrl = captcha.image_url || '';
                 const cacheBustedUrl = imageUrl ? imageUrl + (imageUrl.includes('?') ? '&' : '?') + 'cb=' + Date.now() : '';
                 boxEl.dataset.captchaToken = captcha.token || '';
+                if (tokenInput) {
+                    tokenInput.value = captcha.token || '';
+                }
                 if (captcha.refresh_url) {
                     boxEl.dataset.refreshUrl = captcha.refresh_url;
                 }

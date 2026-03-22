@@ -68,6 +68,17 @@ def _normalize_search_term(raw_value):
     return " ".join((guvenli_metin(raw_value or "")).split())
 
 
+def _normalize_user_email(raw_value):
+    return guvenli_metin(raw_value or "").strip().lower()
+
+
+def _find_user_by_email(raw_value):
+    normalized = _normalize_user_email(raw_value)
+    if not normalized:
+        return None
+    return Kullanici.query.filter(func.lower(func.trim(Kullanici.kullanici_adi)) == normalized).first()
+
+
 def _normalize_phone_number(raw_value):
     cleaned = guvenli_metin(raw_value or "").strip()
     if not cleaned:
@@ -421,7 +432,7 @@ def kullanici_import_commit():
     created_count = 0
     skipped_count = 0
     for row in valid_rows:
-        existing = Kullanici.query.filter_by(kullanici_adi=row["kullanici_adi"]).first()
+        existing = _find_user_by_email(row["kullanici_adi"])
         if existing:
             skipped_count += 1
             continue
@@ -464,7 +475,7 @@ def kullanici_import_clear():
 def kullanici_ekle():
     """Yeni kullanıcı ekler."""
     tam_ad = guvenli_metin(request.form.get('tam_ad'))
-    k_adi = guvenli_metin(request.form.get('k_adi'))
+    k_adi = _normalize_user_email(request.form.get('k_adi'))
     rol = request.form.get('rol')
     h_id = request.form.get('h_id')
     sifre = request.form.get('sifre')
@@ -489,7 +500,7 @@ def kullanici_ekle():
         return redirect(url_for('admin.kullanicilar'))
 
     # Kullanıcı adı kontrolü
-    mevcut = Kullanici.query.filter_by(kullanici_adi=k_adi).first()
+    mevcut = _find_user_by_email(k_adi)
     if mevcut:
         flash("Bu e-posta/kullanıcı adı zaten kullanımda!", "warning")
         return redirect(url_for('admin.kullanicilar'))
@@ -546,11 +557,12 @@ def kullanici_guncelle(id):
     if not approval_required and not can_assign_role(current_user, yeni_rol):
         abort(403)
     if approval_required:
+        normalized_email = _normalize_user_email(request.form.get('k_adi') or user.kullanici_adi)
         payload = json.dumps(
             {
                 "user_id": user.id,
                 "tam_ad": guvenli_metin(request.form.get('tam_ad') or user.tam_ad),
-                "k_adi": guvenli_metin(request.form.get('k_adi') or user.kullanici_adi),
+                "k_adi": normalized_email,
                 "rol": yeni_rol,
                 "h_id": h_id,
                 "allow_permissions": allow_permissions,
@@ -589,8 +601,14 @@ def kullanici_guncelle(id):
             flash("Rol değişikliği onaya gönderildi.", "warning")
             return redirect(url_for('admin.kullanicilar', user_id=user.id))
 
+    yeni_email = _normalize_user_email(request.form.get('k_adi') or user.kullanici_adi)
+    existing = _find_user_by_email(yeni_email)
+    if existing and existing.id != user.id:
+        flash("Bu e-posta/kullanıcı adı zaten kullanımda!", "warning")
+        return redirect(url_for('admin.kullanicilar', user_id=user.id))
+
     user.tam_ad = guvenli_metin(request.form.get('tam_ad') or user.tam_ad)
-    user.kullanici_adi = guvenli_metin(request.form.get('k_adi') or user.kullanici_adi)
+    user.kullanici_adi = yeni_email
     user.rol = yeni_rol
     user.havalimani_id = h_id
     if current_user.is_sahip:
@@ -641,7 +659,7 @@ def kullanici_sil(id):
         flash("Kullanıcı bulunamadı!", "danger")
     elif not actor_can_manage_target(current_user, user):
         abort(403)
-    elif user.kullanici_adi == 'mehmetcinocevi@gmail.com':
+    elif _normalize_user_email(user.kullanici_adi) == 'mehmetcinocevi@gmail.com':
         flash("Ana yönetici hesabı silinemez!", "danger")
     else:
         k_adi = user.kullanici_adi
