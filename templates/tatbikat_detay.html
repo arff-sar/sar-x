@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Tatbikat Belgesi{% endblock %}
+
+{% block extra_css %}
+<style>
+  .drill-detail-grid { display:grid; grid-template-columns:minmax(0, 1.2fr) minmax(280px, .8fr); gap:20px; align-items:start; }
+  .drill-detail-meta { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+  .drill-detail-item { padding:14px; border:1px solid var(--border); border-radius:14px; background:var(--surface2); }
+  .drill-detail-label { font-size:11px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
+  .drill-detail-value { margin-top:5px; font-size:13px; color:var(--text2); line-height:1.55; word-break:break-word; }
+  .drill-detail-actions { display:flex; gap:10px; flex-wrap:wrap; }
+  @media (max-width: 960px) {
+    .drill-detail-grid,
+    .drill-detail-meta { grid-template-columns:1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+  <div>
+    <div class="page-title">{{ document.baslik }}</div>
+    <div class="page-meta">
+      <span>{{ document.havalimani.ad if document.havalimani else '-' }}</span>
+      <div class="meta-dot" style="width:3px; height:3px; background:var(--text4); border-radius:50%;"></div>
+      <span>{{ document.created_at.strftime('%d.%m.%Y %H:%M') if document.created_at else '-' }}</span>
+    </div>
+  </div>
+  <div class="drill-detail-actions">
+    <a href="{{ url_for('inventory.tatbikat_goruntule', document_id=document.id) }}" class="btn btn-secondary">Görüntüle</a>
+    <a href="{{ url_for('inventory.tatbikat_indir', document_id=document.id) }}" class="btn btn-primary">İndir</a>
+    <a href="{{ url_for('inventory.tatbikat_listesi', airport_id=document.havalimani_id) }}" class="btn btn-secondary">Listeye Dön</a>
+  </div>
+</div>
+
+<div class="drill-detail-grid">
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <div class="panel-title">Belge Bilgileri</div>
+        <div class="panel-subtitle">Dosya Google Drive üzerinde saklanır; burada yalnız metadata tutulur.</div>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="drill-detail-meta">
+        <div class="drill-detail-item">
+          <div class="drill-detail-label">Havalimanı</div>
+          <div class="drill-detail-value">{{ document.havalimani.kodu if document.havalimani else '-' }} - {{ document.havalimani.ad if document.havalimani else '-' }}</div>
+        </div>
+        <div class="drill-detail-item">
+          <div class="drill-detail-label">Dosya Adı</div>
+          <div class="drill-detail-value">{{ document.dosya_adi }}</div>
+        </div>
+        <div class="drill-detail-item">
+          <div class="drill-detail-label">Tür</div>
+          <div class="drill-detail-value">{{ document.mime_type }}</div>
+        </div>
+        <div class="drill-detail-item">
+          <div class="drill-detail-label">Boyut</div>
+          <div class="drill-detail-value">{{ format_file_size(document.dosya_boyutu) }}</div>
+        </div>
+        <div class="drill-detail-item">
+          <div class="drill-detail-label">Yükleyen</div>
+          <div class="drill-detail-value">{{ document.yukleyen.tam_ad if document.yukleyen else '-' }}</div>
+        </div>
+        <div class="drill-detail-item">
+          <div class="drill-detail-label">Yüklenme Tarihi</div>
+          <div class="drill-detail-value">{{ document.created_at.strftime('%d.%m.%Y %H:%M') if document.created_at else '-' }}</div>
+        </div>
+      </div>
+
+      {% if document.aciklama %}
+      <div class="panel" style="margin-top:18px; margin-bottom:0;">
+        <div class="panel-header">
+          <div class="panel-title">Açıklama</div>
+        </div>
+        <div class="panel-body" style="padding-top:18px; padding-bottom:18px; font-size:13px; color:var(--text2); line-height:1.7;">
+          {{ document.aciklama }}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if can_manage_document %}
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <div class="panel-title">Yönetim</div>
+        <div class="panel-subtitle">Bu belgeyi yalnız yetkili rolünüz kapsamında silebilirsiniz.</div>
+      </div>
+    </div>
+    <div class="panel-body">
+      <form method="POST" action="{{ url_for('inventory.tatbikat_sil', document_id=document.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-danger" onclick="return confirm('Bu tatbikat belgesi kaldırılsın mı?');">Belgeyi Sil</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

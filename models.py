@@ -45,6 +45,7 @@ class Havalimani(db.Model, TimestampMixin, SoftDeleteMixin):
     id = db.Column(db.Integer, primary_key=True)
     ad = db.Column(db.String(100), nullable=False)
     kodu = db.Column(db.String(10), nullable=False, unique=True)
+    drive_folder_id = db.Column(db.String(255), nullable=True, index=True)
     
     personeller = db.relationship('Kullanici', backref='havalimani', lazy=True)
     kutular = db.relationship('Kutu', backref='havalimani', lazy=True)
@@ -52,6 +53,7 @@ class Havalimani(db.Model, TimestampMixin, SoftDeleteMixin):
     assets = db.relationship('InventoryAsset', backref='airport', lazy=True)
     maintenance_plans = db.relationship('MaintenancePlan', backref='airport_owner', lazy=True)
     spare_part_stocks = db.relationship('SparePartStock', backref='airport_stock', lazy=True)
+    tatbikat_belgeleri = db.relationship('TatbikatBelgesi', backref='havalimani', lazy=True)
 
 class Kullanici(db.Model, UserMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = 'kullanici'
@@ -1174,6 +1176,23 @@ class DocumentResource(db.Model, TimestampMixin):
     category = db.Column(db.String(100), index=True)
     order_index = db.Column(db.Integer, default=0, index=True)
     is_active = db.Column(db.Boolean, default=True, index=True)
+
+
+class TatbikatBelgesi(db.Model, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = 'tatbikat_belgesi'
+
+    id = db.Column(db.Integer, primary_key=True)
+    havalimani_id = db.Column(db.Integer, db.ForeignKey('havalimani.id'), nullable=False, index=True)
+    yukleyen_kullanici_id = db.Column(db.Integer, db.ForeignKey('kullanici.id'), nullable=False, index=True)
+    baslik = db.Column(db.String(180), nullable=False)
+    aciklama = db.Column(db.Text, nullable=True)
+    dosya_adi = db.Column(db.String(255), nullable=False)
+    drive_file_id = db.Column(db.String(255), nullable=False, unique=True, index=True)
+    drive_folder_id = db.Column(db.String(255), nullable=False, index=True)
+    mime_type = db.Column(db.String(120), nullable=False)
+    dosya_boyutu = db.Column(db.BigInteger, nullable=False, default=0)
+
+    yukleyen = db.relationship('Kullanici', backref='tatbikat_belgeleri', lazy=True)
 
 
 class HomeStatCard(db.Model):
