@@ -1,6 +1,7 @@
 import io
 import base64
 import json
+import mimetypes
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 from datetime import datetime, timedelta
@@ -53,6 +54,7 @@ from models import (
     PPERecord,
     PPERecordEvent,
     SparePartStock,
+    TatbikatBelgesi,
     TR_TZ,
     Notification,
     WorkOrder,
@@ -61,6 +63,7 @@ from models import (
 from extensions import table_exists
 from qr_logic import generate_qr_data
 from decorators import has_permission, permission_required
+from google_drive_service import GoogleDriveError, get_drill_drive_service
 from reporting import build_dashboard_kpis
 from storage import get_storage_adapter
 
@@ -83,6 +86,13 @@ PPE_STATUS_LABELS = {
 }
 SIGNED_ASSIGNMENT_ALLOWED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "webp"}
 PPE_ALLOWED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "webp"}
+DRILL_ALLOWED_EXTENSIONS = {"pdf", "docx", "xlsx", "jpg", "jpeg", "png"}
+DRILL_ALLOWED_MIME_TYPES = (
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "image/",
+)
 
 
 def havalimani_filtreli_sorgu(model_sinifi):
@@ -142,6 +152,105 @@ def _ppe_scope():
     if has_permission("ppe.manage"):
         return query.filter(PPERecord.airport_id == current_user.havalimani_id)
     return query.filter(PPERecord.user_id == current_user.id)
+
+
+def _drill_scope():
+    query = TatbikatBelgesi.query.filter_by(is_deleted=False)
+    if getattr(current_user, "is_sahip", False):
+        return query
+    if current_user.havalimani_id is None:
+        return query.filter(TatbikatBelgesi.havalimani_id.is_(None))
+    return query.filter(TatbikatBelgesi.havalimani_id == current_user.havalimani_id)
+
+
+def _can_view_drills_for_airport(airport_id):
+    if getattr(current_user, "is_sahip", False):
+        return True
+    return bool(current_user.havalimani_id and current_user.havalimani_id == airport_id)
+
+
+def _can_manage_drills_for_airport(airport_id):
+    if getattr(current_user, "is_sahip", False):
+        return True
+    return bool(
+        getattr(current_user, "rol", "") in {"havalimani_yoneticisi", "yetkili"}
+        and current_user.havalimani_id
+        and current_user.havalimani_id == airport_id
+    )
+
+
+def _visible_drill_airports():
+    if getattr(current_user, "is_sahip", False):
+        return Havalimani.query.filter_by(is_deleted=False).order_by(Havalimani.kodu.asc()).all()
+    if current_user.havalimani_id is None:
+        return []
+    return Havalimani.query.filter_by(
+        is_deleted=False,
+        id=current_user.havalimani_id,
+    ).order_by(Havalimani.kodu.asc()).all()
+
+
+def _drill_file_size(upload):
+    stream = getattr(upload, "stream", None)
+    if stream is None:
+        return int(getattr(upload, "content_length", 0) or 0)
+    try:
+        position = stream.tell()
+    except Exception:
+        position = 0
+    try:
+        stream.seek(0, io.SEEK_END)
+        size = stream.tell()
+    except Exception:
+        size = int(getattr(upload, "content_length", 0) or 0)
+    finally:
+        try:
+            stream.seek(position)
+        except Exception:
+            pass
+    return int(size or 0)
+
+
+def _validate_drill_upload(upload):
+    safe_name, error = _validate_upload(upload, DRILL_ALLOWED_EXTENSIONS, DRILL_ALLOWED_MIME_TYPES)
+    if error:
+        return None, None, error
+
+    file_size = _drill_file_size(upload)
+    max_bytes = int(current_app.config.get("DRILL_MAX_FILE_SIZE") or current_app.config.get("MAX_CONTENT_LENGTH") or 0)
+    if max_bytes and file_size > max_bytes:
+        max_mb = max(1, int(max_bytes / (1024 * 1024)))
+        return None, None, f"Tatbikat dosyası en fazla {max_mb} MB olabilir."
+
+    mime_type = getattr(upload, "mimetype", None) or mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
+    return safe_name, mime_type, None
+
+
+def _format_drill_file_size(size):
+    amount = float(size or 0)
+    for unit in ("B", "KB", "MB", "GB"):
+        if amount < 1024 or unit == "GB":
+            if unit == "B":
+                return f"{int(amount)} {unit}"
+            return f"{amount:.1f} {unit}"
+        amount /= 1024
+    return "0 B"
+
+
+def _get_drill_document_or_403(document_id):
+    document = TatbikatBelgesi.query.filter_by(id=document_id, is_deleted=False).first_or_404()
+    if not _can_view_drills_for_airport(document.havalimani_id):
+        abort(403)
+    return document
+
+
+def _redirect_after_google_oauth():
+    if current_user.is_authenticated:
+        if getattr(current_user, "is_sahip", False) or has_permission("settings.manage"):
+            return redirect(url_for("admin.site_yonetimi", tab="genel"))
+        if has_permission("drill.view"):
+            return redirect(url_for("inventory.tatbikat_listesi"))
+    return redirect(url_for("auth.login"))
 
 
 def _next_assignment_no():
@@ -1693,6 +1802,221 @@ def kkd_export(fmt):
         )
     flash("Desteklenmeyen export formatı.", "danger")
     return redirect(url_for("inventory.kkd_listesi"))
+
+
+@inventory_bp.route("/tatbikatlar")
+@login_required
+@permission_required("drill.view")
+def tatbikat_listesi():
+    selected_airport = request.args.get("airport_id", type=int)
+    airports = _visible_drill_airports()
+    visible_airport_ids = {airport.id for airport in airports}
+    if selected_airport and selected_airport not in visible_airport_ids:
+        abort(403)
+    if not getattr(current_user, "is_sahip", False):
+        selected_airport = current_user.havalimani_id
+
+    query = _drill_scope().order_by(TatbikatBelgesi.created_at.desc())
+    if selected_airport:
+        query = query.filter(TatbikatBelgesi.havalimani_id == selected_airport)
+
+    documents = query.all()
+    can_manage_drills = has_permission("drill.manage") and (
+        getattr(current_user, "is_sahip", False) or getattr(current_user, "rol", "") in {"havalimani_yoneticisi", "yetkili"}
+    )
+    return render_template(
+        "tatbikatlar.html",
+        documents=documents,
+        airports=airports,
+        selected_airport=selected_airport,
+        can_manage_drills=can_manage_drills,
+        format_file_size=_format_drill_file_size,
+    )
+
+
+@inventory_bp.route("/tatbikatlar/yukle", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required("drill.manage")
+def tatbikat_yukle():
+    airport_id = request.form.get("airport_id", type=int)
+    if airport_id is None:
+        flash("Tatbikat belgesi için havalimanı seçin.", "danger")
+        return redirect(url_for("inventory.tatbikat_listesi"))
+    if not _can_manage_drills_for_airport(airport_id):
+        abort(403)
+
+    airport = Havalimani.query.filter_by(id=airport_id, is_deleted=False).first_or_404()
+    title = guvenli_metin(request.form.get("title") or "")
+    description = guvenli_metin(request.form.get("description") or "")
+    upload = request.files.get("document")
+    safe_name, mime_type, error = _validate_drill_upload(upload)
+    if error:
+        flash(error, "danger")
+        return redirect(url_for("inventory.tatbikat_listesi", airport_id=airport_id))
+    if not title:
+        title = safe_name
+
+    drive_service = get_drill_drive_service()
+    try:
+        drive_result = drive_service.upload_file(
+            airport=airport,
+            upload=upload,
+            filename=safe_name,
+            mime_type=mime_type,
+        )
+        record = TatbikatBelgesi(
+            havalimani_id=airport.id,
+            yukleyen_kullanici_id=current_user.id,
+            baslik=title,
+            aciklama=description,
+            dosya_adi=drive_result["filename"],
+            drive_file_id=drive_result["drive_file_id"],
+            drive_folder_id=drive_result["drive_folder_id"],
+            mime_type=drive_result["mime_type"],
+            dosya_boyutu=drive_result["file_size"],
+        )
+        db.session.add(record)
+        db.session.commit()
+    except GoogleDriveError as exc:
+        db.session.rollback()
+        current_app.logger.warning("Tatbikat belgesi Drive'a yuklenemedi: %s", exc)
+        flash("Tatbikat belgesi Google Drive'a yüklenemedi.", "danger")
+        return redirect(url_for("inventory.tatbikat_listesi", airport_id=airport_id))
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Tatbikat belgesi kaydedilemedi.")
+        try:
+            if "drive_result" in locals():
+                drive_service.delete_file(drive_result["drive_file_id"])
+        except Exception:
+            current_app.logger.warning("Tatbikat belgesi icin Drive temizleme islemi basarisiz.")
+        flash("Tatbikat belgesi kaydedilemedi.", "danger")
+        return redirect(url_for("inventory.tatbikat_listesi", airport_id=airport_id))
+
+    log_kaydet(
+        "Tatbikat",
+        f"Tatbikat belgesi yüklendi: {record.baslik}",
+        event_key="drill.upload",
+        target_model="TatbikatBelgesi",
+        target_id=record.id,
+    )
+    flash("Tatbikat belgesi Google Drive'a yüklendi.", "success")
+    return redirect(url_for("inventory.tatbikat_detay", document_id=record.id))
+
+
+@inventory_bp.route("/tatbikatlar/<int:document_id>")
+@login_required
+@permission_required("drill.view")
+def tatbikat_detay(document_id):
+    document = _get_drill_document_or_403(document_id)
+    can_manage_document = has_permission("drill.manage") and _can_manage_drills_for_airport(document.havalimani_id)
+    return render_template(
+        "tatbikat_detay.html",
+        document=document,
+        can_manage_document=can_manage_document,
+        format_file_size=_format_drill_file_size,
+    )
+
+
+@inventory_bp.route("/tatbikatlar/<int:document_id>/indir")
+@login_required
+@permission_required("drill.view")
+def tatbikat_indir(document_id):
+    document = _get_drill_document_or_403(document_id)
+    try:
+        payload = get_drill_drive_service().download_file(document.drive_file_id)
+    except GoogleDriveError:
+        current_app.logger.warning("Tatbikat belgesi indirilemedi: %s", document.drive_file_id)
+        flash("Tatbikat belgesine şu an erişilemiyor.", "danger")
+        return redirect(url_for("inventory.tatbikat_detay", document_id=document.id))
+
+    return send_file(
+        io.BytesIO(payload["content"]),
+        mimetype=payload["mime_type"],
+        as_attachment=True,
+        download_name=document.dosya_adi,
+    )
+
+
+@inventory_bp.route("/tatbikatlar/<int:document_id>/goruntule")
+@login_required
+@permission_required("drill.view")
+def tatbikat_goruntule(document_id):
+    document = _get_drill_document_or_403(document_id)
+    try:
+        payload = get_drill_drive_service().download_file(document.drive_file_id)
+    except GoogleDriveError:
+        current_app.logger.warning("Tatbikat belgesi goruntulenemedi: %s", document.drive_file_id)
+        flash("Tatbikat belgesine şu an erişilemiyor.", "danger")
+        return redirect(url_for("inventory.tatbikat_detay", document_id=document.id))
+
+    inline_mime = payload["mime_type"].startswith("image/") or payload["mime_type"] == "application/pdf"
+    return send_file(
+        io.BytesIO(payload["content"]),
+        mimetype=payload["mime_type"],
+        as_attachment=not inline_mime,
+        download_name=document.dosya_adi,
+    )
+
+
+@inventory_bp.route("/tatbikatlar/<int:document_id>/sil", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required("drill.manage")
+def tatbikat_sil(document_id):
+    document = _get_drill_document_or_403(document_id)
+    if not _can_manage_drills_for_airport(document.havalimani_id):
+        abort(403)
+
+    try:
+        get_drill_drive_service().delete_file(document.drive_file_id)
+    except GoogleDriveError:
+        current_app.logger.warning("Tatbikat belgesi Drive'dan silinemedi: %s", document.drive_file_id)
+        flash("Tatbikat belgesi Google Drive'dan silinemedi.", "danger")
+        return redirect(url_for("inventory.tatbikat_detay", document_id=document.id))
+
+    document.soft_delete()
+    db.session.commit()
+    log_kaydet(
+        "Tatbikat",
+        f"Tatbikat belgesi silindi: {document.baslik}",
+        event_key="drill.delete",
+        target_model="TatbikatBelgesi",
+        target_id=document.id,
+    )
+    flash("Tatbikat belgesi kaldırıldı.", "success")
+    return redirect(url_for("inventory.tatbikat_listesi", airport_id=document.havalimani_id))
+
+
+@inventory_bp.route("/google-drive/oauth/callback")
+def google_drive_oauth_callback():
+    error_code = str(request.args.get("error") or "").strip()
+    if error_code:
+        current_app.logger.warning("Google Drive OAuth reddedildi: %s", error_code)
+        flash("Google Drive yetkilendirmesi tamamlanamadı.", "warning")
+        return _redirect_after_google_oauth()
+
+    code = str(request.args.get("code") or "").strip()
+    if not code:
+        current_app.logger.warning("Google Drive OAuth callback kod olmadan geldi.")
+        flash("Google Drive dönüşünde yetkilendirme kodu alınamadı.", "danger")
+        return _redirect_after_google_oauth()
+
+    try:
+        token_payload = get_drill_drive_service().exchange_authorization_code(code)
+    except GoogleDriveError as exc:
+        current_app.logger.warning("Google Drive OAuth callback başarısız: %s", exc)
+        flash("Google Drive yetkilendirmesi alınamadı.", "danger")
+        return _redirect_after_google_oauth()
+
+    if token_payload.get("refresh_token"):
+        current_app.logger.info("Google Drive OAuth callback başarıyla tamamlandı.")
+        flash("Google Drive yetkilendirmesi başarıyla alındı.", "success")
+    else:
+        current_app.logger.warning("Google Drive OAuth callback refresh token dönmedi.")
+        flash("Google Drive yetkilendirmesi tamamlandı ancak kalıcı refresh token dönmedi.", "warning")
+    return _redirect_after_google_oauth()
 
 
 @inventory_bp.route("/asset/<int:asset_id>/hiyerarsi")

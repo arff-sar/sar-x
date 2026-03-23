@@ -57,6 +57,7 @@ class BaseConfig:
 
     # Upload/file security
     ALLOWED_UPLOAD_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "gif", "webp", "doc", "docx", "xls", "xlsx"}
+    DRILL_MAX_FILE_SIZE = int(os.getenv("DRILL_MAX_FILE_SIZE", str(16 * 1024 * 1024)))
     MAX_EXPORT_ROWS = int(os.getenv("MAX_EXPORT_ROWS", "10000"))
     STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "local")
     LOCAL_UPLOAD_ROOT = os.getenv("LOCAL_UPLOAD_ROOT")
@@ -67,6 +68,13 @@ class BaseConfig:
     GCS_PUBLIC_BASE_URL = os.getenv("GCS_PUBLIC_BASE_URL")
     GCS_CACHE_CONTROL = os.getenv("GCS_CACHE_CONTROL", "public, max-age=3600")
     GCS_MAKE_UPLOADS_PUBLIC = _bool_env("GCS_MAKE_UPLOADS_PUBLIC", False)
+    GOOGLE_DRIVE_CLIENT_ID = os.getenv("GOOGLE_DRIVE_CLIENT_ID")
+    GOOGLE_DRIVE_CLIENT_SECRET = os.getenv("GOOGLE_DRIVE_CLIENT_SECRET")
+    GOOGLE_DRIVE_REFRESH_TOKEN = os.getenv("GOOGLE_DRIVE_REFRESH_TOKEN")
+    GOOGLE_DRIVE_TOKEN_URI = os.getenv("GOOGLE_DRIVE_TOKEN_URI", "https://oauth2.googleapis.com/token")
+    GOOGLE_DRIVE_REDIRECT_URI = os.getenv("GOOGLE_DRIVE_REDIRECT_URI")
+    GOOGLE_DRIVE_PARENT_FOLDER_ID = os.getenv("GOOGLE_DRIVE_PARENT_FOLDER_ID", "root")
+    GOOGLE_DRIVE_DRILLS_ROOT_FOLDER_NAME = os.getenv("GOOGLE_DRIVE_DRILLS_ROOT_FOLDER_NAME", "SAR-X Tatbikat Belgeleri")
 
     # Scheduler/runtime
     ENABLE_SCHEDULER = _bool_env("ENABLE_SCHEDULER", False)
