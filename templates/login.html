@@ -550,6 +550,14 @@
             display: none;
         }
 
+        .captcha-feedback {
+            margin-top: 7px;
+            font-size: 11px;
+            color: var(--amber);
+            font-weight: 700;
+            line-height: 1.5;
+        }
+
         .forgot-password-link {
             display: inline-flex;
             align-items: center;
@@ -966,6 +974,9 @@
                         </div>
                     </div>
                     <div class="captcha-note">Görseldeki harf ve rakamları yazın. Kod yenilendiğinde veya süresi dolduğunda eski doğrulama geçersiz olur.</div>
+                    {% if login_captcha_feedback %}
+                    <div class="captcha-feedback" id="captchaFeedback">{{ login_captcha_feedback }}</div>
+                    {% endif %}
                     <div class="captcha-state" id="captchaState">Doğrulama süresi doldu. Lütfen kodu yenileyin.</div>
                 </div>
 
@@ -1168,6 +1179,17 @@
             const expiredStateMessage = 'Doğrulama süresi doldu. Lütfen kodu yenileyin.';
             const autoRefreshStateMessage = 'Doğrulama kodu yenileniyor...';
 
+            function setCaptchaInteractive(isInteractive) {
+                if (answerInput) {
+                    answerInput.disabled = !isInteractive;
+                    answerInput.placeholder = isInteractive ? 'Kodu yazın' : 'Yeni kod yukleniyor';
+                }
+                if (tokenInput && !isInteractive) {
+                    tokenInput.value = '';
+                }
+                boxEl.classList.toggle('is-expired', !isInteractive);
+            }
+
             function syncCountdownDeadline(nextRemaining) {
                 remainingSeconds = Math.max(Number(nextRemaining || 0), 0);
                 countdownDeadline = Date.now() + (remainingSeconds * 1000);
@@ -1185,14 +1207,15 @@
                 timerEl.textContent = remaining > 0 ? formatTime(remaining) : 'SÜRE DOLDU';
                 const progressRatio = remaining > 0 ? Math.min((remaining / totalLifetime) * 100, 100) : 0;
                 progressEl.style.width = progressRatio + '%';
-                boxEl.classList.toggle('is-expired', remaining === 0);
                 if (remaining > 0) {
+                    setCaptchaInteractive(true);
                     stateEl.style.display = 'none';
                     stateEl.textContent = expiredStateMessage;
                     autoRefreshQueued = false;
                     return;
                 }
 
+                setCaptchaInteractive(false);
                 stateEl.style.display = 'block';
                 stateEl.textContent = autoRefreshStateMessage;
                 if (!refreshInFlight && !autoRefreshQueued) {
@@ -1213,6 +1236,9 @@
                 refreshBtn.disabled = isBusy;
                 refreshBtn.classList.toggle('is-loading', isBusy);
                 imageEl.style.opacity = isBusy ? '0.45' : '1';
+                if (isBusy) {
+                    setCaptchaInteractive(false);
+                }
             }
 
             function updateCaptchaState(captcha) {
@@ -1233,7 +1259,7 @@
                 timerEl.dataset.remaining = String(remainingSeconds || 0);
                 stateEl.style.display = 'none';
                 stateEl.textContent = expiredStateMessage;
-                boxEl.classList.remove('is-expired');
+                setCaptchaInteractive(true);
 
                 return new Promise(function (resolve) {
                     if (!cacheBustedUrl) {

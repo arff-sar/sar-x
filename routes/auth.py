@@ -30,9 +30,21 @@ PASSWORD_RESET_PATTERN = re.compile(r"^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*?[#?!@
 # --- YARDIMCI FONKSİYONLAR ---
 
 
-def _render_login_page(status_code=200, force_new=False):
+def _captcha_feedback_message(captcha_state):
+    if captcha_state in {"expired", "stale", "used"}:
+        return "Önceki doğrulama artık geçersiz. Yeni kod yüklendi; lütfen ekrandaki güncel kodu girin."
+    if captcha_state == "missing":
+        return "Devam etmek için ekrandaki doğrulama kodunu girin."
+    return "Doğrulamayı tamamlamak için ekrandaki güncel kodu tekrar girin."
+
+
+def _render_login_page(status_code=200, force_new=False, captcha_feedback=None):
     response = make_response(
-        render_template('login.html', login_captcha=build_login_captcha(force_new=force_new)),
+        render_template(
+            'login.html',
+            login_captcha=build_login_captcha(force_new=force_new),
+            login_captcha_feedback=captcha_feedback,
+        ),
         status_code,
     )
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
@@ -311,17 +323,16 @@ def login():
 
         captcha_valid, captcha_state = validate_login_captcha(security_answer, submitted_token=security_token)
         if not captcha_valid:
-            error_code = "SAR-X-AUTH-1201" if captcha_state == "expired" else "SAR-X-AUTH-1202"
             try:
                 record = _register_failed_login(identifier)
                 now = get_tr_now().replace(tzinfo=None)
                 if record.locked_until and record.locked_until > now:
-                    flash_safe_error(error_code, include_help_note=True)
+                    flash_safe_error("SAR-X-AUTH-1202", include_help_note=True)
                 else:
-                    flash_safe_error(error_code, include_help_note=True)
+                    flash_safe_error("SAR-X-AUTH-1202", include_help_note=True)
             except Exception:
                 db.session.rollback()
-                flash_safe_error(error_code, include_help_note=True)
+                flash_safe_error("SAR-X-AUTH-1202", include_help_note=True)
             invalidate_login_captcha(clear_session=True)
             if captcha_state == "expired":
                 event_key = "auth.login.captcha_expired"
@@ -329,10 +340,18 @@ def login():
                 event_key = "auth.login.captcha_refresh_required"
             else:
                 event_key = "auth.login.captcha_failed"
-            capture_error(error_code=error_code, status_code=400, detail=f"Login captcha failed | state={captcha_state or 'unknown'}")
+            capture_error(
+                error_code="SAR-X-AUTH-1202",
+                status_code=400,
+                detail=f"Login captcha failed | state={captcha_state or 'unknown'}",
+            )
             log_kaydet("Güvenlik", f"Login captcha verification failed: {kullanici_adi}", event_key=event_key, outcome="failed")
             audit_log(event_key, outcome="failed", username=kullanici_adi, ip=_client_ip())
-            return _render_login_page(status_code=400, force_new=True)
+            return _render_login_page(
+                status_code=400,
+                force_new=True,
+                captcha_feedback=_captcha_feedback_message(captcha_state),
+            )
 
         user = _find_active_user_by_email(kullanici_adi)
         

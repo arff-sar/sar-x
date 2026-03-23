@@ -263,8 +263,9 @@ def test_expired_captcha_requires_new_code(client, app):
 
     html = response.data.decode("utf-8")
     assert response.status_code == 400
-    assert "Güvenlik doğrulama süresi doldu." in html
-    assert "SAR-X-AUTH-1201" in html
+    assert "Güvenlik doğrulaması başarısız oldu." in html
+    assert "SAR-X-AUTH-1202" in html
+    assert "Yeni kod yüklendi" in html
 
 
 def test_login_page_renders_with_snapshot_loader_failure(client):
