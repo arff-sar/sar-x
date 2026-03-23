@@ -60,11 +60,35 @@ body.sidebar-open { overflow: hidden; }
 .notification-item:hover { background: var(--surface2); border-color: var(--border); }
 
 /* User Identification */
+.user-menu { position: relative; }
 .user-chip { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 5px 12px; cursor: pointer; transition: background .15s; text-decoration: none; }
 .user-chip:hover { background: rgba(255,255,255,.14); }
+.user-chip-button { font-family: var(--sans); color: inherit; }
+.user-chip-button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(249,115,22,.22); }
 .user-avatar { width: 26px; height: 26px; border-radius: 6px; background: var(--orange); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; color: #fff; text-transform: uppercase; }
 .user-name { font-size: 12px; font-weight: 600; color: #e2e8f0; line-height: 1; text-transform: capitalize; }
 .user-role { font-size: 10px; color: #64748b; margin-top: 1px; text-transform: uppercase; }
+.user-role-note { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: rgba(249,115,22,.16); color: #fdba74; font-size: 9px; font-weight: 800; letter-spacing: .03em; vertical-align: middle; }
+.user-menu-chevron { color: #cbd5e1; font-size: 11px; margin-left: 2px; transition: transform .16s ease; }
+.user-menu[data-open="true"] .user-menu-chevron { transform: rotate(180deg); }
+.user-menu-panel { display: none; position: absolute; right: 0; top: calc(100% + 8px); width: min(320px, calc(100vw - 24px)); background: #fff; border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 20px 40px rgba(15,23,42,.16); padding: 12px; z-index: 120; }
+.user-menu[data-open="true"] .user-menu-panel { display: block; }
+.user-menu-head { padding: 4px 4px 10px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+.user-menu-kicker { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text4); }
+.user-menu-title { margin-top: 4px; font-size: 13px; font-weight: 800; color: var(--navy); }
+.user-menu-note { margin-top: 4px; font-size: 11px; color: var(--text3); line-height: 1.45; }
+.role-switch-list { display: grid; gap: 6px; }
+.role-switch-form { margin: 0; }
+.role-switch-item { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-family: var(--sans); font-size: 12px; font-weight: 700; cursor: pointer; text-align: left; transition: border-color .16s ease, background .16s ease, transform .16s ease; }
+.role-switch-item:hover { border-color: rgba(249,115,22,.34); background: #fff; transform: translateY(-1px); }
+.role-switch-item.is-active { border-color: rgba(249,115,22,.36); background: var(--orange-light); color: var(--navy); }
+.role-switch-label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.role-switch-tag { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 6px; border-radius: 999px; background: rgba(15,45,74,.08); color: var(--navy); font-size: 10px; font-weight: 800; }
+.role-switch-item.is-active .role-switch-tag { background: rgba(249,115,22,.18); color: var(--orange); }
+.role-switch-state { font-size: 10px; font-weight: 800; color: var(--text3); text-transform: uppercase; letter-spacing: .04em; }
+.role-switch-item.is-active .role-switch-state { color: var(--orange); }
+.role-switch-divider { margin: 10px 0; border-top: 1px solid var(--border); }
+.role-switch-reset { width: 100%; justify-content: center; }
 .logout-btn { color: #fca5a5; font-size: 12px; font-weight: 700; text-decoration: none; margin-left: 10px; padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(248, 113, 113, 0.2); transition: 0.2s; background: transparent; cursor: pointer; font-family: var(--sans);}
 .logout-btn:hover { background: rgba(248, 113, 113, 0.1); color: #f87171;}
 
@@ -299,6 +323,53 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
           {% endfor %}
         </div>
       </div>
+      {% if role_switch_enabled %}
+      <div class="user-menu" id="userMenu" data-open="false">
+        <button type="button" class="user-chip user-chip-button" id="userMenuToggle" aria-haspopup="true" aria-expanded="false" aria-controls="userMenuPanel">
+          <div class="user-avatar">{{ kullanici_ad[0] if kullanici_ad else 'U' }}</div>
+          <div>
+            <div class="user-name">{{ kullanici_ad }}</div>
+            <div class="user-role">
+              {{ rol_etiketi or rol }}
+              {% if role_switch_active %}
+              <span class="user-role-note">Geçici Rol</span>
+              {% endif %}
+            </div>
+          </div>
+          <span class="user-menu-chevron">⌄</span>
+        </button>
+        <div class="user-menu-panel" id="userMenuPanel">
+          <div class="user-menu-head">
+            <div class="user-menu-kicker">Rol Değiştir</div>
+            <div class="user-menu-title">Geçici aktif rolünüzü seçin</div>
+            <div class="user-menu-note">Bu değişiklik yalnız bu oturum için geçerlidir. Çıkış yaptığınızda gerçek rolünüze dönersiniz.</div>
+          </div>
+          <div class="role-switch-list">
+            {% for option in role_switch_options %}
+            <form method="POST" action="{{ url_for('auth.role_switch') }}" class="role-switch-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="role" value="{{ option.key }}">
+              <button type="submit" class="role-switch-item {% if option.active %}is-active{% endif %}">
+                <span class="role-switch-label">
+                  <span class="role-switch-tag">{{ loop.index }}</span>
+                  <span>{{ option.label }}</span>
+                </span>
+                <span class="role-switch-state">
+                  {% if option.active %}Aktif{% elif option.base %}Varsayılan{% else %}Geç{% endif %}
+                </span>
+              </button>
+            </form>
+            {% endfor %}
+          </div>
+          <div class="role-switch-divider"></div>
+          <form method="POST" action="{{ url_for('auth.role_switch') }}" class="role-switch-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="role" value="__default__">
+            <button type="submit" class="btn btn-secondary role-switch-reset">Varsayılan role dön{% if base_role_label %}: {{ base_role_label }}{% endif %}</button>
+          </form>
+        </div>
+      </div>
+      {% else %}
       <div class="user-chip">
         <div class="user-avatar">{{ kullanici_ad[0] if kullanici_ad else 'U' }}</div>
         <div>
@@ -306,6 +377,7 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
           <div class="user-role">{{ rol_etiketi or rol }}</div>
         </div>
       </div>
+      {% endif %}
       <form method="POST" action="{{ url_for('auth.logout') }}" style="display:inline;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="logout-btn">Çıkış Yap</button>
@@ -627,6 +699,41 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
             });
             notificationPanel.addEventListener('click', function (event) {
                 event.stopPropagation();
+            });
+        }
+
+        const userMenu = document.getElementById('userMenu');
+        const userMenuToggle = document.getElementById('userMenuToggle');
+        const userMenuPanel = document.getElementById('userMenuPanel');
+        const closeUserMenu = function () {
+            if (!userMenu || !userMenuToggle) return;
+            userMenu.dataset.open = 'false';
+            userMenuToggle.setAttribute('aria-expanded', 'false');
+        };
+        if (userMenu && userMenuToggle && userMenuPanel) {
+            userMenuToggle.addEventListener('click', function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                const willOpen = userMenu.dataset.open !== 'true';
+                if (notificationPanel) {
+                    notificationPanel.classList.remove('is-open');
+                }
+                closeTooltips();
+                userMenu.dataset.open = willOpen ? 'true' : 'false';
+                userMenuToggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+            });
+            userMenuPanel.addEventListener('click', function (event) {
+                event.stopPropagation();
+            });
+            document.addEventListener('click', function (event) {
+                if (!userMenu.contains(event.target)) {
+                    closeUserMenu();
+                }
+            });
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape') {
+                    closeUserMenu();
+                }
             });
         }
     })();

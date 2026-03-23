@@ -28,10 +28,15 @@ from routes.reports import reports_bp
 from scheduler import start_scheduler
 from decorators import (
     build_sidebar_groups,
+    can_use_role_switch,
+    get_effective_role,
+    get_effective_role_label,
     get_effective_permissions,
     get_role_descriptions,
     get_role_labels,
+    get_role_switch_options,
     has_permission,
+    is_role_switch_active,
     is_editor_only,
     role_home_endpoint,
     sync_authorization_registry,
@@ -473,6 +478,10 @@ def create_app(config_name=None):
         if current_user.is_authenticated:
             rol_etiketleri = get_role_labels()
             rol_aciklamalari = get_role_descriptions()
+            effective_role = get_effective_role(current_user)
+            effective_role_label = get_effective_role_label(current_user)
+            role_switch_enabled = can_use_role_switch(current_user)
+            role_switch_active = is_role_switch_active(current_user)
             if table_exists("notification"):
                 try:
                     from models import Notification
@@ -492,8 +501,8 @@ def create_app(config_name=None):
                     unread_notification_count = 0
             permissions = sorted(get_effective_permissions(current_user))
             return {
-                "rol": current_user.rol,
-                "rol_etiketi": rol_etiketleri.get(current_user.rol, current_user.rol),
+                "rol": effective_role,
+                "rol_etiketi": effective_role_label or rol_etiketleri.get(effective_role, effective_role),
                 "rol_etiketleri": rol_etiketleri,
                 "rol_aciklamalari": rol_aciklamalari,
                 "kullanici_ad": current_user.tam_ad,
@@ -502,6 +511,10 @@ def create_app(config_name=None):
                 "sidebar_groups": build_sidebar_groups(current_user),
                 "has_permission": has_permission,
                 "home_endpoint": role_home_endpoint(current_user),
+                "role_switch_enabled": role_switch_enabled,
+                "role_switch_active": role_switch_active,
+                "role_switch_options": get_role_switch_options(current_user) if role_switch_enabled else [],
+                "base_role_label": rol_etiketleri.get(current_user.rol, current_user.rol),
                 "unread_notifications": unread_notifications,
                 "unread_notification_count": unread_notification_count,
                 **shared_context,
@@ -517,6 +530,10 @@ def create_app(config_name=None):
             "sidebar_groups": [],
             "has_permission": has_permission,
             "home_endpoint": "inventory.dashboard",
+            "role_switch_enabled": False,
+            "role_switch_active": False,
+            "role_switch_options": [],
+            "base_role_label": None,
             "unread_notifications": [],
             "unread_notification_count": 0,
             **shared_context,

@@ -6,7 +6,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from urllib.parse import urljoin
 
-from flask import Blueprint, current_app, flash, jsonify, make_response, redirect, render_template, request, session, url_for
+from flask import Blueprint, abort, current_app, flash, jsonify, make_response, redirect, render_template, request, session, url_for
 from flask_login import login_user, logout_user, login_required, current_user
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from sqlalchemy import func
@@ -20,7 +20,14 @@ from captcha_helper import (
 from error_handling import capture_error, flash_safe_error
 from models import AuthLockout, Kullanici, get_tr_now
 from extensions import audit_log, db, limiter, log_kaydet
-from decorators import role_home_endpoint
+from decorators import (
+    can_use_role_switch,
+    clear_role_override,
+    get_effective_role_label,
+    get_role_switch_options,
+    role_home_endpoint,
+    set_role_override,
+)
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -415,11 +422,48 @@ def logout():
     username = current_user.kullanici_adi
     log_kaydet('Çıkış', f'{username} sistemden güvenli çıkış yaptı.')
     audit_log("auth.logout", outcome="success", username=username, ip=_client_ip())
+    clear_role_override(current_user)
     logout_user()
     invalidate_login_captcha(clear_session=True)
     session.pop("_flashes", None)
     flash("Sistemden güvenli çıkış yapıldı.", "success")
     return redirect(url_for('auth.login'))
+
+
+@auth_bp.route('/role-switch', methods=['POST'])
+@login_required
+def role_switch():
+    if not can_use_role_switch(current_user):
+        abort(403)
+
+    redirect_target = request.referrer or url_for(role_home_endpoint(current_user))
+    selected_role = (request.form.get('role') or "").strip()
+    selected_option_map = {item["key"]: item for item in get_role_switch_options(current_user)}
+
+    if not selected_role or selected_role == "__default__":
+        clear_role_override(current_user)
+        flash("Geçici rol kaldırıldı. Varsayılan rolünüz yeniden etkin.", "success")
+        return redirect(redirect_target)
+
+    if selected_role not in selected_option_map:
+        flash("Desteklenmeyen rol seçimi gönderildi.", "danger")
+        return redirect(redirect_target)
+
+    success, active_role = set_role_override(selected_role, current_user)
+    if not success:
+        flash("Geçici rol değiştirilemedi.", "danger")
+        return redirect(redirect_target)
+
+    flash(f"Geçici aktif rol güncellendi: {get_effective_role_label(current_user)}", "success")
+    audit_log(
+        "auth.role_switch",
+        outcome="success",
+        user_id=current_user.id,
+        username=current_user.kullanici_adi,
+        selected_role=active_role,
+        ip=_client_ip(),
+    )
+    return redirect(redirect_target)
 
 
 @auth_bp.route('/sifre-sifirla-talep', methods=['POST'])

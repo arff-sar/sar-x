@@ -7,7 +7,9 @@ from decorators import (
     ROLE_AIRPORT_MANAGER,
     ROLE_EDITOR,
     ROLE_HQ,
+    ROLE_MANAGER,
     ROLE_OWNER,
+    get_effective_role,
     get_effective_permissions,
 )
 
@@ -85,15 +87,15 @@ class Kullanici(db.Model, UserMixin, TimestampMixin, SoftDeleteMixin):
 
     @property
     def is_sahip(self):
-        return self.rol == ROLE_OWNER
+        return get_effective_role(self) == ROLE_OWNER
 
     @property
     def is_genel_mudurluk(self):
-        return self.rol == ROLE_HQ
+        return get_effective_role(self) == ROLE_HQ
 
     @property
     def is_editor(self):
-        return self.rol == ROLE_EDITOR
+        return get_effective_role(self) == ROLE_EDITOR
 
     @property
     def can_edit(self):
@@ -114,7 +116,7 @@ class Kullanici(db.Model, UserMixin, TimestampMixin, SoftDeleteMixin):
 
     @property
     def is_airport_manager(self):
-        return self.rol == ROLE_AIRPORT_MANAGER
+        return get_effective_role(self) in {ROLE_MANAGER, ROLE_AIRPORT_MANAGER}
 
     @property
     def effective_permissions(self):
