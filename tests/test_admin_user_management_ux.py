@@ -70,6 +70,8 @@ def test_user_management_renders_success_toast_after_create(client, app):
     assert 'class="toast-stack"' in html
     assert 'flash-msg flash-success' in html
     assert "TOAST KULLANICISI personeli sisteme eklendi." in html
+    assert "Beklenmedik Bir Hata" not in html
+    assert "Sistem bağlantı hatası oluştu." not in html
 
 
 def test_user_management_renders_error_toast_for_invalid_selection(client, app):
