@@ -385,6 +385,16 @@ jobs:
           print("Cloud Run production configuration verified.")
           PY
 
+      - name: Ensure unauthenticated invoker access
+        run: |
+          set -euo pipefail
+          gcloud run services add-iam-policy-binding "${CLOUD_RUN_SERVICE}" \
+            --region "${GCP_REGION}" \
+            --project "${GCP_PROJECT_ID}" \
+            --member="allUsers" \
+            --role="roles/run.invoker" \
+            --quiet
+
       - name: Verify runtime endpoints (/health, /ready, /login)
         run: |
           set -euo pipefail
