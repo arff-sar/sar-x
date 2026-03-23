@@ -72,7 +72,8 @@ def _get_inspector():
     target = _inspection_target()
     try:
         if _session_in_transaction() and _supports_isolated_inspection():
-            temp_engine = create_engine(str(db.engine.url), poolclass=NullPool)
+            runtime_url = db.engine.url.render_as_string(hide_password=False)
+            temp_engine = create_engine(runtime_url, poolclass=NullPool)
             target = temp_engine
         return inspect(target), temp_engine
     except Exception:

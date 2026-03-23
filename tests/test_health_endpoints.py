@@ -1,5 +1,6 @@
 from extensions import db
 from models import SiteAyarlari
+from types import SimpleNamespace
 
 
 def test_health_endpoint_returns_ok(client):
@@ -73,3 +74,50 @@ def test_public_announcements_renders_with_snapshot_loader_failure(client):
 
     response = client.get("/duyurular")
     assert response.status_code == 200
+
+
+def test_table_exists_uses_runtime_url_with_unmasked_password_during_isolated_inspection(app, monkeypatch):
+    import extensions as extensions_module
+
+    calls = {}
+
+    class FakeURL:
+        def __str__(self):
+            return "postgresql://sarx:***@db.example.com/sarx"
+
+        def render_as_string(self, hide_password=False):
+            calls["hide_password"] = hide_password
+            return "postgresql://sarx:real-secret@db.example.com/sarx"
+
+    class FakeEngine:
+        url = FakeURL()
+
+    class FakeTempEngine:
+        def dispose(self):
+            calls["disposed"] = True
+
+    class FakeInspector:
+        def has_table(self, table_name):
+            calls["table_name"] = table_name
+            return True
+
+    monkeypatch.setattr(extensions_module, "_session_in_transaction", lambda: True)
+    monkeypatch.setattr(extensions_module, "_supports_isolated_inspection", lambda: True)
+    monkeypatch.setattr(extensions_module, "db", SimpleNamespace(engine=FakeEngine()))
+
+    def fake_create_engine(url, poolclass=None):
+        calls["url"] = url
+        calls["poolclass"] = poolclass
+        return FakeTempEngine()
+
+    monkeypatch.setattr(extensions_module, "create_engine", fake_create_engine)
+    monkeypatch.setattr(extensions_module, "inspect", lambda target: FakeInspector())
+
+    with app.app_context():
+        app.extensions["schema_cache"] = {"tables": {}, "columns": {}}
+        assert extensions_module.table_exists("auth_lockout") is True
+
+    assert calls["hide_password"] is False
+    assert calls["url"] == "postgresql://sarx:real-secret@db.example.com/sarx"
+    assert calls["table_name"] == "auth_lockout"
+    assert calls["disposed"] is True
