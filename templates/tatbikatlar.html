@@ -4,9 +4,11 @@
 {% block extra_css %}
 <style>
   .drill-layout { display:grid; grid-template-columns:minmax(0, 1.2fr) minmax(320px, .8fr); gap:20px; align-items:start; }
-  .drill-filter-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:10px; align-items:end; }
-  .drill-filter-actions { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; align-items:stretch; }
-  .drill-filter-actions .btn { width:100%; }
+  .drill-filter-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:12px 16px; align-items:end; }
+  .drill-filter-actions-shell { display:grid; align-content:end; min-width:220px; }
+  .drill-filter-actions-shell label { visibility:hidden; margin-bottom:8px; }
+  .drill-filter-actions { display:flex; gap:8px; align-items:stretch; }
+  .drill-filter-actions .btn { width:100%; min-height:46px; margin-bottom:0; }
   .drill-meta { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
   .drill-meta-chip { display:inline-flex; align-items:center; min-height:32px; padding:0 12px; border-radius:999px; background:var(--surface2); border:1px solid var(--border); color:var(--text2); font-size:11.5px; font-weight:700; }
   .drill-upload-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
@@ -24,6 +26,8 @@
   @media (max-width: 720px) {
     .drill-filter-row,
     .drill-upload-grid { grid-template-columns:1fr; }
+    .drill-filter-actions-shell { min-width:0; }
+    .drill-filter-actions { flex-direction:column; }
     .drill-actions { justify-content:flex-start; }
   }
 </style>
@@ -67,9 +71,12 @@
         <input type="text" class="form-control" value="{{ airports[0].kodu ~ ' - ' ~ airports[0].ad if airports else 'Kapsam bulunamadı' }}" readonly>
         {% endif %}
       </div>
-      <div class="drill-filter-actions">
-        <button type="submit" class="btn btn-navy">Filtrele</button>
-        <a href="{{ url_for('inventory.tatbikat_listesi') }}" class="btn btn-secondary" style="text-align:center;">Temizle</a>
+      <div class="form-group drill-filter-actions-shell" style="margin-bottom:0;">
+        <label>İşlemler</label>
+        <div class="drill-filter-actions">
+          <button type="submit" class="btn btn-navy">Filtrele</button>
+          <a href="{{ url_for('inventory.tatbikat_listesi') }}" class="btn btn-secondary" style="text-align:center;">Temizle</a>
+        </div>
       </div>
     </form>
     <div class="drill-meta">

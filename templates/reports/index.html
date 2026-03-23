@@ -3,9 +3,15 @@
 
 {% block extra_css %}
 <style>
-.report-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+.report-toolbar { display:grid; gap:18px; margin-bottom:18px; }
+.report-tabs-shell { position:relative; z-index:1; padding:2px 0; }
+.report-tabs { display:flex; gap:8px; row-gap:10px; flex-wrap:wrap; margin:0; align-items:flex-start; }
 .report-tab { padding:10px 14px; border:1px solid var(--border-dark); border-radius:999px; background:var(--surface); color:var(--text2); text-decoration:none; font-size:12px; font-weight:700; }
 .report-tab.active { background: var(--navy); color:#fff; border-color: var(--navy); }
+.report-filters-panel { position:relative; z-index:0; margin:0; overflow:hidden; }
+.report-filter-form { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items:end; }
+.report-filter-actions { display:flex; gap:8px; align-items:stretch; }
+.report-filter-actions .btn { flex:1 1 0; }
 .report-kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:18px; }
 .mini-kpi { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px; }
 .mini-kpi-value { font-size:28px; font-weight:800; color:var(--navy); }
@@ -16,6 +22,10 @@
 .chart-head { font-size:13px; font-weight:800; color:var(--navy); margin-bottom:10px; }
 .summary-list { display:grid; gap:10px; }
 .summary-row { display:flex; justify-content:space-between; gap:10px; padding:12px 14px; border:1px solid var(--border); border-radius:12px; background:var(--surface2); }
+@media (max-width: 720px) {
+  .report-toolbar { gap:14px; }
+  .report-filter-actions { flex-direction:column; }
+}
 </style>
 {% endblock %}
 
@@ -35,15 +45,18 @@
     </div>
 </div>
 
-<div class="report-tabs">
-    {% for tab in tabs %}
-    <a href="{{ url_for('reports.index', report=tab.key) }}" class="report-tab {% if report_key == tab.key %}active{% endif %}">{{ tab.label }}</a>
-    {% endfor %}
-</div>
+<div class="report-toolbar">
+  <div class="report-tabs-shell">
+    <div class="report-tabs">
+        {% for tab in tabs %}
+        <a href="{{ url_for('reports.index', report=tab.key) }}" class="report-tab {% if report_key == tab.key %}active{% endif %}">{{ tab.label }}</a>
+        {% endfor %}
+    </div>
+  </div>
 
-<div class="panel">
+<div class="panel report-filters-panel">
     <div class="panel-body">
-        <form method="GET" action="{{ url_for('reports.index') }}" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items:end;">
+        <form method="GET" action="{{ url_for('reports.index') }}" class="report-filter-form">
             <input type="hidden" name="report" value="{{ report_key }}">
             {% if filter_options.airports|length > 1 %}
             <div class="form-group" style="margin-bottom:0;">
@@ -161,12 +174,13 @@
                     {% endfor %}
                 </select>
             </div>
-            <div style="display:flex; gap:8px;">
+            <div class="report-filter-actions">
                 <button type="submit" class="btn btn-navy" style="width:100%;">Filtrele</button>
                 <a href="{{ url_for('reports.index', report=report_key) }}" class="btn btn-secondary" style="width:100%;">Sıfırla</a>
             </div>
         </form>
     </div>
+</div>
 </div>
 
 <div class="report-kpis">
