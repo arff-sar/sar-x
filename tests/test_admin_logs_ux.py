@@ -51,6 +51,8 @@ def test_event_type_filter_is_selectable_and_really_filters_results(client, app)
     assert "PDF dışa aktarma tamamlandı." in html
     assert "Kullanıcı sisteme giriş yaptı." not in html
     assert "1 kayıt" in html
+    assert "Beklenmedik Bir Hata" not in html
+    assert "Sistem bağlantı hatası oluştu." not in html
 
 
 def test_logs_screen_translates_outcomes_and_hides_technical_labels(client, app):
