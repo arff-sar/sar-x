@@ -28,6 +28,8 @@ def test_envanter_list_active_only(client, app):
     assert response.status_code == 200
     assert "Aktif Ekipman" in data_str
     assert "Arşivlenmiş Ekipman" not in data_str
+    assert 'href="/zimmetler" class="row-btn" style="padding:16px; border-radius:16px; justify-content:flex-start;"' not in data_str
+    assert 'href="/kkd" class="row-btn" style="padding:16px; border-radius:16px; justify-content:flex-start;"' not in data_str
 
 # 3. BİRİM FİLTRELEME: Personel sadece kendi havalimanındaki malzemeyi görür
 def test_havalimani_isolation(client, app):

@@ -6,7 +6,7 @@ from unittest.mock import patch
 from pypdf import PdfReader
 
 from extensions import db
-from models import AssignmentItem, AssignmentRecipient
+from models import AssignmentItem, AssignmentRecipient, AssignmentRecord
 from tests.factories import (
     AssignmentRecordFactory,
     HavalimaniFactory,
@@ -130,6 +130,7 @@ def test_zimmet_create_panel_renders_selection_summaries_and_material_metadata(c
     assert response.status_code == 200
     assert 'id="assignmentRecipientCounter"' in html
     assert 'id="assignmentMaterialCounter"' in html
+    assert 'class="assignment-filter-actions"' in html
     assert 'id="assignmentRecipientQuickSelect"' in html
     assert 'id="assignmentMaterialQuickSelect"' in html
     assert 'id="assignmentRecipientSelection"' in html
@@ -143,7 +144,6 @@ def test_zimmet_create_panel_renders_selection_summaries_and_material_metadata(c
     assert 'data-choice-card' in html
     assert 'data-choice-inputs' in html
     assert "Fatma Ekip" in html
-    assert "fatma@sarx.com" in html
     assert "Bakım Sorumlusu" in html
     assert "Solunum Seti" in html
     assert "Seri No: SOL-778" in html
@@ -154,6 +154,8 @@ def test_zimmet_create_panel_renders_selection_summaries_and_material_metadata(c
     assert "Henüz malzeme seçilmedi" in html
     assert "Tüm personel listesini aç" in html
     assert "Tüm malzeme listesini aç" in html
+    assert 'name="delivered_by_name"' in html
+    assert "manuel metin olarak kaydedilir" in html
 
 
 def test_zimmet_selected_recipient_query_marks_choice_card_checked(client, app):
@@ -182,10 +184,125 @@ def test_zimmet_selected_recipient_query_marks_choice_card_checked(client, app):
     assert f'name="recipient_ids" value="{recipient_id}" checked' in html
     assert "quickSelectId: 'assignmentRecipientQuickSelect'" in html
     assert "quickSelectId: 'assignmentMaterialQuickSelect'" in html
+    assert "Secili Personel için aktif zimmetler" in html
     assert "Hızlı seçimle kişi ekleyin; ayrıntılı tarama gerekirse listeyi ayrıca açabilirsiniz." in html
     assert 'id="assignmentRecipientEmpty"' in html
     assert 'id="assignmentMaterialEmpty"' in html
     assert 'id="assignmentRecipientAvailable" hidden' in html
+
+
+def test_personnel_sees_own_active_assignment_panel(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Samsun Havalimanı", kodu="SZF")
+        box = KutuFactory(kodu="K-SZF-1", havalimani=airport)
+        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-self@sarx.com")
+        recipient = KullaniciFactory(
+            rol="personel",
+            is_deleted=False,
+            tam_ad="Kendi Personeli",
+            kullanici_adi="self@sarx.com",
+            havalimani=airport,
+        )
+        material = MalzemeFactory(ad="Yangın Battaniyesi", seri_no="YB-01", stok_miktari=1, kutu=box, havalimani=airport)
+        db.session.add_all([airport, box, owner, recipient, material])
+        db.session.flush()
+        _build_assignment(
+            assignment_no="ZMT-SELF-001",
+            airport=airport,
+            delivered_by=owner,
+            recipient=recipient,
+            material=material,
+        )
+        db.session.commit()
+        recipient_id = recipient.id
+
+    _login(client, recipient_id)
+    response = client.get("/zimmetler")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Size Atanan Aktif Malzemeler" in html
+    assert "ZMT-SELF-001" in html
+    assert "Yangın Battaniyesi" in html
+
+
+def test_admin_cannot_create_assignment_when_not_owner_or_airport_manager(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Balıkesir Havalimanı", kodu="BZI")
+        admin = KullaniciFactory(rol="admin", is_deleted=False, kullanici_adi="admin-zimmet@sarx.com", havalimani=airport)
+        recipient = KullaniciFactory(rol="personel", is_deleted=False, tam_ad="Alıcı Personel", havalimani=airport)
+        box = KutuFactory(kodu="K-BZI-1", havalimani=airport)
+        material = MalzemeFactory(ad="Kurtarma Çantası", seri_no="KC-10", stok_miktari=2, kutu=box, havalimani=airport)
+        db.session.add_all([airport, admin, recipient, box, material])
+        db.session.commit()
+        admin_id = admin.id
+        recipient_id = recipient.id
+        material_id = material.id
+        airport_id = airport.id
+
+    _login(client, admin_id)
+    response = client.post(
+        "/zimmetler",
+        data={
+            "assignment_date": "2026-03-20",
+            "airport_id": airport_id,
+            "delivered_by_name": "Harici Teslim Yetkilisi",
+            "recipient_ids": [str(recipient_id)],
+            "item_ids": [str(material_id)],
+            f"item_qty_{material_id}": "1",
+            f"item_unit_{material_id}": "adet",
+        },
+    )
+
+    assert response.status_code == 403
+
+
+def test_assignment_creation_saves_manual_delivered_by_name_and_multiple_items(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Erzincan Havalimanı", kodu="ERC")
+        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-multi@sarx.com", havalimani=airport)
+        recipient = KullaniciFactory(rol="personel", is_deleted=False, tam_ad="Çoklu Alıcı", havalimani=airport)
+        box = KutuFactory(kodu="K-ERC-1", havalimani=airport)
+        material_one = MalzemeFactory(ad="Baret", seri_no="BAR-01", stok_miktari=2, kutu=box, havalimani=airport)
+        material_two = MalzemeFactory(ad="Reflektif Yelek", seri_no="RY-02", stok_miktari=3, kutu=box, havalimani=airport)
+        db.session.add_all([airport, owner, recipient, box, material_one, material_two])
+        db.session.commit()
+        owner_id = owner.id
+        recipient_id = recipient.id
+        airport_id = airport.id
+        material_one_id = material_one.id
+        material_two_id = material_two.id
+
+    _login(client, owner_id)
+    response = client.post(
+        "/zimmetler",
+        data={
+            "assignment_date": "2026-03-20",
+            "airport_id": airport_id,
+            "delivered_by_name": "Nöbetçi Amir",
+            "recipient_ids": [str(recipient_id)],
+            "item_ids": [str(material_one_id), str(material_two_id)],
+            f"item_qty_{material_one_id}": "1",
+            f"item_unit_{material_one_id}": "adet",
+            f"item_qty_{material_two_id}": "2",
+            f"item_unit_{material_two_id}": "adet",
+            "note": "Toplu teslim testi",
+        },
+        follow_redirects=True,
+    )
+
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Zimmet kaydı oluşturuldu." in html
+
+    with app.app_context():
+        record = AssignmentRecord.query.order_by(AssignmentRecord.id.desc()).first()
+        assert record is not None
+        assert record.delivered_by_name == "Nöbetçi Amir"
+        assert len(record.items) == 2
 
 
 def test_zimmet_pdf_renders_turkish_text_and_core_fields(client, app):

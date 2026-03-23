@@ -86,11 +86,13 @@ PPE_STATUS_LABELS = {
 }
 SIGNED_ASSIGNMENT_ALLOWED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "webp"}
 PPE_ALLOWED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "webp"}
-DRILL_ALLOWED_EXTENSIONS = {"pdf", "docx", "xlsx", "jpg", "jpeg", "png"}
+DRILL_ALLOWED_EXTENSIONS = {"pdf", "docx", "xlsx", "jpg", "jpeg", "png", "zip"}
 DRILL_ALLOWED_MIME_TYPES = (
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/zip",
+    "application/x-zip-compressed",
     "image/",
 )
 
@@ -134,6 +136,17 @@ def _visible_material_query(airport_id=None):
             return query.filter(Malzeme.havalimani_id == airport_id)
         return query
     return query.filter(Malzeme.havalimani_id == current_user.havalimani_id)
+
+
+def _can_issue_assignments(actor=None):
+    actor = actor or current_user
+    return bool(
+        getattr(actor, "is_authenticated", False)
+        and (
+            getattr(actor, "is_sahip", False)
+            or getattr(actor, "rol", "") in {"yetkili", "havalimani_yoneticisi"}
+        )
+    )
 
 
 def _assignment_scope():
@@ -212,9 +225,13 @@ def _drill_file_size(upload):
 
 
 def _validate_drill_upload(upload):
-    safe_name, error = _validate_upload(upload, DRILL_ALLOWED_EXTENSIONS, DRILL_ALLOWED_MIME_TYPES)
-    if error:
-        return None, None, error
+    if not upload or not upload.filename:
+        return None, None, "Yüklenecek dosya seçilmedi."
+    safe_name = secure_upload_filename(upload.filename)
+    if not safe_name:
+        return None, None, "Dosya adı güvenli hale getirilemedi."
+    if not is_allowed_file(safe_name, DRILL_ALLOWED_EXTENSIONS):
+        return None, None, "Dosya uzantısı desteklenmiyor."
 
     file_size = _drill_file_size(upload)
     max_bytes = int(current_app.config.get("DRILL_MAX_FILE_SIZE") or current_app.config.get("MAX_CONTENT_LENGTH") or 0)
@@ -223,6 +240,8 @@ def _validate_drill_upload(upload):
         return None, None, f"Tatbikat dosyası en fazla {max_mb} MB olabilir."
 
     mime_type = getattr(upload, "mimetype", None) or mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
+    if not any(mime_type.startswith(prefix) for prefix in DRILL_ALLOWED_MIME_TYPES):
+        return None, None, "Dosya türü desteklenmiyor."
     return safe_name, mime_type, None
 
 
@@ -1335,8 +1354,10 @@ def zimmetler():
     if not _can_view_all_operational_scope():
         selected_airport = current_user.havalimani_id
 
+    can_create_assignment = has_permission("assignment.create") and _can_issue_assignments(current_user)
+
     if request.method == "POST":
-        if not has_permission("assignment.create"):
+        if not can_create_assignment:
             abort(403)
 
         airport_id = request.form.get("airport_id", type=int) or current_user.havalimani_id
@@ -1348,10 +1369,10 @@ def zimmetler():
             flash("Seçilen havalimanı için zimmet oluşturma yetkiniz yok.", "danger")
             return redirect(url_for("inventory.zimmetler", airport_id=selected_airport or None))
 
-        delivered_by = request.form.get("delivered_by_id", type=int) or current_user.id
+        delivered_by_name = guvenli_metin(request.form.get("delivered_by_name") or "").strip()
+        if not delivered_by_name:
+            delivered_by_name = guvenli_metin(getattr(current_user, "tam_ad", "") or "").strip()
         visible_user_ids = {user.id for user in _visible_personnel_query(airport_id).all()}
-        if delivered_by not in visible_user_ids:
-            delivered_by = current_user.id
 
         recipient_ids = list(dict.fromkeys(_parse_int_list(request.form.getlist("recipient_ids"))))
         recipient_ids = [user_id for user_id in recipient_ids if user_id in visible_user_ids]
@@ -1372,7 +1393,8 @@ def zimmetler():
         assignment = AssignmentRecord(
             assignment_no=_next_assignment_no(),
             assignment_date=_parse_date(request.form.get("assignment_date")) or get_tr_now().date(),
-            delivered_by_id=delivered_by,
+            delivered_by_id=current_user.id,
+            delivered_by_name=delivered_by_name,
             airport_id=airport_id,
             note=guvenli_metin(request.form.get("note") or ""),
             status="active",
@@ -1432,10 +1454,29 @@ def zimmetler():
     assignments = query.order_by(AssignmentRecord.assignment_date.desc(), AssignmentRecord.created_at.desc()).all()
 
     recipient_query = _visible_personnel_query(selected_airport)
-    if not (has_permission("assignment.manage") or has_permission("assignment.create")):
+    if not can_create_assignment and not has_permission("assignment.manage"):
         recipient_query = recipient_query.filter(Kullanici.id == current_user.id)
     recipient_options = recipient_query.order_by(Kullanici.tam_ad.asc()).all()
     material_options = _visible_material_query(selected_airport).order_by(Malzeme.ad.asc()).limit(250).all()
+    recipient_lookup = {user.id: user for user in recipient_options}
+    selected_recipient_user = recipient_lookup.get(selected_recipient)
+    if not selected_recipient_user and not can_create_assignment and getattr(current_user, "id", None) in recipient_lookup:
+        selected_recipient_user = recipient_lookup[current_user.id]
+
+    recipient_active_assignments = []
+    if selected_recipient_user:
+        recipient_assignment_query = _assignment_scope()
+        if can_create_assignment or selected_recipient_user.id != getattr(current_user, "id", None):
+            recipient_assignment_query = recipient_assignment_query.join(AssignmentRecipient).filter(
+                AssignmentRecipient.user_id == selected_recipient_user.id,
+            )
+        recipient_active_assignments = (
+            recipient_assignment_query
+            .filter(AssignmentRecord.status.in_(["active", "partial"]))
+            .order_by(AssignmentRecord.assignment_date.desc(), AssignmentRecord.created_at.desc())
+            .distinct()
+            .all()
+        )
 
     return render_template(
         "zimmetler.html",
@@ -1447,6 +1488,9 @@ def zimmetler():
         selected_airport=selected_airport,
         selected_status=selected_status,
         selected_recipient=selected_recipient,
+        selected_recipient_user=selected_recipient_user,
+        recipient_active_assignments=recipient_active_assignments,
+        can_create_assignment=can_create_assignment,
     )
 
 
@@ -1816,11 +1860,12 @@ def tatbikat_listesi():
     if not getattr(current_user, "is_sahip", False):
         selected_airport = current_user.havalimani_id
 
-    query = _drill_scope().order_by(TatbikatBelgesi.created_at.desc())
+    query = _drill_scope().order_by(TatbikatBelgesi.tatbikat_tarihi.desc(), TatbikatBelgesi.created_at.desc())
     if selected_airport:
         query = query.filter(TatbikatBelgesi.havalimani_id == selected_airport)
 
     documents = query.all()
+    drill_airport_select_enabled = bool(getattr(current_user, "rol", "") == "sahip")
     can_manage_drills = has_permission("drill.manage") and (
         getattr(current_user, "is_sahip", False) or getattr(current_user, "rol", "") in {"havalimani_yoneticisi", "yetkili"}
     )
@@ -1830,6 +1875,7 @@ def tatbikat_listesi():
         airports=airports,
         selected_airport=selected_airport,
         can_manage_drills=can_manage_drills,
+        drill_airport_select_enabled=drill_airport_select_enabled,
         format_file_size=_format_drill_file_size,
     )
 
@@ -1840,6 +1886,8 @@ def tatbikat_listesi():
 @permission_required("drill.manage")
 def tatbikat_yukle():
     airport_id = request.form.get("airport_id", type=int)
+    if not getattr(current_user, "is_sahip", False):
+        airport_id = current_user.havalimani_id
     if airport_id is None:
         flash("Tatbikat belgesi için havalimanı seçin.", "danger")
         return redirect(url_for("inventory.tatbikat_listesi"))
@@ -1856,6 +1904,7 @@ def tatbikat_yukle():
         return redirect(url_for("inventory.tatbikat_listesi", airport_id=airport_id))
     if not title:
         title = safe_name
+    drill_date = _parse_date(request.form.get("drill_date")) or get_tr_now().date()
 
     drive_service = get_drill_drive_service()
     try:
@@ -1869,6 +1918,7 @@ def tatbikat_yukle():
             havalimani_id=airport.id,
             yukleyen_kullanici_id=current_user.id,
             baslik=title,
+            tatbikat_tarihi=drill_date,
             aciklama=description,
             dosya_adi=drive_result["filename"],
             drive_file_id=drive_result["drive_file_id"],

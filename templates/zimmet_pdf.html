@@ -210,7 +210,7 @@
     </tr>
     <tr>
       <td class="meta-label">Teslim Eden</td>
-      <td class="meta-value">{{ assignment.delivered_by.tam_ad if assignment.delivered_by else '-' }}</td>
+      <td class="meta-value">{{ assignment.delivered_by_name or (assignment.delivered_by.tam_ad if assignment.delivered_by else '-') }}</td>
       <td class="meta-label">Teslim Alan</td>
       <td class="meta-value">{{ assignment.recipient_names or '-' }}</td>
     </tr>
@@ -263,7 +263,7 @@
       <td>
         <div class="signature-card">
           <div class="signature-title">Teslim Eden</div>
-          <div class="signature-name">{{ assignment.delivered_by.tam_ad if assignment.delivered_by else '-' }}</div>
+          <div class="signature-name">{{ assignment.delivered_by_name or (assignment.delivered_by.tam_ad if assignment.delivered_by else '-') }}</div>
           <div class="signature-note">Ad Soyad • İmza • Tarih</div>
         </div>
       </td>

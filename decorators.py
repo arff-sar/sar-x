@@ -536,8 +536,8 @@ DEFAULT_ROLE_PERMISSIONS = {
 MENU_GROUPS = [
     {
         "key": "dashboard",
-        "label": "Gösterge Paneli",
-        "icon": "KP",
+        "label": "Ana Görünüm",
+        "icon": "Ana",
         "single_link": True,
         "items": [
             {
@@ -551,7 +551,7 @@ MENU_GROUPS = [
     {
         "key": "content",
         "label": "İçerik Yönetimi",
-        "icon": "IC",
+        "icon": "İç",
         "items": [
             {"label": "Anasayfa Paneli", "endpoint": "content.homepage_dashboard", "endpoints": ["content.homepage_dashboard"], "permission": "homepage.view"},
             {"label": "Slider", "endpoint": "content.homepage_slider_list", "prefixes": ["content.homepage_slider_"], "permission": "homepage.edit"},
@@ -564,7 +564,7 @@ MENU_GROUPS = [
     {
         "key": "operations",
         "label": "Operasyon",
-        "icon": "OP",
+        "icon": "Saha",
         "items": [
             {"label": "Envanter", "endpoint": "inventory.envanter", "endpoints": ["inventory.envanter", "inventory.malzeme_ekle", "inventory.quick_asset_view", "inventory.kutu_detay"], "permission": "inventory.view"},
             {"label": "Zimmetler", "endpoint": "inventory.zimmetler", "prefixes": ["inventory.zimmet"], "permission": "assignment.view"},
@@ -580,7 +580,7 @@ MENU_GROUPS = [
     {
         "key": "management",
         "label": "Yönetim",
-        "icon": "YN",
+        "icon": "Yön",
         "items": [
             {"label": "Kullanıcılar", "endpoint": "admin.kullanicilar", "endpoints": ["admin.kullanicilar"], "permission": "users.manage"},
             {"label": "Roller / Yetkiler", "endpoint": "admin.roles", "endpoints": ["admin.roles", "admin.permissions"], "prefixes": ["admin.role_detail"], "permission": "roles.manage"},

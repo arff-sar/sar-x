@@ -3,9 +3,9 @@
 
 {% block extra_css %}
 <style>
-.page-header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 20px; }
-.page-title { font-size: 22px; font-weight: 800; color: var(--navy); letter-spacing: -.02em; }
-.page-meta { font-size: 12.5px; color: var(--text3); margin-top: 4px; display: flex; align-items: center; gap: 6px; }
+.page-header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 22px; }
+.page-title { font-size: 28px; font-weight: 800; color: var(--navy); letter-spacing: -.03em; line-height: 1.05; }
+.page-meta { font-size: 13px; color: var(--text3); margin-top: 6px; display: flex; align-items: center; gap: 8px; line-height: 1.5; }
 .dashboard-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .btn-primary { background: var(--orange); color: #fff; border: none; padding: 10px 20px; border-radius: var(--r); font-family: var(--sans); font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 10px rgba(249,115,22,.28); text-decoration: none; transition: transform .1s, box-shadow .1s; }
 .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(249,115,22,.38); }
@@ -92,8 +92,10 @@
 {% block body %}
 <div class="page-header">
     <div>
-        <div class="page-title">Operasyonel Durum</div>
+        <div class="page-title">Ana Görünüm</div>
         <div class="page-meta">
+            <span>Günlük operasyon özeti</span>
+            <div class="meta-dot" style="width: 3px; height: 3px; background: var(--text4); border-radius: 50%;"></div>
             <span>{{ bugun.strftime('%d.%m.%Y') }}</span>
             <div class="meta-dot" style="width: 3px; height: 3px; background: var(--text4); border-radius: 50%;"></div>
             <span>{{ havalimani_ad }}</span>
@@ -108,7 +110,7 @@
         <a href="{{ url_for('inventory.dashboard', trend_days=7) }}" class="btn btn-secondary {% if trend_days == 7 %}tag-navy{% endif %}">7G</a>
         <a href="{{ url_for('inventory.dashboard', trend_days=30) }}" class="btn btn-secondary {% if trend_days == 30 %}tag-navy{% endif %}">30G</a>
         <a href="{{ url_for('inventory.dashboard', trend_days=90) }}" class="btn btn-secondary {% if trend_days == 90 %}tag-navy{% endif %}">90G</a>
-        {% if rol in ['sahip', 'yetkili'] %}
+        {% if has_permission('inventory.create') %}
         <a href="{{ url_for('inventory.malzeme_ekle') }}" class="btn-primary">＋ Yeni Kayıt</a>
         {% endif %}
     </div>
@@ -138,7 +140,7 @@
     <div class="stat-card" data-kpi-tier="primary">
         <div class="stat-card-top">
             <div class="stat-icon" style="background:#e8f0f7;">📦</div>
-            <span class="stat-trend" style="background: var(--navy); color: white;">BİRİM</span>
+            <span class="stat-trend" style="background: var(--navy); color: white;">EKİPMAN</span>
         </div>
         <div class="stat-value">{{ toplam_ekipman_sayi if toplam_ekipman_sayi is defined else 0 }}</div>
         <div class="stat-label">Toplam Ekipman</div>
@@ -180,7 +182,7 @@
 <div class="panel">
     <div class="panel-header">
         <div class="panel-title">
-            <div class="panel-title-icon" style="background: var(--surface2); color: var(--navy);">ÖZ</div>
+            <div class="panel-title-icon" style="background: var(--surface2); color: var(--navy);">GEN</div>
             Operasyon Özeti
         </div>
     </div>
@@ -219,7 +221,7 @@
             <div class="stat-card" data-kpi-tier="operational">
                 <div class="stat-card-top">
                     <div class="stat-icon" style="background:var(--red-light);">🧩</div>
-                    <span class="stat-trend" style="background: var(--red-light); color: var(--red);">CHILD</span>
+                    <span class="stat-trend" style="background: var(--red-light); color: var(--red);">ALT</span>
                 </div>
                 <div class="stat-value" style="color: var(--red);">{{ child_asset_ariza_sayi if child_asset_ariza_sayi is defined else 0 }}</div>
                 <div class="stat-label">Alt Bileşen Arızası</div>

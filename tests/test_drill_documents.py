@@ -7,6 +7,7 @@ from tests.factories import HavalimaniFactory, KullaniciFactory
 
 def _login(client, user_id):
     with client.session_transaction() as session:
+        session.clear()
         session["_user_id"] = str(user_id)
         session["_fresh"] = True
 
@@ -89,6 +90,8 @@ def test_tatbikat_listesi_scopes_documents_to_current_airport(client, app):
     assert response.status_code == 200
     assert "ERZ Tatbikat Planı" in html
     assert "TZX Tatbikat Planı" not in html
+    assert "Tatbikat Kayıtları" in html
+    assert "Belge Listesi" not in html
 
 
 def test_personnel_cannot_upload_tatbikat_document(client, app):
@@ -132,6 +135,7 @@ def test_airport_manager_can_upload_tatbikat_document_with_drive_metadata(client
         data={
             "airport_id": airport_id,
             "title": "Yıllık Tatbikat",
+            "drill_date": "2026-03-21",
             "description": "Google Drive üzerinde tutulur.",
             "document": (io.BytesIO(b"%PDF-1.4\nfake\n"), "tatbikat.pdf"),
         },
@@ -146,6 +150,7 @@ def test_airport_manager_can_upload_tatbikat_document_with_drive_metadata(client
         assert record is not None
         assert record.drive_file_id == f"drive-{airport_id}"
         assert record.drive_folder_id == f"folder-{airport_id}"
+        assert record.tatbikat_tarihi.isoformat() == "2026-03-21"
 
 
 def test_cross_airport_tatbikat_detail_returns_403(client, app):
@@ -209,6 +214,60 @@ def test_owner_can_soft_delete_tatbikat_document(client, app, monkeypatch):
         record = db.session.get(TatbikatBelgesi, document_id)
         assert record.is_deleted is True
         assert fake_drive.deleted_ids == ["drive-delete"]
+
+
+def test_tatbikat_page_shows_airport_select_only_for_owner(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Sivas", kodu="VAS")
+        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False)
+        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        db.session.add_all([airport, owner, manager])
+        db.session.commit()
+        owner_id = owner.id
+        manager_id = manager.id
+
+    _login(client, owner_id)
+    owner_response = client.get("/tatbikatlar")
+    owner_html = owner_response.data.decode("utf-8")
+
+    _login(client, manager_id)
+    manager_response = client.get("/tatbikatlar")
+    manager_html = manager_response.data.decode("utf-8")
+
+    assert owner_response.status_code == 200
+    assert manager_response.status_code == 200
+    assert 'select name="airport_id"' in owner_html
+    assert 'type="hidden" name="airport_id"' in manager_html
+    assert 'value="VAS - Sivas" readonly' in manager_html
+
+
+def test_airport_manager_can_upload_zip_tatbikat_document(client, app, monkeypatch):
+    fake_drive = _FakeDriveService()
+    monkeypatch.setattr("routes.inventory.get_drill_drive_service", lambda: fake_drive)
+
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Van", kodu="VAN")
+        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        db.session.add_all([airport, manager])
+        db.session.commit()
+        manager_id = manager.id
+        airport_id = airport.id
+
+    _login(client, manager_id)
+    response = client.post(
+        "/tatbikatlar/yukle",
+        data={
+            "airport_id": airport_id,
+            "title": "ZIP Tatbikat Paketi",
+            "drill_date": "2026-03-22",
+            "document": (io.BytesIO(b"PK\x03\x04zip"), "tatbikat.zip", "application/zip"),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "ZIP Tatbikat Paketi" in response.data.decode("utf-8")
 
 
 def test_google_drive_oauth_callback_matches_expected_route_and_redirects_owner(client, app, monkeypatch):

@@ -54,7 +54,7 @@
             </div>
             <div class="summary-card">
                 <div class="summary-label">Teslim Eden</div>
-                <div class="summary-value">{{ assignment.delivered_by.tam_ad if assignment.delivered_by else '-' }}</div>
+                <div class="summary-value">{{ assignment.delivered_by_name or (assignment.delivered_by.tam_ad if assignment.delivered_by else '-') }}</div>
             </div>
             <div class="summary-card">
                 <div class="summary-label">Kalem Sayısı</div>

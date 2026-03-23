@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Tatbikat Belgesi{% endblock %}
+{% block title %}Tatbikat Kaydı{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -23,6 +23,8 @@
     <div class="page-meta">
       <span>{{ document.havalimani.ad if document.havalimani else '-' }}</span>
       <div class="meta-dot" style="width:3px; height:3px; background:var(--text4); border-radius:50%;"></div>
+      <span>{{ document.tatbikat_tarihi.strftime('%d.%m.%Y') if document.tatbikat_tarihi else '-' }}</span>
+      <div class="meta-dot" style="width:3px; height:3px; background:var(--text4); border-radius:50%;"></div>
       <span>{{ document.created_at.strftime('%d.%m.%Y %H:%M') if document.created_at else '-' }}</span>
     </div>
   </div>
@@ -37,7 +39,7 @@
   <div class="panel">
     <div class="panel-header">
       <div>
-        <div class="panel-title">Belge Bilgileri</div>
+        <div class="panel-title">Kayıt Bilgileri</div>
         <div class="panel-subtitle">Dosya Google Drive üzerinde saklanır; burada yalnız metadata tutulur.</div>
       </div>
     </div>
@@ -46,6 +48,10 @@
         <div class="drill-detail-item">
           <div class="drill-detail-label">Havalimanı</div>
           <div class="drill-detail-value">{{ document.havalimani.kodu if document.havalimani else '-' }} - {{ document.havalimani.ad if document.havalimani else '-' }}</div>
+        </div>
+        <div class="drill-detail-item">
+          <div class="drill-detail-label">Tatbikat Tarihi</div>
+          <div class="drill-detail-value">{{ document.tatbikat_tarihi.strftime('%d.%m.%Y') if document.tatbikat_tarihi else '-' }}</div>
         </div>
         <div class="drill-detail-item">
           <div class="drill-detail-label">Dosya Adı</div>

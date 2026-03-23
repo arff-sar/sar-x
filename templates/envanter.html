@@ -4,8 +4,10 @@
 {% block body %}
 <div class="page-header">
     <div>
-        <div class="page-title">📦 {{ havalimani_ad }}</div>
+        <div class="page-title">Envanter</div>
         <div class="page-meta">
+            <span>{{ havalimani_ad }}</span>
+            <div class="meta-dot" style="width: 3px; height: 3px; background: var(--text4); border-radius: 50%;"></div>
             <span>Operasyonel ekipman ve malzeme listesi</span>
             <div class="meta-dot" style="width: 3px; height: 3px; background: var(--text4); border-radius: 50%;"></div>
             <span>{{ malzemeler|length }} Kalem Ürün</span>
@@ -35,24 +37,13 @@
     </div>
 </div>
 
-{% if has_permission('assignment.view') or has_permission('ppe.view') %}
 <div class="panel">
-    <div class="panel-body" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
-        {% if has_permission('assignment.view') %}
-        <a href="{{ url_for('inventory.zimmetler') }}" class="row-btn" style="padding:16px; border-radius:16px; justify-content:flex-start;">
-            Zimmet Yönetimi
-        </a>
-        {% endif %}
-        {% if has_permission('ppe.view') %}
-        <a href="{{ url_for('inventory.kkd_listesi') }}" class="row-btn" style="padding:16px; border-radius:16px; justify-content:flex-start;">
-            KKD Takibi
-        </a>
-        {% endif %}
+    <div class="panel-header">
+        <div>
+            <div class="panel-title">Filtreler</div>
+            <div class="panel-subtitle">Listeyi kategori, bakım ve iş emri durumuna göre sade biçimde daraltın.</div>
+        </div>
     </div>
-</div>
-{% endif %}
-
-<div class="panel">
     <div class="panel-body" style="padding-bottom: 10px;">
         <form method="GET" action="{{ url_for('inventory.envanter') }}" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end;">
             {% if has_permission('logs.view') or has_permission('settings.manage') %}
@@ -220,8 +211,8 @@
                 <tr>
                     <td colspan="7" style="padding: 60px; text-align: center; color: var(--text4);">
                         <div style="font-size: 40px; margin-bottom: 15px; opacity: 0.5;">📦</div>
-                        <div style="font-weight: 600; font-size: 16px; color: var(--navy);">Henüz envanter kaydı bulunmuyor.</div>
-                        <div style="font-size: 13px; margin-top: 5px;">Yeni bir malzeme ekleyerek sistemi başlatın.</div>
+                        <div style="font-weight: 700; font-size: 16px; color: var(--navy);">Listelenecek envanter kaydı bulunamadı.</div>
+                        <div style="font-size: 13px; margin-top: 5px;">Filtreleri genişletin veya yeni bir malzeme ekleyerek listeyi güncelleyin.</div>
                     </td>
                 </tr>
                 {% endfor %}

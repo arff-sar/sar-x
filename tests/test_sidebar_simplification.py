@@ -25,6 +25,8 @@ def test_sidebar_uses_single_open_group_and_direct_dashboard_link(client, app):
     assert html.count('sidebar-group is-open') == 1
     assert 'data-group="operations"' in html
     assert "Kutu / Ünite Yönetimi" in html
+    assert 'data-sidebar-target="/envanter"' in html
+    assert "İlk durak: Envanter" in html
     assert "Raporlar" not in html
 
 
@@ -66,3 +68,4 @@ def test_operations_group_uses_accessible_toggle_markup_and_mobile_sync(client, 
     assert 'class="sidebar-footer"' in html
     assert "syncSidebarState" in html
     assert "document.querySelectorAll('[data-sidebar-link]')" in html
+    assert "window.location.assign(targetUrl)" in html

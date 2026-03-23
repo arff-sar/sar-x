@@ -10,6 +10,8 @@
   .assignment-kpi-value { margin-top:8px; font-size:28px; font-weight:900; color:var(--navy); line-height:1; }
   .assignment-kpi-note { margin-top:6px; font-size:12px; color:var(--text3); line-height:1.5; }
   .assignment-filter-form { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:12px; align-items:end; }
+  .assignment-filter-actions { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; align-items:stretch; }
+  .assignment-filter-actions .btn { width:100%; }
   .assignment-filter-summary { margin-top:14px; padding-top:14px; border-top:1px solid var(--border); display:flex; flex-wrap:wrap; gap:10px 14px; justify-content:space-between; align-items:flex-start; }
   .assignment-filter-result { font-size:12.5px; color:var(--text3); line-height:1.55; }
   .assignment-filter-result strong { color:var(--navy); font-size:15px; font-weight:800; }
@@ -77,6 +79,18 @@
   .assignment-submit-row { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-top:16px; }
   .assignment-submit-note { font-size:12px; color:var(--text3); line-height:1.5; }
   .assignment-table .row-actions { justify-content:flex-end; }
+  .assignment-overview-stack { display:grid; gap:18px; }
+  .assignment-focus-card { border:1px solid var(--border); border-radius:18px; background:linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,250,252,.98) 100%); padding:18px; box-shadow:0 12px 28px rgba(15, 23, 42, 0.04); }
+  .assignment-focus-head { display:flex; flex-wrap:wrap; justify-content:space-between; gap:10px; align-items:flex-start; margin-bottom:14px; }
+  .assignment-focus-title { font-size:15px; font-weight:800; color:var(--navy); }
+  .assignment-focus-note { margin-top:4px; font-size:12px; color:var(--text3); line-height:1.55; }
+  .assignment-focus-list { display:grid; gap:10px; }
+  .assignment-focus-item { padding:13px 14px; border:1px solid var(--border); border-radius:14px; background:#fff; display:grid; gap:8px; }
+  .assignment-focus-top { display:flex; flex-wrap:wrap; justify-content:space-between; gap:10px; align-items:flex-start; }
+  .assignment-focus-meta { font-size:11.5px; color:var(--text3); line-height:1.45; }
+  .assignment-focus-item-list { display:flex; flex-wrap:wrap; gap:8px; }
+  .assignment-focus-chip { display:inline-flex; align-items:center; padding:7px 10px; border-radius:999px; background:var(--surface2); border:1px solid var(--border); color:var(--text2); font-size:11.5px; font-weight:700; }
+  .assignment-inline-help { margin-top:8px; font-size:11.5px; color:var(--text3); line-height:1.5; }
   @media (max-width: 900px) {
     .assignment-kpi-row { grid-template-columns:repeat(2, minmax(0, 1fr)); }
     .assignment-filter-form { grid-template-columns:repeat(2, minmax(0, 1fr)); }
@@ -165,11 +179,14 @@
         </div>
     </div>
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        {% if can_create_assignment %}
+        <span class="status-pill status-bakim">Zimmet verme yetkisi açık</span>
+        {% endif %}
         {% if has_permission('assignment.pdf') %}
         <span class="status-pill status-aktif">PDF hazır</span>
         {% endif %}
         {% if has_permission('assignment.document.upload') %}
-        <span class="status-pill status-bakim">İmzalı belge yüklenebilir</span>
+        <span class="status-pill status-pasif">İmzalı belge yüklenebilir</span>
         {% endif %}
     </div>
 </div>
@@ -196,14 +213,14 @@
     <div class="panel-header">
         <div>
             <div class="panel-title">Filtreler</div>
-            <div class="panel-subtitle">Havalimanı, teslim alan personel ve zimmet durumuna göre kayıtları daraltın.</div>
+            <div class="panel-subtitle">Kapsamınızdaki zimmet kayıtlarını durum ve personel odağında sade biçimde daraltın.</div>
         </div>
     </div>
     <div class="panel-body">
         <form method="GET" action="{{ url_for('inventory.zimmetler') }}" class="assignment-filter-form">
             <div class="form-group" style="margin-bottom:0;">
                 <label>Havalimanı</label>
-                {% if airports|length > 1 %}
+                {% if current_user.is_sahip and airports|length > 1 %}
                 <select name="airport_id" class="form-control">
                     <option value="">Tümü</option>
                     {% for airport in airports %}
@@ -227,15 +244,15 @@
             <div class="form-group" style="margin-bottom:0;">
                 <label>Teslim Alan</label>
                 <select name="recipient_id" class="form-control">
-                    <option value="">Tüm personel</option>
+                    <option value="">{% if can_create_assignment %}Tüm personel{% else %}Kendi kayıtlarım{% endif %}</option>
                     {% for user in recipient_options %}
                     <option value="{{ user.id }}" {% if selected_recipient == user.id %}selected{% endif %}>{{ user.tam_ad }}</option>
                     {% endfor %}
                 </select>
             </div>
-            <div style="display:flex; gap:8px;">
-                <button type="submit" class="btn btn-navy" style="width:100%;">Filtrele</button>
-                <a href="{{ url_for('inventory.zimmetler') }}" class="btn btn-secondary" style="width:100%; text-align:center;">Temizle</a>
+            <div class="assignment-filter-actions">
+                <button type="submit" class="btn btn-navy">Filtrele</button>
+                <a href="{{ url_for('inventory.zimmetler') }}" class="btn btn-secondary" style="text-align:center;">Temizle</a>
             </div>
         </form>
         <div class="assignment-filter-summary">
@@ -257,11 +274,65 @@
 </div>
 
 <div class="assignment-layout">
+    <div class="assignment-overview-stack">
+    {% if selected_recipient_user %}
+    <div class="assignment-focus-card">
+        <div class="assignment-focus-head">
+            <div>
+                <div class="assignment-focus-title">
+                    {% if not can_create_assignment and selected_recipient_user.id == current_user.id %}
+                    Size Atanan Aktif Malzemeler
+                    {% else %}
+                    {{ selected_recipient_user.tam_ad }} için aktif zimmetler
+                    {% endif %}
+                </div>
+                <div class="assignment-focus-note">
+                    {% if not can_create_assignment and selected_recipient_user.id == current_user.id %}
+                    Kendi hesabınıza atanmış aktif veya kısmi zimmet kayıtları burada özetlenir.
+                    {% else %}
+                    Personel seçimi sonrasında açık zimmet kalemleri burada toplanır.
+                    {% endif %}
+                </div>
+            </div>
+            <span class="status-pill status-aktif">{{ recipient_active_assignments|length }} kayıt</span>
+        </div>
+        {% if recipient_active_assignments %}
+        <div class="assignment-focus-list">
+            {% for assignment in recipient_active_assignments %}
+            <div class="assignment-focus-item">
+                <div class="assignment-focus-top">
+                    <div>
+                        <div style="font-weight:800; color:var(--navy);">{{ assignment.assignment_no }}</div>
+                        <div class="assignment-focus-meta">{{ assignment.assignment_date.strftime('%d.%m.%Y') if assignment.assignment_date else '-' }} • {{ assignment.airport.ad if assignment.airport else 'Global erişim' }}</div>
+                    </div>
+                    <a href="{{ url_for('inventory.zimmet_detay', assignment_id=assignment.id) }}" class="row-btn">Detay</a>
+                </div>
+                <div class="assignment-focus-item-list">
+                    {% for item in assignment.items if item.remaining_quantity > 0 %}
+                    <span class="assignment-focus-chip">{{ item.item_name }} • {{ item.remaining_quantity }} {{ item.unit or 'adet' }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="assignment-empty">
+            <strong>{% if not can_create_assignment and selected_recipient_user.id == current_user.id %}Size atanmış aktif zimmet bulunmuyor.{% else %}Seçili personel için aktif zimmet bulunmuyor.{% endif %}</strong>
+            {% if can_create_assignment %}
+            Yeni bir kayıt oluşturarak bu panelin dolmasını sağlayabilirsiniz.
+            {% else %}
+            Yeni bir atama yapıldığında bu alanda doğrudan görüntülenir.
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <div class="panel">
         <div class="panel-header">
             <div>
                 <div class="panel-title">Zimmet Listesi</div>
-                <div class="panel-subtitle">Personel üzerindeki aktif kayıtlar, geçmiş iadeler ve belge durumu tek tabloda görünür.</div>
+                <div class="panel-subtitle">Aktif kayıtlar, geçmiş iadeler ve belge durumu tek listede izlenir.</div>
             </div>
         </div>
         <div class="table-container">
@@ -285,7 +356,7 @@
                         </td>
                         <td>
                             <div>{{ assignment.recipient_names or '-' }}</div>
-                            <div style="font-size:11.5px; color:var(--text3); margin-top:4px;">Teslim eden: {{ assignment.delivered_by.tam_ad if assignment.delivered_by else '-' }}</div>
+                            <div style="font-size:11.5px; color:var(--text3); margin-top:4px;">Teslim eden: {{ assignment.delivered_by_name or (assignment.delivered_by.tam_ad if assignment.delivered_by else '-') }}</div>
                         </td>
                         <td>{{ assignment.airport.ad if assignment.airport else 'Global' }}</td>
                         <td>{{ assignment.items|length }} kalem</td>
@@ -301,8 +372,12 @@
                     <tr>
                         <td colspan="6">
                             <div class="assignment-empty">
-                                <strong>Zimmet kaydı bulunamadı</strong>
+                                <strong>{% if not can_create_assignment %}Size atanmış aktif zimmet bulunmuyor.{% else %}Zimmet kaydı bulunamadı.{% endif %}</strong>
+                                {% if can_create_assignment %}
                                 Seçili filtrelerle eşleşen kayıt yok. Farklı bir durum veya personel seçerek listeyi genişletebilirsiniz.
+                                {% else %}
+                                Size ait yeni bir atama yapıldığında burada listelenecektir.
+                                {% endif %}
                             </div>
                         </td>
                     </tr>
@@ -311,13 +386,14 @@
             </table>
         </div>
     </div>
+    </div>
 
-    {% if has_permission('assignment.create') %}
+    {% if can_create_assignment %}
     <div class="panel">
         <div class="panel-header">
             <div>
                 <div class="panel-title">Yeni Zimmet Oluştur</div>
-                <div class="panel-subtitle">Tekli veya çoklu malzemeyi bir ya da birden fazla personele aynı kayıtta zimmetleyin.</div>
+                <div class="panel-subtitle">Kurumsal zimmet akışına uygun biçimde teslim bilgisi, personel ve malzemeleri tek kayıtta toplayın.</div>
             </div>
         </div>
         <div class="panel-body">
@@ -330,7 +406,7 @@
                     </div>
                     <div class="form-group">
                         <label>Havalimanı</label>
-                        {% if airports|length > 1 %}
+                        {% if current_user.is_sahip and airports|length > 1 %}
                         <select name="airport_id" class="form-control">
                             {% for airport in airports %}
                             <option value="{{ airport.id }}" {% if selected_airport == airport.id %}selected{% endif %}>{{ airport.kodu }} - {{ airport.ad }}</option>
@@ -343,14 +419,8 @@
                     </div>
                     <div class="form-group full">
                         <label>Teslim Eden</label>
-                        <select name="delivered_by_id" class="form-control">
-                            {% if recipient_options|selectattr('id', 'equalto', current_user.id)|list|length == 0 %}
-                            <option value="{{ current_user.id }}">{{ current_user.tam_ad }}</option>
-                            {% endif %}
-                            {% for user in recipient_options %}
-                            <option value="{{ user.id }}" {% if user.id == current_user.id %}selected{% endif %}>{{ user.tam_ad }}</option>
-                            {% endfor %}
-                        </select>
+                        <input type="text" name="delivered_by_name" class="form-control" value="{{ current_user.tam_ad }}" placeholder="Teslim eden adı soyadı">
+                        <div class="assignment-inline-help">Bu alan manuel metin olarak kaydedilir; zimmeti fiilen teslim eden kişi sistem kullanıcısı olmak zorunda değildir.</div>
                     </div>
                 </div>
 
@@ -358,22 +428,22 @@
                     <div class="assignment-form-guide-item">
                         <span class="assignment-form-guide-step">1</span>
                         <div class="assignment-form-guide-body">
-                            <div class="assignment-form-guide-title">Personeli belirleyin</div>
-                            <div class="assignment-form-guide-note">{{ recipient_options|length }} görünür personel arasından zimmet alıcılarını seçin.</div>
+                            <div class="assignment-form-guide-title">Zimmet bilgisini netleştirin</div>
+                            <div class="assignment-form-guide-note">Tarih, havalimanı kapsamı ve teslim eden bilgisini resmi form mantığına uygun biçimde tamamlayın.</div>
                         </div>
                     </div>
                     <div class="assignment-form-guide-item">
                         <span class="assignment-form-guide-step">2</span>
                         <div class="assignment-form-guide-body">
-                            <div class="assignment-form-guide-title">Malzemeleri eşleştirin</div>
-                            <div class="assignment-form-guide-note">{{ material_options|length }} görünür malzeme arasından kalemleri, miktarı ve birimi netleştirin.</div>
+                            <div class="assignment-form-guide-title">Teslim alan personeli seçin</div>
+                            <div class="assignment-form-guide-note">{{ recipient_options|length }} görünür personel arasından teslim alıcılarını belirleyin ve mevcut zimmetleri kontrol edin.</div>
                         </div>
                     </div>
                     <div class="assignment-form-guide-item">
                         <span class="assignment-form-guide-step">3</span>
                         <div class="assignment-form-guide-body">
-                            <div class="assignment-form-guide-title">Kaydı tamamlayın</div>
-                            <div class="assignment-form-guide-note">Açıklama ekleyip zimmeti tek kayıt altında güvenli biçimde oluşturun.</div>
+                            <div class="assignment-form-guide-title">Malzemeleri ekleyin ve kaydı kapatın</div>
+                            <div class="assignment-form-guide-note">{{ material_options|length }} görünür malzeme arasından bir veya birden fazla kalemi miktar ve notlarıyla birlikte ekleyin.</div>
                         </div>
                     </div>
                 </div>
@@ -399,7 +469,7 @@
                                     {% endfor %}
                                 </select>
                             </div>
-                            <input type="search" id="assignmentRecipientSearch" class="form-control choice-search" placeholder="Ad, e-posta, rol veya havalimanına göre ara">
+                            <input type="search" id="assignmentRecipientSearch" class="form-control choice-search" placeholder="Ad, rol veya havalimanına göre ara">
                             <div class="selection-toolbar-meta">
                                 <div class="selection-toolbar-note">Hızlı seçimle kişi ekleyin; ayrıntılı tarama gerekirse listeyi ayrıca açabilirsiniz.</div>
                                 <button type="button" class="selection-browse-toggle" id="assignmentRecipientToggle" aria-expanded="false">Tüm personel listesini aç</button>
@@ -423,8 +493,8 @@
                                     data-choice-type="recipient"
                                     data-choice-label="{{ user.tam_ad }}"
                                     data-choice-meta-primary="{{ rol_etiketleri.get(user.rol, user.rol) }} • {{ user.havalimani.ad if user.havalimani else 'Global erişim' }}"
-                                    data-choice-meta-secondary="{{ user.kullanici_adi or 'E-posta bilgisi yok' }}"
-                                    data-filter-text="{{ (user.tam_ad ~ ' ' ~ (user.kullanici_adi or '') ~ ' ' ~ (rol_etiketleri.get(user.rol, user.rol)) ~ ' ' ~ (user.havalimani.ad if user.havalimani else 'global'))|lower }}"
+                                    data-choice-meta-secondary="{{ user.havalimani.ad if user.havalimani else 'Global erişim' }}"
+                                    data-filter-text="{{ (user.tam_ad ~ ' ' ~ (rol_etiketleri.get(user.rol, user.rol)) ~ ' ' ~ (user.havalimani.ad if user.havalimani else 'global'))|lower }}"
                                 >
                                     <input type="checkbox" name="recipient_ids" value="{{ user.id }}" {% if selected_recipient == user.id %}checked{% endif %}>
                                     <div class="choice-body">
@@ -435,7 +505,7 @@
                                             <span class="choice-badge">{{ rol_etiketleri.get(user.rol, user.rol) }}</span>
                                             <span class="choice-badge choice-badge-soft">{{ user.havalimani.ad if user.havalimani else 'Global erişim' }}</span>
                                         </div>
-                                        <span class="choice-meta">{{ user.kullanici_adi or 'E-posta bilgisi yok' }}</span>
+                                        <span class="choice-meta">{{ user.havalimani.ad if user.havalimani else 'Global erişim' }}</span>
                                     </div>
                                 </label>
                                 {% else %}

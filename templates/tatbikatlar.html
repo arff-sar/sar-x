@@ -1,10 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Tatbikat Belgeleri{% endblock %}
+{% block title %}Tatbikat Kayıtları{% endblock %}
 
 {% block extra_css %}
 <style>
   .drill-layout { display:grid; grid-template-columns:minmax(0, 1.2fr) minmax(320px, .8fr); gap:20px; align-items:start; }
   .drill-filter-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:10px; align-items:end; }
+  .drill-filter-actions { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; align-items:stretch; }
+  .drill-filter-actions .btn { width:100%; }
   .drill-meta { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
   .drill-meta-chip { display:inline-flex; align-items:center; min-height:32px; padding:0 12px; border-radius:999px; background:var(--surface2); border:1px solid var(--border); color:var(--text2); font-size:11.5px; font-weight:700; }
   .drill-upload-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
@@ -30,11 +32,11 @@
 {% block body %}
 <div class="page-header">
   <div>
-    <div class="page-title">Tatbikat Belgeleri</div>
+    <div class="page-title">Tatbikat Kayıtları</div>
     <div class="page-meta">
       <span>Google Drive üzerinde tutulan havalimanı bazlı tatbikat arşivi</span>
       <div class="meta-dot" style="width:3px; height:3px; background:var(--text4); border-radius:50%;"></div>
-      <span>{{ documents|length }} belge</span>
+      <span>{{ documents|length }} kayıt</span>
     </div>
   </div>
   {% if can_manage_drills %}
@@ -46,14 +48,14 @@
   <div class="panel-header">
     <div>
       <div class="panel-title">Filtreler</div>
-      <div class="panel-subtitle">Tatbikat belgelerini havalimanı kapsamına göre görüntüleyin.</div>
+      <div class="panel-subtitle">Kayıtları yetki kapsamınıza göre görüntüleyin; sahip kullanıcılar kapsam seçebilir.</div>
     </div>
   </div>
   <div class="panel-body">
     <form method="GET" action="{{ url_for('inventory.tatbikat_listesi') }}" class="drill-filter-row">
       <div class="form-group" style="margin-bottom:0;">
         <label>Havalimanı</label>
-        {% if airports|length > 1 %}
+        {% if drill_airport_select_enabled and airports|length > 1 %}
         <select name="airport_id" class="form-control">
           <option value="">Tüm havalimanları</option>
           {% for airport in airports %}
@@ -65,9 +67,9 @@
         <input type="text" class="form-control" value="{{ airports[0].kodu ~ ' - ' ~ airports[0].ad if airports else 'Kapsam bulunamadı' }}" readonly>
         {% endif %}
       </div>
-      <div style="display:flex; gap:8px;">
-        <button type="submit" class="btn btn-navy" style="width:100%;">Filtrele</button>
-        <a href="{{ url_for('inventory.tatbikat_listesi') }}" class="btn btn-secondary" style="width:100%; text-align:center;">Temizle</a>
+      <div class="drill-filter-actions">
+        <button type="submit" class="btn btn-navy">Filtrele</button>
+        <a href="{{ url_for('inventory.tatbikat_listesi') }}" class="btn btn-secondary" style="text-align:center;">Temizle</a>
       </div>
     </form>
     <div class="drill-meta">
@@ -85,8 +87,8 @@
   <div class="panel">
     <div class="panel-header">
       <div>
-        <div class="panel-title">Belge Listesi</div>
-        <div class="panel-subtitle">Yalnız yetki kapsamınızdaki havalimanı belgeleri listelenir.</div>
+        <div class="panel-title">Tatbikat Kayıtları</div>
+        <div class="panel-subtitle">Yalnız yetki kapsamınızdaki havalimanı kayıtları listelenir.</div>
       </div>
     </div>
     <div class="panel-body">
@@ -98,6 +100,7 @@
               <th>Belge</th>
               <th>Havalimanı</th>
               <th>Dosya Türü</th>
+              <th>Tatbikat Tarihi</th>
               <th>Boyut</th>
               <th>Yükleyen</th>
               <th>Tarih</th>
@@ -115,6 +118,7 @@
               </td>
               <td>{{ document.havalimani.kodu if document.havalimani else '-' }}</td>
               <td>{{ document.mime_type }}</td>
+              <td>{{ document.tatbikat_tarihi.strftime('%d.%m.%Y') if document.tatbikat_tarihi else '-' }}</td>
               <td>{{ format_file_size(document.dosya_boyutu) }}</td>
               <td>{{ document.yukleyen.tam_ad if document.yukleyen else '-' }}</td>
               <td>{{ document.created_at.strftime('%d.%m.%Y %H:%M') if document.created_at else '-' }}</td>
@@ -131,7 +135,7 @@
       </div>
       {% else %}
       <div class="drill-empty">
-        <strong>Tatbikat belgesi bulunamadı</strong>
+        <strong>Tatbikat kaydı bulunamadı</strong>
         Seçili havalimanı kapsamında görüntülenecek kayıt yok.
       </div>
       {% endif %}
@@ -140,19 +144,19 @@
 
   {% if can_manage_drills %}
   <div class="panel">
-    <div class="panel-header">
-      <div>
-        <div class="panel-title">Yeni Belge Yükle</div>
-        <div class="panel-subtitle">Dosya doğrudan ilgili havalimanı klasörüne Google Drive üzerinde kaydedilir.</div>
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">Yeni Kayıt Yükle</div>
+          <div class="panel-subtitle">Dosya doğrudan ilgili havalimanı klasörüne Google Drive üzerinde kaydedilir.</div>
+        </div>
       </div>
-    </div>
     <div class="panel-body">
       <form method="POST" action="{{ url_for('inventory.tatbikat_yukle') }}" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="drill-upload-grid">
           <div class="form-group">
             <label>Havalimanı</label>
-            {% if current_user.is_sahip %}
+            {% if drill_airport_select_enabled %}
             <select name="airport_id" class="form-control" required>
               <option value="">Seçin</option>
               {% for airport in airports %}
@@ -162,11 +166,15 @@
             {% else %}
             <input type="hidden" name="airport_id" value="{{ current_user.havalimani_id or '' }}">
             <input type="text" class="form-control" value="{{ current_user.havalimani.kodu ~ ' - ' ~ current_user.havalimani.ad if current_user.havalimani else 'Kapsam bulunamadı' }}" readonly>
-            {% endif %}
+          {% endif %}
           </div>
           <div class="form-group">
             <label>Başlık</label>
             <input type="text" name="title" class="form-control" maxlength="180" placeholder="Tatbikat başlığı">
+          </div>
+          <div class="form-group">
+            <label>Tatbikat Tarihi</label>
+            <input type="date" name="drill_date" class="form-control">
           </div>
           <div class="form-group full">
             <label>Açıklama</label>
@@ -174,11 +182,11 @@
           </div>
           <div class="form-group full">
             <label>Dosya</label>
-            <input type="file" name="document" class="form-control" accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png" required>
-            <div class="drill-subtle">Desteklenen türler: PDF, DOCX, XLSX, JPG, JPEG, PNG</div>
+            <input type="file" name="document" class="form-control" accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png,.zip" required>
+            <div class="drill-subtle">Desteklenen türler: PDF, DOCX, XLSX, JPG, JPEG, PNG, ZIP</div>
           </div>
         </div>
-        <button type="submit" class="btn btn-primary">Belgeyi Yükle</button>
+        <button type="submit" class="btn btn-primary">Kaydı Yükle</button>
       </form>
     </div>
   </div>
