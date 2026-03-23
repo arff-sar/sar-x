@@ -69,11 +69,76 @@ LEGACY_KEYS = [
 ]
 
 
-def upgrade():
-    with op.batch_alter_table("role", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("description", sa.Text(), nullable=True))
+def _inspector(bind):
+    return sa.inspect(bind)
 
+
+def _has_column(bind, table_name, column_name):
+    if not _inspector(bind).has_table(table_name):
+        return False
+    return column_name in {column["name"] for column in _inspector(bind).get_columns(table_name)}
+
+
+def _role_table():
+    return sa.table(
+        "role",
+        sa.column("id", sa.Integer()),
+        sa.column("key", sa.String(length=50)),
+        sa.column("label", sa.String(length=100)),
+        sa.column("description", sa.Text()),
+        sa.column("scope", sa.String(length=20)),
+        sa.column("is_system", sa.Boolean()),
+        sa.column("is_active", sa.Boolean()),
+        sa.column("created_at", sa.DateTime()),
+        sa.column("updated_at", sa.DateTime()),
+    )
+
+
+def _core_role_insert_statement(role_table):
+    return sa.insert(role_table).values(
+        key=sa.bindparam("key"),
+        label=sa.bindparam("label"),
+        description=sa.bindparam("description"),
+        scope=sa.bindparam("scope"),
+        is_system=sa.true(),
+        is_active=sa.true(),
+        created_at=sa.func.current_timestamp(),
+        updated_at=sa.func.current_timestamp(),
+    )
+
+
+def _core_role_update_statement(role_table):
+    return (
+        sa.update(role_table)
+        .where(role_table.c.key == sa.bindparam("key"))
+        .values(
+            label=sa.bindparam("label"),
+            scope=sa.bindparam("scope"),
+            description=sa.bindparam("description"),
+            is_system=sa.true(),
+            is_active=sa.true(),
+        )
+    )
+
+
+def _legacy_role_deactivate_statement(role_table):
+    return (
+        sa.update(role_table)
+        .where(role_table.c.key == sa.bindparam("legacy_key"))
+        .values(
+            is_system=sa.true(),
+            is_active=sa.false(),
+        )
+    )
+
+
+def upgrade():
     bind = op.get_bind()
+    role_table = _role_table()
+
+    if not _has_column(bind, "role", "description"):
+        with op.batch_alter_table("role", schema=None) as batch_op:
+            batch_op.add_column(sa.Column("description", sa.Text(), nullable=True))
 
     for old_role, new_role in ROLE_MAPPINGS.items():
         bind.execute(
@@ -83,22 +148,12 @@ def upgrade():
 
     for key, label, scope, description in CORE_ROLES:
         role_id = bind.execute(
-            sa.text("SELECT id FROM role WHERE key = :key"),
+            sa.select(role_table.c.id).where(role_table.c.key == sa.bindparam("key")),
             {"key": key},
         ).scalar()
         if role_id:
             bind.execute(
-                sa.text(
-                    """
-                    UPDATE role
-                    SET label = :label,
-                        scope = :scope,
-                        description = :description,
-                        is_system = 1,
-                        is_active = 1
-                    WHERE key = :key
-                    """
-                ),
+                _core_role_update_statement(role_table),
                 {
                     "key": key,
                     "label": label,
@@ -108,12 +163,7 @@ def upgrade():
             )
         else:
             bind.execute(
-                sa.text(
-                    """
-                    INSERT INTO role (key, label, description, scope, is_system, is_active, created_at, updated_at)
-                    VALUES (:key, :label, :description, :scope, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    """
-                ),
+                _core_role_insert_statement(role_table),
                 {
                     "key": key,
                     "label": label,
@@ -124,15 +174,8 @@ def upgrade():
 
     for key in LEGACY_KEYS:
         bind.execute(
-            sa.text(
-                """
-                UPDATE role
-                SET is_system = 1,
-                    is_active = 0
-                WHERE key = :key
-                """
-            ),
-            {"key": key},
+            _legacy_role_deactivate_statement(role_table),
+            {"legacy_key": key},
         )
 
 
