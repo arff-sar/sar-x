@@ -66,6 +66,13 @@ def test_fresh_database_can_upgrade_with_migrations(app, monkeypatch):
     assert "resolution_note" in islem_log_columns
 
     with sqlite3.connect(db_path) as connection:
+        havalimani_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(havalimani)").fetchall()
+        }
+    assert "drive_folder_id" in havalimani_columns
+
+    with sqlite3.connect(db_path) as connection:
         site_settings_count = connection.execute("SELECT COUNT(*) FROM site_ayarlari").fetchone()[0]
     assert site_settings_count >= 1
 
@@ -84,3 +91,48 @@ def test_fresh_database_can_upgrade_with_migrations(app, monkeypatch):
     assert ready_payload["database"] == "ok"
     assert ready_payload["missing_tables"] == []
     assert ready_payload["seed_ready"] is True
+
+
+def test_drifted_database_recovers_missing_havalimani_drive_folder_column(app):
+    project_root = Path(app.root_path)
+    db_path = project_root / "instance" / "test_migration_drive_folder_repair.db"
+    if db_path.exists():
+        db_path.unlink()
+
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+        connection.execute(
+            "INSERT INTO alembic_version (version_num) VALUES (?)",
+            ("a4c2e8b1d9f0",),
+        )
+        connection.execute(
+            """
+            CREATE TABLE havalimani (
+                id INTEGER NOT NULL PRIMARY KEY,
+                kodu VARCHAR(20),
+                adi VARCHAR(120)
+            )
+            """
+        )
+        connection.commit()
+
+    env = _build_production_env(db_path)
+    upgrade = _run_upgrade(project_root, env)
+    assert upgrade.returncode == 0, upgrade.stderr
+
+    with sqlite3.connect(db_path) as connection:
+        havalimani_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(havalimani)").fetchall()
+        }
+        havalimani_indexes = {
+            row[1]
+            for row in connection.execute("PRAGMA index_list(havalimani)").fetchall()
+        }
+        current_revision = connection.execute(
+            "SELECT version_num FROM alembic_version"
+        ).fetchone()[0]
+
+    assert "drive_folder_id" in havalimani_columns
+    assert "ix_havalimani_drive_folder_id" in havalimani_indexes
+    assert current_revision == "f5a7c3d9e2b1"
