@@ -2,13 +2,14 @@ apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
   name: ${CLOUD_RUN_SERVICE}
+  labels:
+    cloud.googleapis.com/location: "${GCP_REGION}"
 spec:
   template:
     metadata:
       annotations:
         autoscaling.knative.dev/minScale: "${CLOUD_RUN_MIN_INSTANCES}"
         autoscaling.knative.dev/maxScale: "${CLOUD_RUN_MAX_INSTANCES}"
-        run.googleapis.com/client-name: github-actions
         run.googleapis.com/cloudsql-instances: ${CLOUD_SQL_CONNECTION_NAME}
         run.googleapis.com/execution-environment: gen2
     spec:
@@ -21,8 +22,6 @@ spec:
             - name: http1
               containerPort: 8080
           env:
-            - name: PORT
-              value: "8080"
             - name: APP_ENV
               value: "production"
             - name: ENABLE_SCHEDULER
@@ -69,17 +68,17 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: ${SECRET_KEY_SECRET_NAME}
-                  key: ${SECRET_KEY_SECRET_VERSION}
+                  key: "${SECRET_KEY_SECRET_VERSION}"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: ${DATABASE_URL_SECRET_NAME}
-                  key: ${DATABASE_URL_SECRET_VERSION}
+                  key: "${DATABASE_URL_SECRET_VERSION}"
             - name: SMTP_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: ${SMTP_PASSWORD_SECRET_NAME}
-                  key: ${SMTP_PASSWORD_SECRET_VERSION}
+                  key: "${SMTP_PASSWORD_SECRET_VERSION}"
           resources:
             limits:
               cpu: "${CLOUD_RUN_CPU}"
