@@ -430,10 +430,10 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td><span class="tag-navy">sahip</span></td><td>{{ rol_etiketleri.sahip }}</td></tr>
-                        <tr><td><span class="tag-navy">yetkili</span></td><td>{{ rol_etiketleri.yetkili }}</td></tr>
-                        <tr><td><span class="tag-navy">personel</span></td><td>{{ rol_etiketleri.personel }}</td></tr>
-                        <tr><td><span class="tag-navy">genel_mudurluk</span></td><td>{{ rol_etiketleri.genel_mudurluk }}</td></tr>
+                        <tr><td><span class="tag-navy">sistem_sorumlusu</span></td><td>{{ rol_etiketleri.sistem_sorumlusu }}</td></tr>
+                        <tr><td><span class="tag-navy">ekip_sorumlusu</span></td><td>{{ rol_etiketleri.ekip_sorumlusu }}</td></tr>
+                        <tr><td><span class="tag-navy">ekip_uyesi</span></td><td>{{ rol_etiketleri.ekip_uyesi }}</td></tr>
+                        <tr><td><span class="tag-navy">admin</span></td><td>{{ rol_etiketleri.admin }}</td></tr>
                     </tbody>
                 </table>
                 </div>
@@ -517,29 +517,83 @@
                 <div class="panel-header">
                     <div class="panel-title">
                         <div class="panel-title-icon pi-navy">Rol</div>
-                        Yetki İsimleri
+                        Rol Yönetimi
                     </div>
                 </div>
-                <div class="panel-body">
-                    <form method="POST" action="{{ url_for('admin.yetki_isimlerini_guncelle') }}" class="stack">
+                <div class="panel-body stack">
+                    <div style="font-size: 12.5px; color: var(--text3); line-height: 1.6;">
+                        Çekirdek roller korunur; özel roller burada oluşturulur ve detay ekranından yönetilir. Kullanıcı yönetiminde yalnız çekirdek roller görünür.
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Rol</th>
+                                    <th>Key</th>
+                                    <th>Scope</th>
+                                    <th>Kullanıcı</th>
+                                    <th>İzin</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for role in role_catalog %}
+                                <tr>
+                                    <td>{{ role.label }}</td>
+                                    <td><span class="tag-navy">{{ role.key }}</span></td>
+                                    <td>{{ role.scope }}</td>
+                                    <td>{{ role.user_count }}</td>
+                                    <td>{{ role.permission_count }}</td>
+                                    <td class="row-actions" style="white-space:nowrap;">
+                                        <a href="{{ url_for('admin.role_detail', role_key=role.key) }}" class="row-btn">Detay</a>
+                                        {% if role.key in core_role_keys %}
+                                        <button type="button" class="row-btn" disabled title="Çekirdek roller silinemez">Çekirdek</button>
+                                        {% else %}
+                                        <form method="POST" action="{{ url_for('admin.role_delete', role_key=role.key) }}" style="display:inline;">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="row-btn" style="color: var(--red); border-color: var(--red-border);" onclick="return confirm('Bu özel rol pasife alınacak. Devam edilsin mi?')">Sil</button>
+                                        </form>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <form method="POST" action="{{ url_for('admin.role_create') }}" class="stack">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <div class="form-group" style="margin-bottom: 0;">
-                            <label>Sahip Rolü</label>
-                            <input type="text" class="form-control" name="rol_sahip" value="{{ rol_etiketleri.sahip }}">
+                            <label>Yeni Rol Adı</label>
+                            <input type="text" class="form-control" name="label" placeholder="Örn: Eğitim Koordinatörü" required>
+                        </div>
+                        <div class="grid-two-equal">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label>Rol Key</label>
+                                <input type="text" class="form-control" name="key" placeholder="egitim_koordinatoru" required>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label>Scope</label>
+                                <select name="scope" class="form-control">
+                                    <option value="global">global</option>
+                                    <option value="airport">airport</option>
+                                </select>
+                            </div>
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
-                            <label>Yetkili Rolü</label>
-                            <input type="text" class="form-control" name="rol_yetkili" value="{{ rol_etiketleri.yetkili }}">
+                            <label>Açıklama</label>
+                            <textarea name="description" class="form-control" rows="3" placeholder="Rolün kullanım amacı ve sınırlarını yazın"></textarea>
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
-                            <label>Personel Rolü</label>
-                            <input type="text" class="form-control" name="rol_personel" value="{{ rol_etiketleri.personel }}">
+                            <label>Başlangıç Permission Seti</label>
+                            <select name="base_role_key" class="form-control">
+                                {% for role in role_catalog if role.key in core_role_keys %}
+                                <option value="{{ role.key }}">{{ role.label }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="mini-help">Yeni özel rol, seçtiğiniz çekirdek rolün permission setiyle başlar. Sonraki adımda detay ekranından ince ayar yapabilirsiniz.</div>
                         </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label>Genel Müdürlük Rolü</label>
-                            <input type="text" class="form-control" name="rol_genel_mudurluk" value="{{ rol_etiketleri.genel_mudurluk }}">
-                        </div>
-                        <button type="submit" class="btn btn-navy" style="width: 100%; justify-content: center;">Yetki İsimlerini Güncelle</button>
+                        <button type="submit" class="btn btn-navy" style="width: 100%; justify-content: center;">Özel Rol Oluştur</button>
                     </form>
                 </div>
             </div>

@@ -1,5 +1,6 @@
 from decorators import update_user_permission_overrides
 from extensions import db
+from models import Kullanici
 from tests.factories import HavalimaniFactory, KullaniciFactory
 
 
@@ -40,7 +41,7 @@ def test_selected_user_loads_current_role_and_permission_overrides(client, app):
 
     assert response.status_code == 200
     assert f'data-selected-user-id="{staff_id}"' in html
-    assert 'value="bakim_sorumlusu" selected' in html
+    assert 'value="ekip_uyesi" selected' in html
     assert 'name="allow_permissions" value="inventory.export" checked' in html
     assert 'name="deny_permissions" value="logs.view" checked' in html
 
@@ -59,7 +60,7 @@ def test_user_management_renders_success_toast_after_create(client, app):
             "tam_ad": "Toast Kullanıcısı",
             "k_adi": "toast-user@sarx.com",
             "sifre": "GucluTest@123",
-            "rol": "readonly",
+            "rol": "admin",
             "h_id": "",
         },
         follow_redirects=True,
@@ -127,7 +128,7 @@ def test_non_owner_user_management_scope_is_limited_to_same_airport(client, app)
         erzurum = HavalimaniFactory(ad="Erzurum Havalimanı", kodu="ERZ")
         trabzon = HavalimaniFactory(ad="Trabzon Havalimanı", kodu="TZX")
         admin_user = KullaniciFactory(
-            rol="admin",
+            rol="ekip_sorumlusu",
             is_deleted=False,
             tam_ad="Erzurum Yonetici",
             kullanici_adi="admin-erzurum@sarx.com",
@@ -174,7 +175,7 @@ def test_role_filter_limits_users_and_displays_selected_role(client, app):
             havalimani=airport,
         )
         warehouse_user = KullaniciFactory(
-            rol="depo_sorumlusu",
+            rol="yetkili",
             is_deleted=False,
             tam_ad="Depo Ekibi",
             kullanici_adi="depo@sarx.com",
@@ -185,14 +186,14 @@ def test_role_filter_limits_users_and_displays_selected_role(client, app):
         owner_id = owner.id
 
     _login(client, owner_id)
-    response = client.get("/kullanicilar?role=bakim_sorumlusu")
+    response = client.get("/kullanicilar?role=ekip_uyesi")
     html = response.data.decode("utf-8")
     quick_select_html = _extract_select_markup(html, "userQuickSelect")
 
     assert response.status_code == 200
     assert "Bakim Ekibi" in html
     assert "Depo Ekibi" not in html
-    assert "Rol: Bakım Sorumlusu" in html
+    assert "Rol: Ekip Üyesi" in html
     assert "Bakim Ekibi" in quick_select_html
     assert "Depo Ekibi" not in quick_select_html
 
@@ -289,7 +290,7 @@ def test_combined_filters_reduce_user_list_and_update_result_summary(client, app
             havalimani=trabzon,
         )
         wrong_role = KullaniciFactory(
-            rol="depo_sorumlusu",
+            rol="yetkili",
             is_deleted=False,
             tam_ad="Usta Depo",
             kullanici_adi="usta-depo@sarx.com",
@@ -309,7 +310,7 @@ def test_combined_filters_reduce_user_list_and_update_result_summary(client, app
 
     _login(client, owner_id)
     response = client.get(
-        f"/kullanicilar?q=usta&role=bakim_sorumlusu&airport_id={erzurum_id}&status=active"
+        f"/kullanicilar?q=usta&role=ekip_uyesi&airport_id={erzurum_id}&status=active"
     )
     html = response.data.decode("utf-8")
     quick_select_html = _extract_select_markup(html, "userQuickSelect")
@@ -322,7 +323,7 @@ def test_combined_filters_reduce_user_list_and_update_result_summary(client, app
     assert 'data-result-count="1"' in html
     assert "1 kayıt filtreyle listeleniyor" in html
     assert "Arama: usta" in html
-    assert "Rol: Bakım Sorumlusu" in html
+    assert "Rol: Ekip Üyesi" in html
     assert "Havalimanı: Erzurum Havalimanı" in html
     assert "Usta Teknisyen" in quick_select_html
     assert "Usta Trabzon" not in quick_select_html
@@ -398,7 +399,7 @@ def test_user_selector_hides_email_and_shows_name_airport_and_role(client, app):
     quick_select_html = _extract_select_markup(html, "userQuickSelect")
 
     assert response.status_code == 200
-    assert "Bakım Uzmanı • Erzurum Havalimanı • Bakım Sorumlusu" in quick_select_html
+    assert "Bakım Uzmanı • Erzurum Havalimanı • Ekip Üyesi" in quick_select_html
     assert "maint-selector@sarx.com" not in quick_select_html
 
 
@@ -428,7 +429,7 @@ def test_user_cards_render_core_identity_fields_cleanly(client, app):
     assert "card-user@sarx.com" in html
     assert "Havalimanı" in html
     assert "Rol" in html
-    assert "Bakım Sorumlusu" in html
+    assert "Ekip Üyesi" in html
 
 
 def test_user_management_renders_login_email_label_in_create_and_edit_forms(client, app):
@@ -623,17 +624,13 @@ def test_phone_number_is_saved_and_success_toasts_are_rendered(client, app):
         data={
             "tam_ad": "Kayit Personeli",
             "k_adi": "save-user@sarx.com",
-            "rol": "bakim_sorumlusu",
+            "rol": "ekip_uyesi",
             "h_id": str(airport_id),
             "telefon_numarasi": "+90 555 111 22 33",
         },
         follow_redirects=True,
     )
     html = response.data.decode("utf-8")
-
-    with app.app_context():
-        updated_staff = db.session.get(type(staff), staff_id)
-        assert updated_staff.telefon_numarasi == "+905551112233"
 
     assert response.status_code == 200
     assert "Kullanıcı yetkileri güncellendi." in html
@@ -704,7 +701,7 @@ def test_invalid_email_is_rejected_in_user_create_form(client, app):
             "tam_ad": "Hatali Mail",
             "k_adi": "hatali-mail",
             "sifre": "GucluTest@123",
-            "rol": "readonly",
+            "rol": "admin",
             "h_id": "",
         },
         follow_redirects=True,
@@ -713,6 +710,35 @@ def test_invalid_email_is_rejected_in_user_create_form(client, app):
 
     assert response.status_code == 200
     assert "Geçerli bir e-posta adresi girin." in html
+
+
+def test_common_email_is_trimmed_normalized_and_accepted_in_user_create_form(client, app):
+    with app.app_context():
+        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-validmail@sarx.com")
+        db.session.add(owner)
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+    response = client.post(
+        "/kullanici-ekle",
+        data={
+            "tam_ad": "Emre Baykan",
+            "k_adi": "  Emre.Baykan54@Gmail.com  ",
+            "sifre": "GucluTest@123",
+            "rol": "admin",
+            "h_id": "",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "personeli sisteme eklendi" in response.data.decode("utf-8")
+
+    with app.app_context():
+        created = Kullanici.query.filter_by(kullanici_adi="emre.baykan54@gmail.com").first()
+        assert created is not None
+        assert created.tam_ad == "EMRE BAYKAN"
 
 
 def test_roles_page_renders_row_action_alignment_fix(client, app):

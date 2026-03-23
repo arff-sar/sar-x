@@ -3,7 +3,7 @@ from tests.factories import KullaniciFactory, HavalimaniFactory
 from extensions import db
 
 def test_admin_user_management(client, app):
-    admin = KullaniciFactory(rol="sahip")
+    admin = KullaniciFactory(rol="sistem_sorumlusu", kullanici_adi="owner-admin-test@sarx.com")
     db.session.add(admin)
     db.session.commit() # ✅ Commit şart
     
@@ -17,17 +17,20 @@ def test_admin_user_management(client, app):
     
     response = client.post('/kullanici-ekle', data={
         'tam_ad': 'Yeni Personel',
-        'k_adi': 'personel@test.com',
-        'rol': 'personel',
+        'k_adi': 'yeni-personel@test.com',
+        'rol': 'ekip_uyesi',
         'h_id': h.id,
-        'sifre': '123456'
+        'sifre': 'Test1234!'
     }, follow_redirects=True) # ✅ Dashboard veya Liste yönlendirmesini takip et
     
     assert response.status_code == 200
-    assert "Yeni Personel" in response.data.decode('utf-8')
+    with app.app_context():
+        created = KullaniciFactory._meta.sqlalchemy_session.query(KullaniciFactory._meta.model).filter_by(kullanici_adi='yeni-personel@test.com').first()
+        assert created is not None
+        assert created.rol == "ekip_uyesi"
 
 def test_admin_havalimani_management(client, app):
-    admin = KullaniciFactory(rol="sahip")
+    admin = KullaniciFactory(rol="sistem_sorumlusu", kullanici_adi="owner-airport-test@sarx.com")
     db.session.add(admin)
     db.session.commit()
     

@@ -42,5 +42,6 @@ def test_airport_manager_only_sees_operational_groups(client, app):
     assert response.status_code == 200
     assert "Operasyon" in html
     assert "İçerik Yönetimi" not in html
-    assert 'data-group="management"' not in html
+    assert "Site Ayarları" not in html
+    assert "Roller / Yetkiler" not in html
     assert "Raporlar" not in html

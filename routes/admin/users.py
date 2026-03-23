@@ -22,9 +22,15 @@ from extensions import (
 from models import Havalimani, Kullanici, TR_UPPER_MAP
 from . import admin_bp
 from decorators import (
+    CANONICAL_ROLE_ADMIN,
+    CANONICAL_ROLE_SYSTEM,
+    CANONICAL_ROLE_TEAM_LEAD,
+    CANONICAL_ROLE_TEAM_MEMBER,
     actor_can_manage_target,
     actor_can_view_target_user,
     can_assign_role,
+    expand_role_keys,
+    get_effective_role,
     get_effective_permissions,
     has_permission,
     get_permission_catalog,
@@ -36,8 +42,8 @@ from decorators import (
 )
 
 
-GLOBAL_ROLES = {'sahip', 'admin', 'genel_mudurluk', 'readonly', 'editor'}
-AIRPORT_ROLES = {'yetkili', 'personel', 'bakim_sorumlusu', 'depo_sorumlusu'}
+GLOBAL_ROLES = {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}
+AIRPORT_ROLES = {CANONICAL_ROLE_TEAM_LEAD, CANONICAL_ROLE_TEAM_MEMBER}
 STATUS_OPTIONS = [
     {"key": "active", "label": "Aktif kayıtlar"},
     {"key": "archived", "label": "Arşivdekiler"},
@@ -54,13 +60,19 @@ BULK_IMPORT_COLUMNS = [
     "not",
     "gecici_sifre",
 ]
-EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+EMAIL_PATTERN = re.compile(
+    r"^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@"
+    r"[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?"
+    r"(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$",
+    re.IGNORECASE,
+)
 USER_PASSWORD_PATTERN = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$")
 
 
 def _visible_users_query(actor):
     query = Kullanici.query.outerjoin(Havalimani)
-    if actor.is_sahip:
+    actor_role = get_effective_role(actor)
+    if actor_role in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
         return query
     if actor.havalimani_id is None:
         return query.filter(Kullanici.havalimani_id.is_(None))
@@ -123,7 +135,7 @@ def _normalize_phone_number(raw_value):
 
 
 def _visible_airports(actor):
-    if actor.is_sahip:
+    if get_effective_role(actor) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
         return Havalimani.query.filter_by(is_deleted=False).all()
     return Havalimani.query.filter_by(is_deleted=False, id=actor.havalimani_id).all()
 
@@ -173,6 +185,10 @@ def _build_user_import_preview(actor, frame, role_options, visible_airports):
         }
 
     role_keys = {item["key"] for item in role_options}
+    role_lookup = {}
+    for item in role_options:
+        for role_key in expand_role_keys(item["key"]):
+            role_lookup[role_key] = item["key"]
     existing_emails = {
         item.kullanici_adi.strip().lower()
         for item in Kullanici.query.all()
@@ -187,7 +203,7 @@ def _build_user_import_preview(actor, frame, role_options, visible_airports):
         first_name = guvenli_metin(row[lower_columns["ad"]]).strip()
         last_name = guvenli_metin(row[lower_columns["soyad"]]).strip()
         email = guvenli_metin(row[lower_columns["e-posta"]]).strip().lower()
-        role_key = guvenli_metin(row[lower_columns["rol"]]).strip()
+        role_key = role_lookup.get(guvenli_metin(row[lower_columns["rol"]]).strip(), guvenli_metin(row[lower_columns["rol"]]).strip())
 
         if not first_name or not last_name or not email or not role_key:
             errors.append({"row": row_number, "reason": "Ad, soyad, e-posta ve rol alanları zorunludur."})
@@ -262,9 +278,13 @@ def kullanicilar():
     havalimanlari = _visible_airports(current_user)
     bulk_import_preview = session.get(_bulk_import_session_key())
     valid_airport_keys = {str(item.id) for item in havalimanlari}
+    role_filter_lookup = {}
+    for role in role_options:
+        for role_key in expand_role_keys(role["key"]):
+            role_filter_lookup[role_key] = role["key"]
     valid_role_keys = {role["key"] for role in role_options}
     search_term = _normalize_search_term(request.args.get("q"))
-    selected_role_key = (request.args.get("role") or "").strip()
+    selected_role_key = role_filter_lookup.get((request.args.get("role") or "").strip(), "")
     selected_airport_key = (request.args.get("airport_id") or "").strip()
     selected_status_key = (request.args.get("status") or "active").strip() or "active"
     if selected_role_key not in valid_role_keys:
@@ -314,7 +334,7 @@ def kullanicilar():
             )
         )
     if selected_role_key:
-        filtered_query = filtered_query.filter(Kullanici.rol == selected_role_key)
+        filtered_query = filtered_query.filter(Kullanici.rol.in_(sorted(expand_role_keys(selected_role_key))))
 
     liste = filtered_query.order_by(
         func.lower(Kullanici.tam_ad).asc(),
@@ -335,11 +355,13 @@ def kullanicilar():
     selected_override_allow = set()
     selected_override_deny = set()
     selected_effective_permissions = set()
+    selected_user_effective_role = ""
     if selected_user:
         overrides = get_user_permission_overrides(selected_user)
         selected_override_allow = overrides["allow"]
         selected_override_deny = overrides["deny"]
         selected_effective_permissions = get_effective_permissions(selected_user)
+        selected_user_effective_role = get_effective_role(selected_user)
 
     return render_template(
         'admin/kullanicilar.html',
@@ -363,6 +385,7 @@ def kullanicilar():
         selected_override_allow=selected_override_allow,
         selected_override_deny=selected_override_deny,
         selected_effective_permissions=selected_effective_permissions,
+        selected_user_effective_role=selected_user_effective_role,
         bulk_import_preview=bulk_import_preview,
         can_download_user_template=has_permission("users.template.download"),
         can_import_users=has_permission("users.import"),
@@ -382,7 +405,7 @@ def kullanici_import_sablonu():
         "Yilmaz",
         "ayse.yilmaz@example.com",
         "+90 555 111 22 33",
-        "personel",
+        "ekip_uyesi",
         "ERZ",
         "aktif",
         "ARFF vardiya personeli",
@@ -391,7 +414,7 @@ def kullanici_import_sablonu():
 
     notes = workbook.create_sheet("Aciklamalar")
     notes.append(["Alan", "Açıklama"])
-    notes.append(["rol", "Sistemde tanımlı rol anahtarı kullanılmalıdır. Örn: personel, yetkili, admin"])
+    notes.append(["rol", "Sistemde tanımlı rol anahtarı kullanılmalıdır. Örn: ekip_uyesi, ekip_sorumlusu, admin"])
     notes.append(["havalimani", "Kod, ad veya görünür havalimanı ID değeri kullanılabilir. Global roller için boş bırakılabilir."])
     notes.append(["aktif/pasif", "aktif veya pasif değerlerinden biri kullanılmalıdır."])
     notes.append(["telefon", "Telefon yalnızca site sahibi içe aktarıyorsa kaydedilir."])
@@ -497,7 +520,12 @@ def kullanici_ekle():
     """Yeni kullanıcı ekler."""
     tam_ad = _normalize_full_name(request.form.get('tam_ad'))
     k_adi, email_error = _validate_user_email(request.form.get('k_adi'))
-    rol = request.form.get('rol')
+    submitted_role = (request.form.get('rol') or "").strip()
+    role_lookup = {}
+    for role in get_role_options():
+        for role_key in expand_role_keys(role["key"]):
+            role_lookup[role_key] = role["key"]
+    rol = role_lookup.get(submitted_role, submitted_role)
     h_id = request.form.get('h_id')
     sifre = request.form.get('sifre')
     telefon_numarasi = None
@@ -519,8 +547,8 @@ def kullanici_ekle():
             flash(phone_error, "danger")
             return redirect(url_for('admin.kullanicilar'))
     
-    if current_user.rol == 'yetkili':
-        rol = 'personel'
+    if get_effective_role(current_user) == CANONICAL_ROLE_TEAM_LEAD:
+        rol = CANONICAL_ROLE_TEAM_MEMBER
         h_id = current_user.havalimani_id
     elif not can_assign_role(current_user, rol):
         abort(403)
@@ -571,6 +599,12 @@ def kullanici_guncelle(id):
     yeni_email, email_error = _validate_user_email(request.form.get('k_adi') or user.kullanici_adi)
 
     h_id = request.form.get('h_id', type=int)
+    role_lookup = {}
+    for role in get_role_options():
+        for role_key in expand_role_keys(role["key"]):
+            role_lookup[role_key] = role["key"]
+    yeni_rol = role_lookup.get(yeni_rol, yeni_rol)
+
     if yeni_rol in GLOBAL_ROLES:
         h_id = None
     elif not h_id:
@@ -594,7 +628,7 @@ def kullanici_guncelle(id):
         flash(email_error, "danger")
         return redirect(url_for('admin.kullanicilar', user_id=user.id))
 
-    approval_required = yeni_rol in ['sahip', 'admin'] and current_user.rol != 'sahip'
+    approval_required = False
     if not approval_required and not can_assign_role(current_user, yeni_rol):
         abort(403)
     if approval_required:

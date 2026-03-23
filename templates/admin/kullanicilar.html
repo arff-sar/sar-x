@@ -571,7 +571,7 @@
                                 </div>
                                 <div class="form-group">
                                     <label>Giriş E-postası</label>
-                                    <input type="email" name="k_adi" value="{{ selected_user.kullanici_adi }}" class="form-control" autocomplete="email" inputmode="email" data-email-input required>
+                                    <input type="email" name="k_adi" value="{{ selected_user.kullanici_adi }}" class="form-control" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" data-email-input required>
                                     <div class="form-help-inline">Bu alan kullanıcının sisteme girişte kullandığı e-posta adresidir.</div>
                                     <div class="field-feedback" data-field-feedback></div>
                                 </div>
@@ -593,14 +593,14 @@
                                 <div class="editor-form-grid">
                                     <div class="form-group">
                                         <label>Rol</label>
-                                        <select name="rol" class="form-control" data-selected-role="{{ selected_user.rol }}">
+                                        <select name="rol" class="form-control" data-selected-role="{{ selected_user_effective_role or selected_user.rol }}">
                                             {% for role in role_options %}
-                                            <option value="{{ role.key }}" {% if selected_user.rol == role.key %}selected{% endif %}>{{ role.label }}</option>
+                                            <option value="{{ role.key }}" {% if (selected_user_effective_role or selected_user.rol) == role.key %}selected{% endif %}>{{ role.label }}</option>
                                             {% endfor %}
                                         </select>
                                         <div class="role-select-help">
-                                            {% set tooltip_text = rol_aciklamalari.get(selected_user.rol, '') %}
-                                            {% set tooltip_aria_label = rol_etiketleri.get(selected_user.rol, selected_user.rol) ~ ' rol açıklaması' %}
+                                            {% set tooltip_text = rol_aciklamalari.get(selected_user_effective_role or selected_user.rol, '') %}
+                                            {% set tooltip_aria_label = rol_etiketleri.get(selected_user_effective_role or selected_user.rol, selected_user.rol) ~ ' rol açıklaması' %}
                                             {% include "admin/_info_tooltip.html" %}
                                             <span>Seçili rolün kapsamını bilgi ikonundan kontrol edebilirsiniz.</span>
                                         </div>
@@ -829,7 +829,7 @@
                         </div>
                         <div class="form-group">
                             <label>Giriş E-postası</label>
-                            <input type="email" name="k_adi" class="form-control" required autocomplete="email" inputmode="email" data-email-input>
+                            <input type="email" name="k_adi" class="form-control" required autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" data-email-input>
                             <div class="form-help-inline">Bu alan kullanıcının oturum açarken kullanacağı e-posta adresidir.</div>
                             <div class="field-feedback" data-field-feedback></div>
                         </div>
@@ -1068,7 +1068,7 @@
     const selectedStatusLabel = page && page.dataset.selectedStatusLabel ? page.dataset.selectedStatusLabel : 'Aktif kayıtlar';
     const phonePrefix = '+90 ';
     const prefixLockIndex = phonePrefix.length;
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailPattern = /^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i;
     const passwordRules = {
       length: function (value) { return value.length >= 8; },
       upper: function (value) { return /[A-ZÇĞİIÖŞÜ]/.test(value); },
@@ -1181,7 +1181,7 @@
         setFieldState(input, 'error', 'Geçerli bir e-posta adresi girin.');
         return false;
       }
-      if (!emailPattern.test(value) || !input.checkValidity()) {
+      if (!emailPattern.test(input.value)) {
         setFieldState(input, 'error', 'Geçerli bir e-posta adresi girin.');
         return false;
       }

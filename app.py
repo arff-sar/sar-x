@@ -32,6 +32,7 @@ from decorators import (
     get_effective_role,
     get_effective_role_label,
     get_effective_permissions,
+    get_legacy_compatible_role,
     get_role_descriptions,
     get_role_labels,
     get_role_switch_options,
@@ -501,7 +502,8 @@ def create_app(config_name=None):
                     unread_notification_count = 0
             permissions = sorted(get_effective_permissions(current_user))
             return {
-                "rol": effective_role,
+                "rol": get_legacy_compatible_role(current_user),
+                "canonical_rol": effective_role,
                 "rol_etiketi": effective_role_label or rol_etiketleri.get(effective_role, effective_role),
                 "rol_etiketleri": rol_etiketleri,
                 "rol_aciklamalari": rol_aciklamalari,

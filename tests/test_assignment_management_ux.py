@@ -144,7 +144,7 @@ def test_zimmet_create_panel_renders_selection_summaries_and_material_metadata(c
     assert 'data-choice-card' in html
     assert 'data-choice-inputs' in html
     assert "Fatma Ekip" in html
-    assert "Bakım Sorumlusu" in html
+    assert "Ekip Üyesi" in html
     assert "Solunum Seti" in html
     assert "Seri No: SOL-778" in html
     assert "Stok 3" in html

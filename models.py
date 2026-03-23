@@ -4,11 +4,9 @@ from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 import pytz
 from decorators import (
-    ROLE_AIRPORT_MANAGER,
-    ROLE_EDITOR,
-    ROLE_HQ,
-    ROLE_MANAGER,
-    ROLE_OWNER,
+    CANONICAL_ROLE_ADMIN,
+    CANONICAL_ROLE_SYSTEM,
+    CANONICAL_ROLE_TEAM_LEAD,
     get_effective_role,
     get_effective_permissions,
 )
@@ -87,15 +85,16 @@ class Kullanici(db.Model, UserMixin, TimestampMixin, SoftDeleteMixin):
 
     @property
     def is_sahip(self):
-        return get_effective_role(self) == ROLE_OWNER
+        return get_effective_role(self) == CANONICAL_ROLE_SYSTEM
 
     @property
     def is_genel_mudurluk(self):
-        return get_effective_role(self) == ROLE_HQ
+        return get_effective_role(self) == CANONICAL_ROLE_ADMIN
 
     @property
     def is_editor(self):
-        return get_effective_role(self) == ROLE_EDITOR
+        permissions = get_effective_permissions(self)
+        return "homepage.view" in permissions and "inventory.view" not in permissions
 
     @property
     def can_edit(self):
@@ -116,7 +115,7 @@ class Kullanici(db.Model, UserMixin, TimestampMixin, SoftDeleteMixin):
 
     @property
     def is_airport_manager(self):
-        return get_effective_role(self) in {ROLE_MANAGER, ROLE_AIRPORT_MANAGER}
+        return get_effective_role(self) == CANONICAL_ROLE_TEAM_LEAD
 
     @property
     def effective_permissions(self):
@@ -258,6 +257,7 @@ class Role(db.Model, TimestampMixin):
     id = db.Column(db.Integer, primary_key=True)
     key = db.Column(db.String(50), nullable=False, unique=True, index=True)
     label = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=True)
     scope = db.Column(db.String(20), default='global', nullable=False)
     is_system = db.Column(db.Boolean, default=True, nullable=False, index=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)

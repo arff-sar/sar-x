@@ -16,7 +16,7 @@
 <div class="page-header">
     <div>
         <div class="page-title">Roller</div>
-        <div class="page-meta">Kurumsal rol kataloğu ve mevcut kullanıcı dağılımı</div>
+        <div class="page-meta">Çekirdek rol modeli ve aktif özel rollerin merkezi görünümü</div>
     </div>
     <a href="{{ url_for('admin.permissions') }}" class="btn btn-navy">Yetki Matrisi</a>
 </div>
@@ -49,7 +49,7 @@
                     </td>
                     <td><span class="role-scope">{{ role.scope }}</span></td>
                     <td>{{ role_counts.get(role.key, 0) }}</td>
-                    <td>{{ default_role_permissions.get(role.key, [])|length }}</td>
+                    <td>{{ role.permission_count }}</td>
                     <td class="row-actions">
                         <a href="{{ url_for('admin.role_detail', role_key=role.key) }}" class="row-btn">Detay</a>
                     </td>

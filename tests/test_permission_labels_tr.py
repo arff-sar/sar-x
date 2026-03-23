@@ -41,9 +41,9 @@ def test_user_and_role_screens_render_role_descriptions(client, app):
 
     assert roles_response.status_code == 200
     assert users_response.status_code == 200
-    assert "Bakım Sorumlusu" in roles_html
-    assert "Bakım planları, iş emirleri ve bakım formlarını yönetebilir." in roles_html
+    assert "Ekip Üyesi" in roles_html
+    assert "Kendi havalimanı kapsamındaki operasyon kayıtlarını görüntüler, bakım doldurur ve kendine ait zimmetleri izler." in roles_html
     assert 'data-tooltip-trigger' in roles_html
-    assert "Bakım Sorumlusu" in users_html
-    assert "Bakım planları, iş emirleri ve bakım formlarını yönetebilir." in users_html
+    assert "Ekip Üyesi" in users_html
+    assert "Kendi havalimanı kapsamındaki operasyon kayıtlarını görüntüler, bakım doldurur ve kendine ait zimmetleri izler." in users_html
     assert f'data-selected-user-id="{staff.id}"' in users_html

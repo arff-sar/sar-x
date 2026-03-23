@@ -10,9 +10,16 @@ from homepage_demo import (
     get_homepage_demo_status,
     seed_homepage_demo_data,
 )
-from models import Havalimani, Haber, NavMenu, SliderResim, SiteAyarlari
+from models import Havalimani, Haber, Kullanici, NavMenu, SliderResim, SiteAyarlari
 from . import admin_bp
-from decorators import DEFAULT_ROLE_LABELS, permission_required
+from decorators import (
+    DEFAULT_ROLE_LABELS,
+    get_manageable_role_options,
+    get_permission_catalog,
+    get_role_permissions,
+    get_role_options,
+    permission_required,
+)
 
 
 def _load_site_meta(ayarlar):
@@ -164,10 +171,10 @@ def yetki_isimlerini_guncelle():
     mevcut_labels = _resolve_role_labels(ayarlar)
 
     yeni_labels = {
-        "sahip": _clean_role_label(request.form.get("rol_sahip"), mevcut_labels["sahip"]),
-        "yetkili": _clean_role_label(request.form.get("rol_yetkili"), mevcut_labels["yetkili"]),
-        "personel": _clean_role_label(request.form.get("rol_personel"), mevcut_labels["personel"]),
-        "genel_mudurluk": _clean_role_label(request.form.get("rol_genel_mudurluk"), mevcut_labels["genel_mudurluk"]),
+        "sistem_sorumlusu": _clean_role_label(request.form.get("rol_sistem_sorumlusu"), mevcut_labels["sistem_sorumlusu"]),
+        "ekip_sorumlusu": _clean_role_label(request.form.get("rol_ekip_sorumlusu"), mevcut_labels["ekip_sorumlusu"]),
+        "ekip_uyesi": _clean_role_label(request.form.get("rol_ekip_uyesi"), mevcut_labels["ekip_uyesi"]),
+        "admin": _clean_role_label(request.form.get("rol_admin"), mevcut_labels["admin"]),
     }
 
     meta["role_labels"] = yeni_labels
@@ -192,6 +199,15 @@ def site_yonetimi():
     ayarlar = SiteAyarlari.query.first()
     meta = _load_site_meta(ayarlar)
     rol_etiketleri = _resolve_role_labels(ayarlar)
+    role_catalog = []
+    role_usage_counts = {}
+    for user in Kullanici.query.filter_by(is_deleted=False).all():
+        role_usage_counts[user.rol] = role_usage_counts.get(user.rol, 0) + 1
+    for role in get_manageable_role_options():
+        role_copy = dict(role)
+        role_copy["permission_count"] = len(get_role_permissions(role["key"]))
+        role_copy["user_count"] = role_usage_counts.get(role["key"], 0)
+        role_catalog.append(role_copy)
     aktif_sekme = request.args.get('tab', 'genel')
     if aktif_sekme not in ['genel', 'organizasyon', 'icerik']:
         aktif_sekme = 'genel'
@@ -206,6 +222,9 @@ def site_yonetimi():
         public_contact_note=meta.get("public_contact_note", meta.get("site_notu", "")),
         public_logo_url=meta.get("public_logo_url", ""),
         rol_etiketleri=rol_etiketleri,
+        role_catalog=role_catalog,
+        core_role_keys={item["key"] for item in get_role_options()},
+        permission_catalog=get_permission_catalog(),
         havalimanlari=Havalimani.query.filter_by(is_deleted=False).all(),
         aktif_sekme=aktif_sekme,
         demo_tools_enabled=current_app.config.get("DEMO_TOOLS_ENABLED", False),

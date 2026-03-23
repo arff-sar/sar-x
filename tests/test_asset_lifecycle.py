@@ -13,7 +13,7 @@ def test_asset_lifecycle_logs_disposed_and_transfer_updates_location(client, app
     with app.app_context():
         airport_one = HavalimaniFactory(ad="Erzurum Havalimanı", kodu="ERZ")
         airport_two = HavalimaniFactory(ad="Kars Havalimanı", kodu="KSY")
-        manager = KullaniciFactory(rol="admin", havalimani=airport_one, is_deleted=False)
+        manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport_one, is_deleted=False)
         template = EquipmentTemplateFactory(name="Termal Kamera", category="Olcum")
         box = KutuFactory(kodu="ERZ-KUTU-01", havalimani=airport_one)
         material = MalzemeFactory(ad="Termal Kamera", kutu=box, havalimani=airport_one, is_deleted=False)

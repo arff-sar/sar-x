@@ -25,10 +25,45 @@
             {% set tooltip_aria_label = role.label ~ ' rol açıklaması' %}
             {% include "admin/_info_tooltip.html" %}
         </div>
-        <div class="page-meta">Varsayılan kapsam: {{ role.scope }}</div>
+        <div class="page-meta">Kapsam: {{ role.scope }} • Kullanıcı: {{ role_user_count }}</div>
     </div>
     <a href="{{ url_for('admin.permissions') }}" class="btn btn-secondary">Yetki Matrisine Dön</a>
 </div>
+
+{% if not is_core_role %}
+<div class="panel" style="margin-bottom:16px;">
+    <div class="panel-header">
+        <div class="panel-title">Rol Detayları</div>
+    </div>
+    <div class="panel-body">
+        <form method="POST" action="{{ url_for('admin.role_update', role_key=role.key) }}" class="permission-grid">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Görünen Ad</label>
+                <input type="text" name="label" class="form-control" value="{{ role.label }}" required>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Scope</label>
+                <select name="scope" class="form-control">
+                    <option value="global" {% if role.scope == 'global' %}selected{% endif %}>global</option>
+                    <option value="airport" {% if role.scope == 'airport' %}selected{% endif %}>airport</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0; grid-column:1 / -1;">
+                <label>Açıklama</label>
+                <textarea name="description" class="form-control" rows="3">{{ role.description or '' }}</textarea>
+            </div>
+            <div style="grid-column:1 / -1;">
+                <button type="submit" class="btn btn-navy">Rolü Güncelle</button>
+            </div>
+        </form>
+        <form method="POST" action="{{ url_for('admin.role_delete', role_key=role.key) }}" style="margin-top:12px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-danger" onclick="return confirm('Bu özel rol pasife alınacak. Devam edilsin mi?')">Rolü Sil</button>
+        </form>
+    </div>
+</div>
+{% endif %}
 
 <div class="panel">
     <div class="panel-header">

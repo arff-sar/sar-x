@@ -27,10 +27,10 @@ def test_role_labels_render_in_turkish_with_tooltips(client, app):
 
     assert response.status_code == 200
     assert roles_response.status_code == 200
-    assert "Yönetici" in html
-    assert "Kullanıcılar, roller, ayarlar ve operasyon modüllerini yönetebilir." in html
+    assert "Admin" in html
+    assert "Tüm havalimanlarını readonly kapsamda izler; kayıtları denetler, ancak değişiklik yapmaz." in html
     assert f'data-selected-user-id="{admin_user_id}"' in html
-    assert "İçerik Editörü" in roles_html
+    assert "Ekip Üyesi" in roles_html
     assert 'data-tooltip-trigger' in roles_html
 
 

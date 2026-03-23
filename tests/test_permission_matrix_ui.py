@@ -109,6 +109,6 @@ def test_permission_matrix_pdf_export_returns_role_summary(client, app):
     reader = PdfReader(io.BytesIO(response.data))
     text = "\n".join((page.extract_text() or "") for page in reader.pages)
 
-    assert "Personel" in text
+    assert "Ekip Üyesi" in text
     assert "dashboard.view" in text
     assert "Aktif Matrix Özeti" in text

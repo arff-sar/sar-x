@@ -62,7 +62,14 @@ from models import (
 )
 from extensions import table_exists
 from qr_logic import generate_qr_data
-from decorators import has_permission, permission_required
+from decorators import (
+    CANONICAL_ROLE_ADMIN,
+    CANONICAL_ROLE_SYSTEM,
+    CANONICAL_ROLE_TEAM_LEAD,
+    get_effective_role,
+    has_permission,
+    permission_required,
+)
 from google_drive_service import GoogleDriveError, get_drill_drive_service
 from reporting import build_dashboard_kpis
 from storage import get_storage_adapter
@@ -98,7 +105,7 @@ DRILL_ALLOWED_MIME_TYPES = (
 
 
 def havalimani_filtreli_sorgu(model_sinifi):
-    if current_user.rol in ["sahip", "genel_mudurluk"]:
+    if _can_view_all_operational_scope():
         return model_sinifi.query.filter_by(is_deleted=False)
     return model_sinifi.query.filter_by(havalimani_id=current_user.havalimani_id, is_deleted=False)
 
@@ -142,10 +149,7 @@ def _can_issue_assignments(actor=None):
     actor = actor or current_user
     return bool(
         getattr(actor, "is_authenticated", False)
-        and (
-            getattr(actor, "is_sahip", False)
-            or getattr(actor, "rol", "") in {"yetkili", "havalimani_yoneticisi"}
-        )
+        and get_effective_role(actor) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_TEAM_LEAD}
     )
 
 
@@ -169,7 +173,7 @@ def _ppe_scope():
 
 def _drill_scope():
     query = TatbikatBelgesi.query.filter_by(is_deleted=False)
-    if getattr(current_user, "is_sahip", False):
+    if get_effective_role(current_user) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
         return query
     if current_user.havalimani_id is None:
         return query.filter(TatbikatBelgesi.havalimani_id.is_(None))
@@ -177,23 +181,23 @@ def _drill_scope():
 
 
 def _can_view_drills_for_airport(airport_id):
-    if getattr(current_user, "is_sahip", False):
+    if get_effective_role(current_user) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
         return True
     return bool(current_user.havalimani_id and current_user.havalimani_id == airport_id)
 
 
 def _can_manage_drills_for_airport(airport_id):
-    if getattr(current_user, "is_sahip", False):
+    if get_effective_role(current_user) == CANONICAL_ROLE_SYSTEM:
         return True
     return bool(
-        getattr(current_user, "rol", "") in {"havalimani_yoneticisi", "yetkili"}
+        get_effective_role(current_user) == CANONICAL_ROLE_TEAM_LEAD
         and current_user.havalimani_id
         and current_user.havalimani_id == airport_id
     )
 
 
 def _visible_drill_airports():
-    if getattr(current_user, "is_sahip", False):
+    if get_effective_role(current_user) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
         return Havalimani.query.filter_by(is_deleted=False).order_by(Havalimani.kodu.asc()).all()
     if current_user.havalimani_id is None:
         return []
@@ -703,7 +707,7 @@ def _create_asset_and_legacy_material(template, kutu, havalimani_id, form_data):
 @login_required
 @permission_required("dashboard.view")
 def dashboard():
-    if current_user.rol in ["sahip", "genel_mudurluk"]:
+    if _can_view_all_operational_scope():
         h_ad = "Genel Müdürlük / Tüm Birimler"
     else:
         h_ad = current_user.havalimani.ad
@@ -740,14 +744,14 @@ def dashboard():
         InventoryAsset.is_deleted.is_(False),
         WorkOrder.status.in_(["acik", "atandi", "islemde"]),
     )
-    if current_user.rol not in ["sahip", "genel_mudurluk"]:
+    if not _can_view_all_operational_scope():
         open_work_order_query = open_work_order_query.filter(
             InventoryAsset.havalimani_id == current_user.havalimani_id
         )
     open_work_order_count = open_work_order_query.count()
 
     low_stock_query = SparePartStock.query.filter_by(is_deleted=False, is_active=True)
-    if current_user.rol not in ["sahip", "genel_mudurluk"]:
+    if not _can_view_all_operational_scope():
         low_stock_query = low_stock_query.filter(SparePartStock.airport_id == current_user.havalimani_id)
     low_stock_items = low_stock_query.all()
     low_stock_count = sum(
@@ -760,7 +764,7 @@ def dashboard():
     meter_rule_query = MaintenanceTriggerRule.query.filter_by(is_deleted=False, is_active=True).join(
         InventoryAsset, MaintenanceTriggerRule.asset_id == InventoryAsset.id, isouter=True
     )
-    if current_user.rol not in ["sahip", "genel_mudurluk"]:
+    if not _can_view_all_operational_scope():
         meter_rule_query = meter_rule_query.filter(
             (MaintenanceTriggerRule.asset_id.is_(None))
             | (InventoryAsset.havalimani_id == current_user.havalimani_id)
@@ -789,7 +793,7 @@ def dashboard():
         InventoryAsset.is_deleted.is_(False),
         WorkOrder.status.in_(["acik", "atandi", "islemde", "beklemede_parca", "beklemede_onay"]),
     )
-    if current_user.rol not in ["sahip", "genel_mudurluk"]:
+    if not _can_view_all_operational_scope():
         auto_work_order_query = auto_work_order_query.filter(InventoryAsset.havalimani_id == current_user.havalimani_id)
     auto_work_order_count = auto_work_order_query.count()
 
@@ -927,7 +931,7 @@ def envanter():
     selected_critical = request.args.get("kritik", "").strip()
 
     query = havalimani_filtreli_sorgu(Malzeme)
-    if current_user.rol in ["sahip", "genel_mudurluk"] and selected_airport:
+    if _can_view_all_operational_scope() and selected_airport:
         query = query.filter(Malzeme.havalimani_id == selected_airport)
 
     if selected_critical == "1":
@@ -973,7 +977,7 @@ def envanter():
                 filtered.append(malzeme)
         malzemeler = filtered
 
-    if current_user.rol in ["sahip", "genel_mudurluk"]:
+    if _can_view_all_operational_scope():
         h_ad = "Genel Envanter (Tüm Birimler)"
         havalimanlari = Havalimani.query.filter_by(is_deleted=False).order_by(Havalimani.kodu.asc()).all()
     else:
@@ -1023,7 +1027,7 @@ def malzeme_ekle():
             flash("Kutu/depo kodu zorunludur.", "danger")
             return redirect(url_for("inventory.malzeme_ekle"))
 
-        if current_user.rol == "sahip":
+        if current_user.is_sahip:
             havalimani_id = request.form.get("havalimani_id", type=int)
             if not havalimani_id:
                 havalimani_id = current_user.havalimani_id or 1
@@ -1070,7 +1074,7 @@ def malzeme_ekle():
         flash("Malzeme başarıyla eklendi ve bakım varlığı oluşturuldu.", "success")
         return redirect(url_for("inventory.envanter"))
 
-    if current_user.rol == "sahip":
+    if current_user.is_sahip:
         havalimanlari = Havalimani.query.filter_by(is_deleted=False).order_by(Havalimani.kodu.asc()).all()
     else:
         havalimanlari = [current_user.havalimani] if current_user.havalimani else []
@@ -1111,7 +1115,7 @@ def merkezi_katalog():
 def merkezi_sablondan_envantere_ekle(template_id):
     template = EquipmentTemplate.query.filter_by(id=template_id, is_deleted=False, is_active=True).first_or_404()
 
-    if current_user.rol == "sahip":
+    if current_user.is_sahip:
         havalimani_id = request.form.get("havalimani_id", type=int) or current_user.havalimani_id or 1
     else:
         havalimani_id = current_user.havalimani_id
@@ -1857,7 +1861,7 @@ def tatbikat_listesi():
     visible_airport_ids = {airport.id for airport in airports}
     if selected_airport and selected_airport not in visible_airport_ids:
         abort(403)
-    if not getattr(current_user, "is_sahip", False):
+    if not current_user.is_sahip:
         selected_airport = current_user.havalimani_id
 
     query = _drill_scope().order_by(TatbikatBelgesi.tatbikat_tarihi.desc(), TatbikatBelgesi.created_at.desc())
@@ -1865,10 +1869,8 @@ def tatbikat_listesi():
         query = query.filter(TatbikatBelgesi.havalimani_id == selected_airport)
 
     documents = query.all()
-    drill_airport_select_enabled = bool(getattr(current_user, "rol", "") == "sahip")
-    can_manage_drills = has_permission("drill.manage") and (
-        getattr(current_user, "is_sahip", False) or getattr(current_user, "rol", "") in {"havalimani_yoneticisi", "yetkili"}
-    )
+    drill_airport_select_enabled = bool(current_user.is_sahip)
+    can_manage_drills = has_permission("drill.manage") and _can_manage_drills_for_airport(selected_airport or current_user.havalimani_id)
     return render_template(
         "tatbikatlar.html",
         documents=documents,
@@ -1886,7 +1888,7 @@ def tatbikat_listesi():
 @permission_required("drill.manage")
 def tatbikat_yukle():
     airport_id = request.form.get("airport_id", type=int)
-    if not getattr(current_user, "is_sahip", False):
+    if not current_user.is_sahip:
         airport_id = current_user.havalimani_id
     if airport_id is None:
         flash("Tatbikat belgesi için havalimanı seçin.", "danger")
