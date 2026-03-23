@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 from flask import abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
-from sqlalchemy import func, or_
+from sqlalchemy import or_
 
 from error_handling import get_error_spec, mask_sensitive_text
 from extensions import column_exists, db
@@ -188,7 +188,6 @@ def loglari_gor():
         for row in IslemLog.query.with_entities(IslemLog.islem_tipi)
         .filter(IslemLog.islem_tipi.isnot(None))
         .distinct()
-        .order_by(func.lower(IslemLog.islem_tipi).asc())
         .all()
     ]
     event_type_options = _build_options(event_type_values, _label_event_type)
@@ -203,7 +202,6 @@ def loglari_gor():
             for row in IslemLog.query.with_entities(IslemLog.target_model)
             .filter(IslemLog.target_model.isnot(None))
             .distinct()
-            .order_by(func.lower(IslemLog.target_model).asc())
             .all()
         ]
     target_model_options = _build_options(target_model_values, _label_target_model)

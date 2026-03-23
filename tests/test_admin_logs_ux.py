@@ -1,3 +1,5 @@
+from sqlalchemy.dialects import postgresql
+
 from extensions import db
 from models import IslemLog
 from tests.factories import HavalimaniFactory, KullaniciFactory
@@ -184,3 +186,22 @@ def test_user_filter_renders_selected_user_without_crashing(client, app):
     assert "Personel bakım akışı başlattı." in html
     assert "Sahip kullanıcısı sisteme giriş yaptı." not in html
     assert "Kullanıcı: " in html
+
+
+def test_distinct_filter_queries_stay_postgresql_safe(app):
+    with app.app_context():
+        event_type_sql = str(
+            IslemLog.query.with_entities(IslemLog.islem_tipi)
+            .filter(IslemLog.islem_tipi.isnot(None))
+            .distinct()
+            .statement.compile(dialect=postgresql.dialect())
+        )
+        target_model_sql = str(
+            IslemLog.query.with_entities(IslemLog.target_model)
+            .filter(IslemLog.target_model.isnot(None))
+            .distinct()
+            .statement.compile(dialect=postgresql.dialect())
+        )
+
+    assert "ORDER BY lower(" not in event_type_sql
+    assert "ORDER BY lower(" not in target_model_sql

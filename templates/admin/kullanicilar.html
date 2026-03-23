@@ -9,15 +9,18 @@
   .user-admin-shell > .panel,
   .user-secondary-stack > .panel { margin-bottom:0; }
   .user-secondary-stack { display:grid; gap:16px; }
+  .stage-accordion { overflow:hidden; }
+  .stage-accordion-summary { list-style:none; cursor:pointer; display:flex; align-items:flex-start; justify-content:space-between; gap:18px; padding:20px 22px; }
+  .stage-accordion-summary::-webkit-details-marker { display:none; }
+  .stage-accordion-copy { display:grid; gap:4px; min-width:0; }
+  .stage-accordion-meta { display:flex; align-items:center; gap:12px; }
+  .stage-accordion-chevron { flex-shrink:0; width:38px; height:38px; display:inline-flex; align-items:center; justify-content:center; border-radius:999px; border:1px solid var(--border); background:var(--surface2); color:var(--text2); transition:transform .22s ease, background .18s ease, border-color .18s ease; }
+  .stage-accordion[open] .stage-accordion-chevron { transform:rotate(180deg); background:var(--orange-light); border-color:rgba(249,115,22,.24); color:var(--orange); }
+  .stage-accordion .panel-body { border-top:1px solid rgba(148,163,184,.18); }
   .filter-panel .panel-body,
   .user-directory-panel .panel-body,
   .user-editor-panel .panel-body,
   .new-user-panel .panel-body { padding: 22px; }
-  .workflow-strip { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; margin-bottom:22px; }
-  .workflow-step { display:flex; gap:12px; align-items:flex-start; padding:14px 16px; border:1px solid var(--border); border-radius:18px; background:linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,250,252,.98) 100%); }
-  .workflow-step-index { flex-shrink:0; width:30px; height:30px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; background:var(--navy); color:#fff; font-size:12px; font-weight:900; }
-  .workflow-step strong { display:block; font-size:13px; font-weight:800; color:var(--navy); }
-  .workflow-step span { display:block; margin-top:4px; font-size:11.75px; color:var(--text3); line-height:1.5; }
   .user-filter-form,
   .editor-shell,
   .section-stack,
@@ -33,12 +36,12 @@
   .filter-grid { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:14px; }
   .filter-actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
   .filter-actions .btn { min-width: 124px; }
-  .filter-panel-note { padding:14px 16px; border-radius:16px; border:1px solid var(--border); background:linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(248,250,252,0.96) 100%); color:var(--text3); font-size:12px; line-height:1.6; }
-  .results-overview { display:grid; gap:14px; padding:20px; border:1px solid var(--border); border-radius:20px; background:linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.98) 100%); height:100%; }
-  .results-overview-head { display:flex; justify-content:space-between; gap:14px; align-items:flex-start; }
+  .filter-panel-note { padding:14px 16px; border-radius:16px; border:1px solid var(--border); background:linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(248,250,252,0.96) 100%); color:var(--text2); font-size:12.25px; line-height:1.65; }
+  .results-overview { display:grid; gap:14px; padding:18px; border:1px solid var(--border); border-radius:20px; background:linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.98) 100%); height:100%; align-content:start; }
+  .results-overview-head { display:flex; justify-content:space-between; gap:14px; align-items:center; }
   .results-overview-label { font-size:11px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
   .results-overview-value { margin-top:4px; font-size:30px; font-weight:900; color:var(--navy); letter-spacing:-.03em; line-height:1; }
-  .results-overview-note { margin-top:6px; font-size:12.5px; color:var(--text3); line-height:1.6; }
+  .results-overview-note { margin-top:6px; font-size:12.75px; color:var(--text2); line-height:1.6; }
   .results-status-pill { display:inline-flex; align-items:center; gap:6px; padding:8px 12px; border-radius:999px; border:1px solid rgba(249,115,22,.18); background:rgba(249,115,22,.08); color:var(--orange); font-size:11px; font-weight:800; }
   .active-filter-bar { display:flex; flex-wrap:wrap; gap:8px; }
   .active-filter-pill { display:inline-flex; align-items:center; gap:6px; padding:7px 11px; border-radius:999px; background:var(--blue-light); border:1px solid #bfdbfe; color:var(--blue); font-size:11px; font-weight:800; }
@@ -50,16 +53,17 @@
   .bulk-import-panel .panel-header { align-items:flex-start; }
   .user-secondary-action { white-space:nowrap; }
   .user-directory-panel .panel-body { display:grid; gap:18px; }
+  .directory-stage-actions { display:flex; justify-content:flex-end; }
   .selection-overview-row { display:grid; grid-template-columns:minmax(0, 1fr) minmax(220px, .54fr); gap:16px; align-items:stretch; }
-  .selected-user-banner { display:grid; gap:7px; padding:18px; border:1px solid var(--border); border-radius:18px; background:linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.98) 100%); min-height:100%; }
+  .selected-user-banner { display:grid; gap:7px; padding:18px; border:1px solid var(--border); border-radius:18px; background:linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.98) 100%); min-height:100%; align-content:center; }
   .selected-user-banner.is-empty { color:var(--text3); }
   .selected-user-banner-label { font-size:11px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
   .selected-user-banner strong { font-size:16px; color:var(--navy); }
-  .selected-user-banner-meta { font-size:12.5px; color:var(--text3); line-height:1.55; }
-  .directory-count-card { display:grid; gap:6px; padding:18px; border:1px solid var(--border); border-radius:18px; background:linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,250,252,.98) 100%); }
+  .selected-user-banner-meta { font-size:12.75px; color:var(--text2); line-height:1.55; }
+  .directory-count-card { display:grid; gap:6px; padding:18px; border:1px solid var(--border); border-radius:18px; background:linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,250,252,.98) 100%); align-content:center; }
   .directory-count-card-label { font-size:11px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
   .directory-count-card-value { font-size:28px; font-weight:900; color:var(--navy); line-height:1; letter-spacing:-.03em; }
-  .directory-count-card-note { font-size:12.5px; color:var(--text3); line-height:1.55; }
+  .directory-count-card-note { font-size:12.5px; color:var(--text2); line-height:1.55; }
   .directory-utility-strip { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:14px; }
   .directory-utility-card { padding:16px; border:1px solid var(--border); border-radius:18px; background:var(--surface2); }
   .quick-select-help { margin-top:8px; font-size:11.5px; color:var(--text3); line-height:1.5; }
@@ -93,6 +97,20 @@
   .new-user-intro { margin-bottom:16px; padding:16px; border-radius:16px; border:1px solid var(--border); background:linear-gradient(180deg, rgba(248,250,252,.96) 0%, rgba(255,255,255,.99) 100%); font-size:12.5px; color:var(--text3); line-height:1.6; }
   .form-help-inline,
   .phone-privacy-note { margin-top:8px; font-size:11.5px; color:var(--text3); line-height:1.5; }
+  .field-feedback { min-height:18px; margin-top:7px; font-size:11.5px; color:var(--text3); line-height:1.45; }
+  .field-feedback.is-error { color:var(--red); font-weight:700; }
+  .field-feedback.is-success { color:var(--green); font-weight:700; }
+  .form-control.field-invalid { border-color:rgba(220,38,38,.45); box-shadow:0 0 0 3px rgba(220,38,38,.08); }
+  .form-control.field-valid { border-color:rgba(22,163,74,.32); }
+  .name-input { text-transform:uppercase; }
+  .phone-input { letter-spacing:.02em; font-variant-numeric:tabular-nums; }
+  .password-guidance { display:grid; gap:10px; padding:14px 16px; border:1px solid var(--border); border-radius:16px; background:linear-gradient(180deg, rgba(248,250,252,.96) 0%, rgba(255,255,255,.99) 100%); }
+  .password-guidance-title { font-size:12px; font-weight:800; color:var(--navy); }
+  .password-rule-list { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; }
+  .password-rule { display:flex; align-items:center; gap:8px; font-size:11.5px; color:var(--text3); }
+  .password-rule::before { content:""; width:9px; height:9px; border-radius:999px; background:#cbd5e1; flex-shrink:0; }
+  .password-rule.is-met { color:var(--green); font-weight:700; }
+  .password-rule.is-met::before { background:var(--green); }
   .bulk-import-layout { display:grid; gap:16px; }
   .bulk-import-steps { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:12px; }
   .bulk-step { border:1px solid var(--border); border-radius:16px; padding:16px; background:var(--surface2); display:grid; gap:10px; align-content:start; }
@@ -171,12 +189,11 @@
   .editor-actions { display:flex; flex-wrap:wrap; justify-content:space-between; gap:10px; }
   .archived-notice { display:grid; gap:12px; padding:18px; border:1px solid var(--amber-border); border-radius:18px; background:var(--amber-light); color:var(--text2); }
   .archived-notice strong { color:var(--navy); }
-  .empty-selection { display:grid; gap:12px; place-items:center; text-align:center; padding:36px 28px; border:1px dashed var(--border-dark); border-radius:20px; background:linear-gradient(180deg, rgba(248,250,252,0.92) 0%, rgba(255,255,255,0.98) 100%); color:var(--text3); min-height:200px; }
+  .empty-selection { display:grid; gap:10px; place-items:center; text-align:center; padding:22px 24px; border:1px dashed var(--border-dark); border-radius:20px; background:linear-gradient(180deg, rgba(248,250,252,0.92) 0%, rgba(255,255,255,0.98) 100%); color:var(--text3); min-height:132px; }
   .empty-selection strong { color:var(--navy); font-size:16px; }
   .empty-selection small { font-size:12px; color:var(--text4); line-height:1.55; max-width:560px; }
 
   @media (max-width: 1180px) {
-    .workflow-strip,
     .filter-stage-layout,
     .selection-overview-row { grid-template-columns: 1fr; }
   }
@@ -187,22 +204,26 @@
     .editor-form-grid,
     .section-split-grid,
     .override-summary-grid,
-    .bulk-import-steps { grid-template-columns: 1fr; }
+    .bulk-import-steps,
+    .password-rule-list { grid-template-columns: 1fr; }
     .user-directory { grid-template-columns: 1fr; }
   }
 
   @media (max-width: 760px) {
-    .workflow-strip { grid-template-columns: 1fr; }
     .panel-header,
     .selection-summary-head,
     .section-card-head,
     .editor-actions,
+    .directory-stage-actions,
     .new-user-summary,
     .bulk-import-summary { display:grid; grid-template-columns: 1fr; }
     .summary-action-label,
     .user-secondary-action { width:100%; justify-content:center; }
     .directory-count-row,
-    .permission-section-head { display:grid; grid-template-columns:1fr; }
+    .permission-section-head,
+    .stage-accordion-summary,
+    .stage-accordion-meta { display:grid; grid-template-columns:1fr; }
+    .stage-accordion-chevron { justify-self:end; }
     .user-option-grid { grid-template-columns:1fr; }
   }
 </style>
@@ -220,30 +241,6 @@
     </div>
 </div>
 
-<div class="workflow-strip" aria-label="Kullanıcı yönetimi akışı">
-    <div class="workflow-step">
-        <span class="workflow-step-index">1</span>
-        <div>
-            <strong>Filtrele ve kullanıcıyı bul</strong>
-            <span>Arama, rol, havalimanı ve durum kırılımlarıyla görünür listeyi daraltın.</span>
-        </div>
-    </div>
-    <div class="workflow-step">
-        <span class="workflow-step-index">2</span>
-        <div>
-            <strong>Kullanıcıyı seç</strong>
-            <span>Liste kartlarından bir kayıt seçin; hızlı seçim araçları yalnızca yardımcı akış olarak çalışsın.</span>
-        </div>
-    </div>
-    <div class="workflow-step">
-        <span class="workflow-step-index">3</span>
-        <div>
-            <strong>Detayı düzenle</strong>
-            <span>Seçilen kullanıcı için temel bilgiler, kapsam ve yetki override alanlarını aşağıda yönetin.</span>
-        </div>
-    </div>
-</div>
-
 <div
     class="user-admin-shell"
     id="userManagementPage"
@@ -252,14 +249,15 @@
     data-selected-user-name="{{ selected_user.tam_ad if selected_user else '' }}"
     data-selected-status-label="{{ selected_status_label }}"
 >
-    <div class="panel filter-panel" data-admin-stage="filter">
-        <div class="panel-header">
-            <div>
+    <details class="panel filter-panel stage-accordion" data-admin-stage="filter" data-stage-accordion {% if not selected_user and filter_result_count == 0 %}open{% endif %}>
+        <summary class="panel-header stage-accordion-summary">
+            <div class="stage-accordion-copy">
                 <div class="panel-kicker">Aşama 1</div>
                 <div class="panel-title">Filtrele ve kullanıcıyı bul</div>
                 <div class="panel-subtitle">Arama, rol, havalimanı ve durum filtrelerini birlikte kullanarak kullanıcı listesini daraltın. Sonuç özeti bu panel içinde anında güncellenir.</div>
             </div>
-        </div>
+            <span class="stage-accordion-chevron" aria-hidden="true">⌄</span>
+        </summary>
         <div class="panel-body">
             <div class="filter-stage-layout">
                 <div class="filter-stage-main">
@@ -371,20 +369,23 @@
                 </div>
             </div>
         </div>
-    </div>
+    </details>
 
-    <div class="panel user-directory-panel" data-admin-stage="select">
-        <div class="panel-header">
-            <div>
+    <details class="panel user-directory-panel stage-accordion" data-admin-stage="select" data-stage-accordion {% if not selected_user and filter_result_count > 0 %}open{% endif %}>
+        <summary class="panel-header stage-accordion-summary">
+            <div class="stage-accordion-copy">
                 <div class="panel-kicker">Aşama 2</div>
-                <div class="panel-title">Kullanıcıyı seç</div>
-                <div class="panel-subtitle">Liste kartları birincil seçim alanıdır. Hızlı seçim ve yerel arama yalnızca mevcut filtre sonucunu daha rahat taramanızı sağlar.</div>
+                <div class="panel-title">Kullanıcı seç</div>
+                <div class="panel-subtitle">Filtre sonucu gelen kayıtlar arasından işlem yapılacak kullanıcıyı seçin. Hızlı seçim ve arama alanları bu aşamada birlikte çalışır.</div>
             </div>
-            <button type="button" class="btn btn-secondary user-secondary-action" id="openNewUserPanelBtn" aria-controls="newUserPanel" aria-expanded="false">
-                Yeni kullanıcı ekle
-            </button>
-        </div>
+            <span class="stage-accordion-chevron" aria-hidden="true">⌄</span>
+        </summary>
         <div class="panel-body">
+            <div class="directory-stage-actions">
+                <button type="button" class="btn btn-secondary user-secondary-action" id="openNewUserPanelBtn" aria-controls="newUserPanel" aria-expanded="false">
+                    Yeni kullanıcı ekle
+                </button>
+            </div>
             <div class="selection-overview-row">
                 {% if selected_user %}
                 <div class="selected-user-banner">
@@ -496,16 +497,17 @@
                 </div>
             </div>
         </div>
-    </div>
+    </details>
 
-    <div class="panel user-editor-panel" id="userDetailPanel">
-        <div class="panel-header">
-            <div>
+    <details class="panel user-editor-panel stage-accordion" id="userDetailPanel" data-stage-accordion {% if selected_user %}open{% endif %}>
+        <summary class="panel-header stage-accordion-summary">
+            <div class="stage-accordion-copy">
                 <div class="panel-kicker">Aşama 3</div>
                 <div class="panel-title">Detay ve yetki düzenleme</div>
-                <div class="panel-subtitle">Seçilen kullanıcı için temel bilgiler, rol kapsamı, iletişim alanı ve override yetkileri ayrı bölümlerde yönetilir.</div>
+                <div class="panel-subtitle">Seçilen kullanıcının temel bilgilerini, rolünü, kapsamını ve gerekiyorsa özel yetkilerini bu alandan yönetin.</div>
             </div>
-        </div>
+            <span class="stage-accordion-chevron" aria-hidden="true">⌄</span>
+        </summary>
         <div class="panel-body">
             {% if selected_user %}
             <div class="editor-shell" data-selected-user-id="{{ selected_user.id }}">
@@ -546,7 +548,7 @@
                     </div>
                 </div>
                 {% else %}
-                <form method="POST" action="{{ url_for('admin.kullanici_guncelle', id=selected_user.id) }}">
+                <form method="POST" action="{{ url_for('admin.kullanici_guncelle', id=selected_user.id) }}" novalidate>
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                     <div class="section-stack">
@@ -564,12 +566,14 @@
                             <div class="editor-form-grid">
                                 <div class="form-group">
                                     <label>Ad Soyad</label>
-                                    <input type="text" name="tam_ad" value="{{ selected_user.tam_ad }}" class="form-control">
+                                    <input type="text" name="tam_ad" value="{{ selected_user.tam_ad }}" class="form-control name-input" autocomplete="name" data-uppercase-name required>
+                                    <div class="field-feedback" data-field-feedback></div>
                                 </div>
                                 <div class="form-group">
                                     <label>Giriş E-postası</label>
-                                    <input type="text" name="k_adi" value="{{ selected_user.kullanici_adi }}" class="form-control">
+                                    <input type="email" name="k_adi" value="{{ selected_user.kullanici_adi }}" class="form-control" autocomplete="email" inputmode="email" data-email-input required>
                                     <div class="form-help-inline">Bu alan kullanıcının sisteme girişte kullandığı e-posta adresidir.</div>
+                                    <div class="field-feedback" data-field-feedback></div>
                                 </div>
                             </div>
                         </div>
@@ -627,8 +631,9 @@
                                 <div class="editor-form-grid">
                                     <div class="form-group full">
                                         <label>Telefon Numarası</label>
-                                        <input type="text" name="telefon_numarasi" value="{{ selected_user.telefon_numarasi or '' }}" class="form-control" placeholder="+90 555 123 45 67">
+                                        <input type="text" name="telefon_numarasi" value="{{ selected_user.telefon_numarasi or '' }}" class="form-control phone-input" placeholder="+90 5__ ___ __ __" inputmode="numeric" autocomplete="tel" data-phone-input maxlength="17">
                                         <div class="phone-privacy-note">Telefon numarası yalnızca site sahibi ekranında görünür; diğer rollerde render edilmez.</div>
+                                        <div class="field-feedback" data-field-feedback></div>
                                     </div>
                                 </div>
                             </div>
@@ -798,7 +803,7 @@
             </div>
             {% endif %}
         </div>
-    </div>
+    </details>
 
     <div class="user-secondary-stack">
         <details class="panel new-user-panel" id="newUserPanel">
@@ -806,7 +811,7 @@
                 <div>
                     <div class="panel-kicker">İkincil Aksiyon</div>
                     <div class="panel-title">Yeni Kullanıcı Ekle</div>
-                    <div class="panel-subtitle">Oluşturma formu sürekli açık kalmaz. Gerek duyduğunuzda açıp yeni kullanıcı ekleyebilir, ana düzenleme akışını temiz tutabilirsiniz.</div>
+                    <div class="panel-subtitle">Gerektiğinde mevcut akışı bozmadan yeni kullanıcı oluşturun. Form alanları sade, kontrollü ve doğrulanmış biçimde çalışır.</div>
                 </div>
                 <span class="summary-action-label" id="newUserSummaryLabel">Formu aç</span>
             </summary>
@@ -814,21 +819,34 @@
                 <div class="new-user-intro">
                     Yeni kayıt oluşturma akışı liste ve detay ekranını bölmeden ayrı tutulur. Kullanıcı oluşturulduktan sonra sistem sizi yeni kaydın detay alanına yönlendirir.
                 </div>
-                <form action="{{ url_for('admin.kullanici_ekle') }}" method="POST">
+                <form action="{{ url_for('admin.kullanici_ekle') }}" method="POST" novalidate>
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="editor-form-grid">
                         <div class="form-group">
                             <label>Ad Soyad</label>
-                            <input type="text" name="tam_ad" class="form-control" required>
+                            <input type="text" name="tam_ad" class="form-control name-input" autocomplete="name" data-uppercase-name required>
+                            <div class="field-feedback" data-field-feedback></div>
                         </div>
                         <div class="form-group">
                             <label>Giriş E-postası</label>
-                            <input type="text" name="k_adi" class="form-control" required>
+                            <input type="email" name="k_adi" class="form-control" required autocomplete="email" inputmode="email" data-email-input>
                             <div class="form-help-inline">Bu alan kullanıcının oturum açarken kullanacağı e-posta adresidir.</div>
+                            <div class="field-feedback" data-field-feedback></div>
                         </div>
                         <div class="form-group">
                             <label>Şifre</label>
-                            <input type="password" name="sifre" class="form-control" required>
+                            <input type="password" name="sifre" class="form-control" required autocomplete="new-password" data-password-input minlength="8">
+                            <div class="field-feedback" data-field-feedback></div>
+                            <div class="password-guidance" data-password-guidance>
+                                <div class="password-guidance-title">Güvenli şifre kuralları</div>
+                                <div class="password-rule-list">
+                                    <span class="password-rule" data-password-rule="length">En az 8 karakter</span>
+                                    <span class="password-rule" data-password-rule="upper">En az 1 büyük harf</span>
+                                    <span class="password-rule" data-password-rule="lower">En az 1 küçük harf</span>
+                                    <span class="password-rule" data-password-rule="digit">En az 1 rakam</span>
+                                    <span class="password-rule" data-password-rule="special">En az 1 özel karakter</span>
+                                </div>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label>Rol</label>
@@ -850,12 +868,14 @@
                         {% if current_user.is_sahip %}
                         <div class="form-group full">
                             <label>Telefon Numarası</label>
-                            <input type="text" name="telefon_numarasi" class="form-control" placeholder="+90 555 123 45 67">
+                            <input type="text" name="telefon_numarasi" class="form-control phone-input" placeholder="+90 5__ ___ __ __" inputmode="numeric" autocomplete="tel" data-phone-input maxlength="17">
                             <div class="phone-privacy-note">Bu alan yalnızca site sahibi tarafından görüntülenir ve güncellenir.</div>
+                            <div class="field-feedback" data-field-feedback></div>
                         </div>
                         {% endif %}
                     </div>
                     <div class="editor-actions" style="margin-top:16px;">
+                        <button type="button" class="btn btn-secondary" data-close-new-user-panel>Formu kapat</button>
                         <button type="submit" class="btn btn-primary">Kullanıcı Oluştur</button>
                     </div>
                 </form>
@@ -1038,12 +1058,179 @@
     const newUserPanel = document.getElementById('newUserPanel');
     const newUserSummaryLabel = document.getElementById('newUserSummaryLabel');
     const openNewUserPanelBtn = document.getElementById('openNewUserPanelBtn');
+    const closeNewUserPanelBtn = document.querySelector('[data-close-new-user-panel]');
     const bulkImportPanel = document.getElementById('bulkImportPanel');
     const bulkImportSummaryLabel = document.getElementById('bulkImportSummaryLabel');
+    const stageAccordions = Array.from(document.querySelectorAll('[data-stage-accordion]'));
     const serverResultCount = Number(page && page.dataset.resultCount ? page.dataset.resultCount : directoryCards.length);
     const hasActiveFilters = !!(page && page.dataset.hasActiveFilters === 'true');
     const selectedUserName = page && page.dataset.selectedUserName ? page.dataset.selectedUserName : '';
     const selectedStatusLabel = page && page.dataset.selectedStatusLabel ? page.dataset.selectedStatusLabel : 'Aktif kayıtlar';
+    const phonePrefix = '+90 ';
+    const prefixLockIndex = phonePrefix.length;
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const passwordRules = {
+      length: function (value) { return value.length >= 8; },
+      upper: function (value) { return /[A-ZÇĞİIÖŞÜ]/.test(value); },
+      lower: function (value) { return /[a-zçğıöşü]/.test(value); },
+      digit: function (value) { return /\d/.test(value); },
+      special: function (value) { return /[^A-Za-z0-9]/.test(value); }
+    };
+    const turkishUpperMap = {
+      'i': 'İ',
+      'ı': 'I',
+      'ç': 'Ç',
+      'ğ': 'Ğ',
+      'ö': 'Ö',
+      'ş': 'Ş',
+      'ü': 'Ü'
+    };
+
+    const toTurkishUpper = function (value) {
+      return String(value || '').replace(/[iıçğöşü]/g, function (char) {
+        return turkishUpperMap[char] || char;
+      }).toUpperCase();
+    };
+
+    const getFieldFeedback = function (input) {
+      const group = input.closest('.form-group');
+      return group ? group.querySelector('[data-field-feedback]') : null;
+    };
+
+    const setFieldState = function (input, type, message) {
+      const feedback = getFieldFeedback(input);
+      input.classList.remove('field-invalid', 'field-valid');
+      if (feedback) {
+        feedback.classList.remove('is-error', 'is-success');
+        feedback.textContent = '';
+      }
+      if (!type || !message) {
+        input.setCustomValidity('');
+        return;
+      }
+      if (type === 'error') {
+        input.classList.add('field-invalid');
+        input.setCustomValidity(message);
+      } else {
+        input.classList.add('field-valid');
+        input.setCustomValidity('');
+      }
+      if (feedback) {
+        feedback.classList.add(type === 'error' ? 'is-error' : 'is-success');
+        feedback.textContent = message;
+      }
+    };
+
+    const formatPhoneDisplay = function (value) {
+      let digits = String(value || '').replace(/\D/g, '');
+      if (digits.startsWith('90')) {
+        digits = digits.slice(2);
+      }
+      if (digits.startsWith('0')) {
+        digits = digits.slice(1);
+      }
+      digits = digits.slice(0, 10);
+      const parts = [];
+      if (digits.slice(0, 3)) parts.push(digits.slice(0, 3));
+      if (digits.slice(3, 6)) parts.push(digits.slice(3, 6));
+      if (digits.slice(6, 8)) parts.push(digits.slice(6, 8));
+      if (digits.slice(8, 10)) parts.push(digits.slice(8, 10));
+      return phonePrefix + parts.join(' ');
+    };
+
+    const normalizePhoneValue = function (value) {
+      let digits = String(value || '').replace(/\D/g, '');
+      if (digits.startsWith('90')) {
+        digits = digits.slice(2);
+      }
+      if (digits.startsWith('0')) {
+        digits = digits.slice(1);
+      }
+      digits = digits.slice(0, 10);
+      if (digits.length === 10 && digits.charAt(0) === '5') {
+        return '+90' + digits;
+      }
+      return '';
+    };
+
+    const placePhoneCursor = function (input) {
+      window.requestAnimationFrame(function () {
+        const pos = Math.max(prefixLockIndex, input.value.length);
+        try {
+          input.setSelectionRange(pos, pos);
+        } catch (error) {
+          /* no-op */
+        }
+      });
+    };
+
+    const validateNameField = function (input) {
+      input.value = toTurkishUpper(input.value).replace(/\s{2,}/g, ' ').replace(/^\s+/, '');
+      if (!input.value.trim()) {
+        setFieldState(input, 'error', 'Ad soyad alanını doldurun.');
+        return false;
+      }
+      setFieldState(input, 'success', 'Ad soyad kayda uygun biçimde hazırlanıyor.');
+      return true;
+    };
+
+    const validateEmailField = function (input) {
+      const value = String(input.value || '').trim();
+      input.value = value.toLowerCase();
+      if (!value) {
+        setFieldState(input, 'error', 'Geçerli bir e-posta adresi girin.');
+        return false;
+      }
+      if (!emailPattern.test(value) || !input.checkValidity()) {
+        setFieldState(input, 'error', 'Geçerli bir e-posta adresi girin.');
+        return false;
+      }
+      setFieldState(input, 'success', 'E-posta biçimi doğrulandı.');
+      return true;
+    };
+
+    const syncPasswordRules = function (input) {
+      const value = String(input.value || '');
+      const guidance = input.closest('.form-group') ? input.closest('.form-group').querySelector('[data-password-guidance]') : null;
+      if (!guidance) return;
+      guidance.querySelectorAll('[data-password-rule]').forEach(function (item) {
+        const ruleName = item.getAttribute('data-password-rule');
+        const rule = passwordRules[ruleName];
+        const isMet = rule ? rule(value) : false;
+        item.classList.toggle('is-met', isMet);
+      });
+    };
+
+    const validatePasswordField = function (input) {
+      syncPasswordRules(input);
+      const value = String(input.value || '');
+      const ruleOrder = ['length', 'upper', 'lower', 'digit', 'special'];
+      const isValid = ruleOrder.every(function (ruleName) {
+        return passwordRules[ruleName](value);
+      });
+      if (!isValid) {
+        setFieldState(input, 'error', 'Şifre kurallarını tamamlayın.');
+        return false;
+      }
+      setFieldState(input, 'success', 'Şifre güvenlik kuralları sağlandı.');
+      return true;
+    };
+
+    const validatePhoneField = function (input) {
+      const rawValue = String(input.value || '');
+      const normalized = normalizePhoneValue(rawValue);
+      input.value = formatPhoneDisplay(rawValue);
+      if (!rawValue.trim() || rawValue.trim() === phonePrefix.trim()) {
+        setFieldState(input, null, '');
+        return true;
+      }
+      if (!normalized) {
+        setFieldState(input, 'error', 'Telefon numarasını +90 5xx xxx xx xx formatında girin.');
+        return false;
+      }
+      setFieldState(input, 'success', 'Telefon numarası Türkiye formatına uygun.');
+      return true;
+    };
 
     const queueToast = function (payload) {
       try {
@@ -1132,6 +1319,19 @@
 
     syncVisibleCount(serverResultCount, false);
 
+    if (stageAccordions.length) {
+      stageAccordions.forEach(function (accordion) {
+        accordion.addEventListener('toggle', function () {
+          if (!accordion.open) return;
+          stageAccordions.forEach(function (other) {
+            if (other !== accordion) {
+              other.open = false;
+            }
+          });
+        });
+      });
+    }
+
     if (quickSelect) {
       quickSelect.addEventListener('change', function () {
         const params = new URLSearchParams(window.location.search);
@@ -1219,6 +1419,12 @@
       });
     }
 
+    if (closeNewUserPanelBtn && newUserPanel) {
+      closeNewUserPanelBtn.addEventListener('click', function () {
+        newUserPanel.open = false;
+      });
+    }
+
     if (bulkImportPanel && bulkImportSummaryLabel) {
       const syncBulkImportLabel = function () {
         bulkImportSummaryLabel.textContent = bulkImportPanel.open ? 'Adımları kapat' : 'Adımları aç';
@@ -1226,6 +1432,127 @@
       syncBulkImportLabel();
       bulkImportPanel.addEventListener('toggle', syncBulkImportLabel);
     }
+
+    document.querySelectorAll('[data-uppercase-name]').forEach(function (input) {
+      input.addEventListener('input', function () {
+        const nextValue = toTurkishUpper(input.value);
+        if (input.value !== nextValue) {
+          input.value = nextValue;
+        }
+        if (input.dataset.touched === 'true') {
+          validateNameField(input);
+        }
+      });
+      input.addEventListener('blur', function () {
+        input.dataset.touched = 'true';
+        validateNameField(input);
+      });
+    });
+
+    document.querySelectorAll('[data-email-input]').forEach(function (input) {
+      input.addEventListener('input', function () {
+        input.value = String(input.value || '').replace(/\s+/g, '');
+        if (input.dataset.touched === 'true') {
+          validateEmailField(input);
+        } else {
+          setFieldState(input, null, '');
+        }
+      });
+      input.addEventListener('blur', function () {
+        input.dataset.touched = 'true';
+        validateEmailField(input);
+      });
+    });
+
+    document.querySelectorAll('[data-password-input]').forEach(function (input) {
+      syncPasswordRules(input);
+      input.addEventListener('input', function () {
+        syncPasswordRules(input);
+        if (input.dataset.touched === 'true') {
+          validatePasswordField(input);
+        } else {
+          setFieldState(input, null, '');
+        }
+      });
+      input.addEventListener('blur', function () {
+        input.dataset.touched = 'true';
+        validatePasswordField(input);
+      });
+    });
+
+    document.querySelectorAll('[data-phone-input]').forEach(function (input) {
+      input.value = formatPhoneDisplay(input.value);
+      input.addEventListener('focus', function () {
+        if (!input.value) {
+          input.value = phonePrefix;
+        }
+        placePhoneCursor(input);
+      });
+      input.addEventListener('click', function () {
+        if ((input.selectionStart || 0) < prefixLockIndex) {
+          placePhoneCursor(input);
+        }
+      });
+      input.addEventListener('keydown', function (event) {
+        const selectionStart = input.selectionStart || 0;
+        if ((event.key === 'Backspace' || event.key === 'Delete') && selectionStart <= prefixLockIndex) {
+          event.preventDefault();
+          placePhoneCursor(input);
+        }
+      });
+      input.addEventListener('paste', function (event) {
+        event.preventDefault();
+        const pasted = (event.clipboardData || window.clipboardData).getData('text');
+        input.value = formatPhoneDisplay(pasted);
+        input.dataset.touched = 'true';
+        validatePhoneField(input);
+        placePhoneCursor(input);
+      });
+      input.addEventListener('input', function () {
+        input.value = formatPhoneDisplay(input.value);
+        if (input.dataset.touched === 'true') {
+          validatePhoneField(input);
+        } else {
+          setFieldState(input, null, '');
+        }
+      });
+      input.addEventListener('blur', function () {
+        input.dataset.touched = 'true';
+        validatePhoneField(input);
+      });
+    });
+
+    document.querySelectorAll('#userManagementPage form[novalidate]').forEach(function (form) {
+      form.addEventListener('submit', function (event) {
+        let firstInvalid = null;
+        form.querySelectorAll('[data-uppercase-name], [data-email-input], [data-password-input], [data-phone-input]').forEach(function (input) {
+          let valid = true;
+          input.dataset.touched = 'true';
+          if (input.hasAttribute('data-uppercase-name')) {
+            valid = validateNameField(input);
+          } else if (input.hasAttribute('data-email-input')) {
+            valid = validateEmailField(input);
+          } else if (input.hasAttribute('data-password-input')) {
+            valid = validatePasswordField(input);
+          } else if (input.hasAttribute('data-phone-input')) {
+            valid = validatePhoneField(input);
+            const normalized = normalizePhoneValue(input.value);
+            if (valid && normalized) {
+              input.value = normalized;
+            } else if (!normalized) {
+              input.value = '';
+            }
+          }
+          if (!valid && !firstInvalid) {
+            firstInvalid = input;
+          }
+        });
+        if (firstInvalid) {
+          event.preventDefault();
+          firstInvalid.focus();
+        }
+      });
+    });
   })();
 </script>
 {% endblock %}

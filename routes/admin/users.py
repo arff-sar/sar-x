@@ -1,5 +1,6 @@
 import io
 import json
+import re
 
 import pandas as pd
 from flask import current_app, render_template, request, redirect, send_file, session, url_for, flash, abort
@@ -18,7 +19,7 @@ from extensions import (
     guvenli_metin,
     secure_upload_filename,
 )
-from models import Havalimani, Kullanici
+from models import Havalimani, Kullanici, TR_UPPER_MAP
 from . import admin_bp
 from decorators import (
     actor_can_manage_target,
@@ -53,6 +54,8 @@ BULK_IMPORT_COLUMNS = [
     "not",
     "gecici_sifre",
 ]
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+USER_PASSWORD_PATTERN = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$")
 
 
 def _visible_users_query(actor):
@@ -72,6 +75,30 @@ def _normalize_user_email(raw_value):
     return guvenli_metin(raw_value or "").strip().lower()
 
 
+def _normalize_full_name(raw_value):
+    cleaned = " ".join(guvenli_metin(raw_value or "").split())
+    if not cleaned:
+        return ""
+    return cleaned.translate(TR_UPPER_MAP).upper()
+
+
+def _validate_user_email(raw_value):
+    normalized = _normalize_user_email(raw_value)
+    if not normalized or not EMAIL_PATTERN.match(normalized):
+        return None, "Geçerli bir e-posta adresi girin."
+    return normalized, None
+
+
+def _validate_user_password(raw_value):
+    password = str(raw_value or "")
+    if USER_PASSWORD_PATTERN.match(password):
+        return None
+    return (
+        "Şifre en az 8 karakter uzunluğunda olmalı; "
+        "1 büyük harf, 1 küçük harf, 1 rakam ve 1 özel karakter içermelidir."
+    )
+
+
 def _find_user_by_email(raw_value):
     normalized = _normalize_user_email(raw_value)
     if not normalized:
@@ -84,21 +111,15 @@ def _normalize_phone_number(raw_value):
     if not cleaned:
         return None, None
 
-    compact = (
-        cleaned.replace(" ", "")
-        .replace("(", "")
-        .replace(")", "")
-        .replace("-", "")
-        .replace(".", "")
-    )
-    if compact.startswith("00"):
-        compact = f"+{compact[2:]}"
+    digits = re.sub(r"\D", "", cleaned)
+    if digits.startswith("90"):
+        digits = digits[2:]
+    elif digits.startswith("0"):
+        digits = digits[1:]
 
-    has_plus = compact.startswith("+")
-    digits = compact[1:] if has_plus else compact
-    if not digits.isdigit() or not 10 <= len(digits) <= 15:
-        return None, "Telefon numarasını yalnızca rakamlarla ve geçerli uzunlukta girin."
-    return f"+{digits}" if has_plus else digits, None
+    if len(digits) != 10 or not digits.startswith("5"):
+        return None, "Telefon numarasını +90 5xx xxx xx xx formatında girin."
+    return f"+90{digits}", None
 
 
 def _visible_airports(actor):
@@ -474,16 +495,27 @@ def kullanici_import_clear():
 @permission_required('users.manage')
 def kullanici_ekle():
     """Yeni kullanıcı ekler."""
-    tam_ad = guvenli_metin(request.form.get('tam_ad'))
-    k_adi = _normalize_user_email(request.form.get('k_adi'))
+    tam_ad = _normalize_full_name(request.form.get('tam_ad'))
+    k_adi, email_error = _validate_user_email(request.form.get('k_adi'))
     rol = request.form.get('rol')
     h_id = request.form.get('h_id')
     sifre = request.form.get('sifre')
     telefon_numarasi = None
 
+    if not tam_ad:
+        flash("Ad soyad alanını doldurun.", "danger")
+        return redirect(url_for('admin.kullanicilar'))
+    if email_error:
+        flash(email_error, "danger")
+        return redirect(url_for('admin.kullanicilar'))
+    password_error = _validate_user_password(sifre)
+    if password_error:
+        flash(password_error, "danger")
+        return redirect(url_for('admin.kullanicilar'))
+
     if current_user.is_sahip:
         telefon_numarasi, phone_error = _normalize_phone_number(request.form.get('telefon_numarasi'))
-        if phone_error:
+        if request.form.get('telefon_numarasi') and phone_error:
             flash(phone_error, "danger")
             return redirect(url_for('admin.kullanicilar'))
     
@@ -535,6 +567,8 @@ def kullanici_guncelle(id):
 
     yeni_rol = request.form.get('rol') or user.rol
     role_labels = get_role_labels()
+    yeni_tam_ad = _normalize_full_name(request.form.get('tam_ad') or user.tam_ad)
+    yeni_email, email_error = _validate_user_email(request.form.get('k_adi') or user.kullanici_adi)
 
     h_id = request.form.get('h_id', type=int)
     if yeni_rol in GLOBAL_ROLES:
@@ -548,21 +582,27 @@ def kullanici_guncelle(id):
     yeni_telefon_numarasi = user.telefon_numarasi
     if current_user.is_sahip:
         yeni_telefon_numarasi, phone_error = _normalize_phone_number(request.form.get('telefon_numarasi'))
-        if phone_error:
+        if request.form.get('telefon_numarasi') and phone_error:
             flash(phone_error, "danger")
             return redirect(url_for('admin.kullanicilar', user_id=user.id))
     phone_changed = yeni_telefon_numarasi != user.telefon_numarasi
+
+    if not yeni_tam_ad:
+        flash("Ad soyad alanını doldurun.", "danger")
+        return redirect(url_for('admin.kullanicilar', user_id=user.id))
+    if email_error:
+        flash(email_error, "danger")
+        return redirect(url_for('admin.kullanicilar', user_id=user.id))
 
     approval_required = yeni_rol in ['sahip', 'admin'] and current_user.rol != 'sahip'
     if not approval_required and not can_assign_role(current_user, yeni_rol):
         abort(403)
     if approval_required:
-        normalized_email = _normalize_user_email(request.form.get('k_adi') or user.kullanici_adi)
         payload = json.dumps(
             {
                 "user_id": user.id,
-                "tam_ad": guvenli_metin(request.form.get('tam_ad') or user.tam_ad),
-                "k_adi": normalized_email,
+                "tam_ad": yeni_tam_ad,
+                "k_adi": yeni_email,
                 "rol": yeni_rol,
                 "h_id": h_id,
                 "allow_permissions": allow_permissions,
@@ -601,13 +641,12 @@ def kullanici_guncelle(id):
             flash("Rol değişikliği onaya gönderildi.", "warning")
             return redirect(url_for('admin.kullanicilar', user_id=user.id))
 
-    yeni_email = _normalize_user_email(request.form.get('k_adi') or user.kullanici_adi)
     existing = _find_user_by_email(yeni_email)
     if existing and existing.id != user.id:
         flash("Bu e-posta/kullanıcı adı zaten kullanımda!", "warning")
         return redirect(url_for('admin.kullanicilar', user_id=user.id))
 
-    user.tam_ad = guvenli_metin(request.form.get('tam_ad') or user.tam_ad)
+    user.tam_ad = yeni_tam_ad
     user.kullanici_adi = yeni_email
     user.rol = yeni_rol
     user.havalimani_id = h_id

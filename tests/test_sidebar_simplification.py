@@ -62,5 +62,7 @@ def test_operations_group_uses_accessible_toggle_markup_and_mobile_sync(client, 
     assert 'id="sidebarGroupToggle-operations"' in html
     assert 'aria-controls="sidebarGroup-operations"' in html
     assert 'id="sidebarGroup-operations"' in html
+    assert 'class="sidebar-scroll"' in html
+    assert 'class="sidebar-footer"' in html
     assert "syncSidebarState" in html
     assert "document.querySelectorAll('[data-sidebar-link]')" in html

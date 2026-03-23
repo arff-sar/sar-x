@@ -58,7 +58,7 @@ def test_user_management_renders_success_toast_after_create(client, app):
         data={
             "tam_ad": "Toast Kullanıcısı",
             "k_adi": "toast-user@sarx.com",
-            "sifre": "guclu-test-sifre",
+            "sifre": "GucluTest@123",
             "rol": "readonly",
             "h_id": "",
         },
@@ -69,7 +69,7 @@ def test_user_management_renders_success_toast_after_create(client, app):
     assert response.status_code == 200
     assert 'class="toast-stack"' in html
     assert 'flash-msg flash-success' in html
-    assert "Toast Kullanıcısı personeli sisteme eklendi." in html
+    assert "TOAST KULLANICISI personeli sisteme eklendi." in html
 
 
 def test_user_management_renders_error_toast_for_invalid_selection(client, app):
@@ -365,13 +365,14 @@ def test_detail_panel_is_rendered_after_filter_and_selection_blocks(client, app)
 
     assert response.status_code == 200
     assert "Filtrele ve kullanıcıyı bul" in html
-    assert "Kullanıcıyı seç" in html
-    assert "Detayı düzenle" in html
-    assert html.index('class="panel filter-panel"') < html.index('class="panel user-directory-panel"')
-    assert html.index('class="panel user-directory-panel"') < html.index('id="userDetailPanel"')
+    assert "Kullanıcı seç" in html
+    assert "Detay ve yetki düzenleme" in html
+    assert html.index('class="panel filter-panel stage-accordion"') < html.index('class="panel user-directory-panel stage-accordion"')
+    assert html.index('class="panel user-directory-panel stage-accordion"') < html.index('id="userDetailPanel"')
     assert html.index('id="userDetailPanel"') < html.index('id="newUserPanel"')
     assert 'data-filter-summary' in html
     assert 'data-detail-empty-state' in html
+    assert html.count('data-stage-accordion') >= 3
 
 
 def test_user_selector_hides_email_and_shows_name_airport_and_role(client, app):
@@ -452,6 +453,7 @@ def test_user_management_renders_login_email_label_in_create_and_edit_forms(clie
     assert html.count("Giriş E-postası") >= 2
     assert "Bu alan kullanıcının sisteme girişte kullandığı e-posta adresidir." in html
     assert "Kullanıcı Adı" not in html
+    assert html.count('type="email"') >= 2
 
 
 def test_override_summary_is_split_into_allowed_and_withdrawn_sections(client, app):
@@ -651,6 +653,64 @@ def test_new_user_panel_renders_as_collapsed_details_panel(client, app):
     assert response.status_code == 200
     assert '<details class="panel new-user-panel" id="newUserPanel">' in html
     assert 'id="newUserSummaryLabel">Formu aç<' in html
+    assert 'data-password-guidance' in html
+    assert 'data-password-rule="special"' in html
+    assert 'data-close-new-user-panel' in html
+
+
+def test_user_management_inputs_render_validation_hooks(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Erzurum Havalimanı", kodu="ERZ")
+        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-hooks@sarx.com")
+        staff = KullaniciFactory(
+            rol="bakim_sorumlusu",
+            is_deleted=False,
+            tam_ad="Doğrulama Kullanıcısı",
+            kullanici_adi="hooks-user@sarx.com",
+            havalimani=airport,
+            telefon_numarasi="+905551112233",
+        )
+        db.session.add_all([airport, owner, staff])
+        db.session.commit()
+        owner_id = owner.id
+        staff_id = staff.id
+
+    _login(client, owner_id)
+    response = client.get(f"/kullanicilar?user_id={staff_id}")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert 'data-uppercase-name' in html
+    assert 'data-email-input' in html
+    assert 'data-phone-input' in html
+    assert 'inputmode="numeric"' in html
+    assert 'autocomplete="tel"' in html
+    assert '+90 5__ ___ __ __' in html
+
+
+def test_invalid_email_is_rejected_in_user_create_form(client, app):
+    with app.app_context():
+        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-invalidmail@sarx.com")
+        db.session.add(owner)
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+    response = client.post(
+        "/kullanici-ekle",
+        data={
+            "tam_ad": "Hatali Mail",
+            "k_adi": "hatali-mail",
+            "sifre": "GucluTest@123",
+            "rol": "readonly",
+            "h_id": "",
+        },
+        follow_redirects=True,
+    )
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Geçerli bir e-posta adresi girin." in html
 
 
 def test_roles_page_renders_row_action_alignment_fix(client, app):
