@@ -1,5 +1,5 @@
 from extensions import db
-from tests.factories import KullaniciFactory
+from tests.factories import HavalimaniFactory, KullaniciFactory
 
 
 def _login(client, user_id):
@@ -36,7 +36,7 @@ def test_mehmet_user_sees_role_switch_dropdown(client, app):
     assert "Salt Okunur" not in html
 
 
-def test_other_users_do_not_see_role_switch_dropdown(client, app):
+def test_owner_user_sees_role_switch_dropdown_even_with_different_email(client, app):
     with app.app_context():
         user = KullaniciFactory(
             rol="sahip",
@@ -53,8 +53,8 @@ def test_other_users_do_not_see_role_switch_dropdown(client, app):
     html = response.data.decode("utf-8")
 
     assert response.status_code == 200
-    assert 'id="userMenuToggle"' not in html
-    assert "Geçici aktif rolünüzü seçin" not in html
+    assert 'id="userMenuToggle"' in html
+    assert "Geçici aktif rolünüzü seçin" in html
 
 
 def test_mehmet_user_can_switch_role_and_session_persists(client, app):
@@ -137,10 +137,10 @@ def test_role_switch_rejects_unsupported_roles(client, app):
 def test_role_switch_endpoint_is_forbidden_for_other_users(client, app):
     with app.app_context():
         user = KullaniciFactory(
-            rol="sahip",
+            rol="personel",
             is_deleted=False,
             tam_ad="Yetkisiz Kullanıcı",
-            kullanici_adi="owner@sarx.com",
+            kullanici_adi="personel@sarx.com",
         )
         db.session.add(user)
         db.session.commit()
@@ -150,6 +150,29 @@ def test_role_switch_endpoint_is_forbidden_for_other_users(client, app):
     response = client.post("/role-switch", data={"role": "admin"}, follow_redirects=False)
 
     assert response.status_code == 403
+
+
+def test_non_privileged_user_does_not_see_role_switch_dropdown(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Rize-Artvin Havalimanı", kodu="RZV")
+        user = KullaniciFactory(
+            rol="personel",
+            havalimani=airport,
+            is_deleted=False,
+            tam_ad="Yetkisiz Personel",
+            kullanici_adi="personel@sarx.com",
+        )
+        db.session.add_all([airport, user])
+        db.session.commit()
+        user_id = user.id
+
+    _login(client, user_id)
+    response = client.get("/dashboard")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert 'id="userMenuToggle"' not in html
+    assert "Geçici aktif rolünüzü seçin" not in html
 
 
 def test_role_switch_override_is_cleared_on_logout(client, app):

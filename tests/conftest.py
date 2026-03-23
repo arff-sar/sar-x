@@ -1,5 +1,6 @@
 import pytest
 import os
+import tempfile
 from unittest.mock import patch
 from sqlalchemy.pool import NullPool
 from app import create_app
@@ -15,12 +16,10 @@ def mock_external_services():
 
 @pytest.fixture
 def app():
-    db_path = os.path.join(os.getcwd(), "instance", "test_suite.db")
+    fd, db_path = tempfile.mkstemp(prefix="sarx-test-suite-", suffix=".db")
+    os.close(fd)
     previous_test_db = os.environ.get("TEST_DATABASE_URL")
     os.environ["TEST_DATABASE_URL"] = f"sqlite:///{db_path}"
-    if os.path.exists(db_path):
-        os.remove(db_path)
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
     app = create_app("testing")
     app.config.update(

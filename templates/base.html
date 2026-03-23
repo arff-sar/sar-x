@@ -635,10 +635,11 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
             document.body.classList.toggle('sidebar-open', isOpen && mobileSidebarMedia.matches);
         };
 
+        const closeSidebar = () => {
+            syncSidebarState(false);
+        };
+
         if (toggle && sidebar && backdrop) {
-            const closeSidebar = () => {
-                syncSidebarState(false);
-            };
             toggle.addEventListener('click', function () {
                 syncSidebarState(!sidebar.classList.contains('is-open'));
             });
@@ -653,15 +654,9 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
                     closeSidebar();
                 }
             });
-            document.querySelectorAll('[data-sidebar-link]').forEach(function (link) {
-                link.addEventListener('click', function () {
-                    if (mobileSidebarMedia.matches) {
-                        closeSidebar();
-                    }
-                });
-            });
         }
 
+        const SIDEBAR_GROUP_STORAGE_KEY = 'sarx.sidebar.open-group';
         const setGroupState = function (group, isOpen) {
             if (!group) return;
             group.classList.toggle('is-open', isOpen);
@@ -672,16 +667,61 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
             }
         };
 
+        const readStoredOpenGroup = function () {
+            try {
+                return (window.localStorage.getItem(SIDEBAR_GROUP_STORAGE_KEY) || '').trim();
+            } catch (error) {
+                return '';
+            }
+        };
+
+        const writeStoredOpenGroup = function (groupKey) {
+            try {
+                if (!groupKey) {
+                    window.localStorage.removeItem(SIDEBAR_GROUP_STORAGE_KEY);
+                    return;
+                }
+                window.localStorage.setItem(SIDEBAR_GROUP_STORAGE_KEY, String(groupKey));
+            } catch (error) {
+                // localStorage kapalıysa sessiz fallback.
+            }
+        };
+
         const sidebarGroups = Array.from(document.querySelectorAll('.sidebar-group[data-sidebar-state]'));
+        const openSingleGroup = function (group, shouldOpen) {
+            sidebarGroups.forEach(function (item) {
+                setGroupState(item, item === group ? shouldOpen : false);
+            });
+            writeStoredOpenGroup(shouldOpen && group ? group.dataset.group : '');
+        };
+
+        const activeGroup = sidebarGroups.find(function (group) {
+            return Boolean(group.querySelector('.nav-item.active'));
+        });
+        if (activeGroup) {
+            openSingleGroup(activeGroup, true);
+        } else {
+            const storedGroupKey = readStoredOpenGroup();
+            const storedGroup = sidebarGroups.find(function (group) {
+                return group.dataset.group === storedGroupKey;
+            });
+            if (storedGroup) {
+                openSingleGroup(storedGroup, true);
+            }
+        }
+
         sidebarGroups.forEach(function (group) {
             setGroupState(group, group.classList.contains('is-open'));
             const button = group.querySelector('[data-sidebar-group]');
             if (!button) return;
             button.addEventListener('click', function () {
                 const targetUrl = button.dataset.sidebarTarget || '';
-                sidebarGroups.forEach(function (item) {
-                    setGroupState(item, item === group);
-                });
+                const currentlyOpen = group.classList.contains('is-open');
+                if (mobileSidebarMedia.matches) {
+                    openSingleGroup(group, !currentlyOpen);
+                    return;
+                }
+                openSingleGroup(group, true);
                 if (!targetUrl) {
                     return;
                 }
@@ -692,6 +732,18 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
                     }
                 } catch (error) {
                     window.location.assign(targetUrl);
+                }
+            });
+        });
+
+        document.querySelectorAll('[data-sidebar-link]').forEach(function (link) {
+            link.addEventListener('click', function () {
+                const parentGroup = link.closest('.sidebar-group[data-group]');
+                if (parentGroup) {
+                    writeStoredOpenGroup(parentGroup.dataset.group || '');
+                }
+                if (mobileSidebarMedia.matches) {
+                    closeSidebar();
                 }
             });
         });

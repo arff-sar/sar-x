@@ -1,7 +1,7 @@
 import json
 from functools import wraps
 
-from flask import abort, current_app, has_request_context, request, session, url_for
+from flask import abort, current_app, has_app_context, has_request_context, request, session, url_for
 from flask_login import current_user
 from extensions import column_exists, table_exists
 
@@ -613,6 +613,19 @@ def _normalize_user_identifier(raw_value):
     return str(raw_value or "").strip().lower()
 
 
+def _role_switch_allow_list():
+    configured = ROLE_SWITCH_ALLOWED_EMAIL
+    if has_app_context():
+        configured = current_app.config.get("ROLE_SWITCH_ALLOWED_USERS", ROLE_SWITCH_ALLOWED_EMAIL)
+    if isinstance(configured, (list, tuple, set)):
+        raw_items = configured
+    else:
+        raw_items = str(configured or "").split(",")
+    normalized = {_normalize_user_identifier(item) for item in raw_items}
+    normalized.discard("")
+    return normalized
+
+
 def _role_exists_in_db(role_key):
     if not role_key or not table_exists("role"):
         return False
@@ -671,7 +684,12 @@ def can_use_role_switch(user=None):
     user = user or current_user
     if not getattr(user, "is_authenticated", False):
         return False
-    return _normalize_user_identifier(getattr(user, "kullanici_adi", "")) == ROLE_SWITCH_ALLOWED_EMAIL
+    role_key = _normalize_role_key(getattr(user, "rol", ""))
+    canonical_role = _canonical_role(role_key)
+    if canonical_role in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
+        return True
+    identifier = _normalize_user_identifier(getattr(user, "kullanici_adi", ""))
+    return identifier in _role_switch_allow_list()
 
 
 def get_session_role_override(user=None):

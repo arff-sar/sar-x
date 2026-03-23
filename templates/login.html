@@ -774,8 +774,8 @@
             .captcha-refresh,
             .captcha-input-shell { min-height: 42px; height: 42px; }
             .captcha-refresh { width: 42px; min-width: 42px; }
-            .captcha-input-shell { padding: 0 10px; }
-            .captcha-input { font-size: 14px !important; letter-spacing: .12em; }
+            .captcha-input-shell { padding: 0 10px; width: 100%; min-width: 0; overflow: hidden; }
+            .captcha-input { font-size: 16px !important; letter-spacing: .08em; line-height: 42px; }
             .account-actions-row { gap: 8px; }
             .remember-option { padding: 8px 10px; min-height: 44px; }
             .forgot-password-link { min-height: 44px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface2); padding: 0 12px; }
@@ -785,12 +785,14 @@
             .login-footer { padding: 12px; }
         }
 
-        @media (max-width: 400px) {
+        @media (max-width: 460px) {
             .captcha-box { grid-template-columns: 1fr; }
             .captcha-canvas-container,
             .captcha-refresh,
             .captcha-input-shell { grid-column: auto; }
             .captcha-refresh { width: 100%; min-width: 0; }
+            .captcha-input-shell { min-height: 44px; height: 44px; }
+            .captcha-input { font-size: 16px !important; letter-spacing: .06em; }
         }
 
         @media (max-height: 860px) {

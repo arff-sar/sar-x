@@ -54,6 +54,7 @@ class BaseConfig:
     PASSWORD_RESET_BASE_URL = os.getenv("PASSWORD_RESET_BASE_URL") or PUBLIC_BASE_URL
     CRITICAL_POST_RATE_LIMIT = os.getenv("CRITICAL_POST_RATE_LIMIT", "20 per minute")
     HOMEPAGE_EDITOR_CAN_PUBLISH = _bool_env("HOMEPAGE_EDITOR_CAN_PUBLISH", True)
+    ROLE_SWITCH_ALLOWED_USERS = os.getenv("ROLE_SWITCH_ALLOWED_USERS", os.getenv("ROLE_SWITCH_ALLOWED_EMAIL", "mehmetcinocevi@gmail.com"))
 
     # Upload/file security
     ALLOWED_UPLOAD_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "gif", "webp", "doc", "docx", "xls", "xlsx"}

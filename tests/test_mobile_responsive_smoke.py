@@ -16,6 +16,8 @@ def test_login_page_contains_mobile_friendly_captcha_and_actions_rules(client):
     assert response.status_code == 200
     assert ".captcha-box { grid-template-columns: minmax(0, 1fr) 42px 124px; gap: 6px; }" in html
     assert ".captcha-input-shell { grid-column: 3; }" in html
+    assert "@media (max-width: 460px)" in html
+    assert ".captcha-input { font-size: 16px !important; letter-spacing: .06em; }" in html
     assert ".account-actions-row { gap: 8px; }" in html
     assert ".forgot-password-link { min-height: 44px; border-radius: 12px;" in html
 
@@ -35,6 +37,8 @@ def test_dashboard_page_contains_mobile_compaction_rules(client, app):
     assert response.status_code == 200
     assert 'class="dashboard-actions"' in html
     assert 'class="dashboard-sections"' in html
+    assert "sarx.sidebar.open-group" in html
+    assert "if (mobileSidebarMedia.matches)" in html
     assert ".quick-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));" in html
     assert "@media (max-width: 420px)" in html
 
