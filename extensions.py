@@ -1,7 +1,7 @@
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, current_user
 from flask import current_app, request, jsonify
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import MetaData, Table, create_engine, inspect
 from sqlalchemy.pool import NullPool
 
 # --- GÜVENLİK VE YARDIMCI KÜTÜPHANELER ---
@@ -121,6 +121,11 @@ def column_exists(table_name, column_name):
         return False
 
 
+def _runtime_table(table_name):
+    metadata = MetaData()
+    return Table(table_name, metadata, autoload_with=db.engine)
+
+
 def log_kaydet(
     tip,
     detay,
@@ -132,8 +137,6 @@ def log_kaydet(
     **extra_fields,
 ):
     """Sistemdeki işlemleri IP ve Cihaz bilgisiyle Kara Kutuya kaydeder."""
-    from models import IslemLog
-
     if not table_exists("islem_log"):
         return
     
@@ -181,11 +184,21 @@ def log_kaydet(
     if column_exists("islem_log", "user_agent") and extra_fields.get("user_agent"):
         payload["user_agent"] = extra_fields.get("user_agent")
     try:
+        runtime_table = _runtime_table("islem_log")
+        runtime_columns = {column.name for column in runtime_table.columns}
+        safe_payload = {key: value for key, value in payload.items() if key in runtime_columns}
+
         if commit:
-            db.session.execute(IslemLog.__table__.insert().values(**payload))
+            db.session.execute(runtime_table.insert().values(**safe_payload))
             db.session.commit()
         else:
-            db.session.execute(IslemLog.__table__.insert().values(**payload))
+            savepoint = db.session.begin_nested()
+            try:
+                db.session.execute(runtime_table.insert().values(**safe_payload))
+                savepoint.commit()
+            except Exception:
+                savepoint.rollback()
+                raise
     except Exception:
         if commit:
             db.session.rollback()

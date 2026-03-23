@@ -58,6 +58,14 @@ def test_fresh_database_can_upgrade_with_migrations(app, monkeypatch):
     assert "login_visual_challenge" in tables
 
     with sqlite3.connect(db_path) as connection:
+        islem_log_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(islem_log)").fetchall()
+        }
+    assert "resolved" in islem_log_columns
+    assert "resolution_note" in islem_log_columns
+
+    with sqlite3.connect(db_path) as connection:
         site_settings_count = connection.execute("SELECT COUNT(*) FROM site_ayarlari").fetchone()[0]
     assert site_settings_count >= 1
 
