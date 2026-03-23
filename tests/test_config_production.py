@@ -29,3 +29,16 @@ def test_production_scheduler_disabled_by_default(monkeypatch):
 
     app = create_app("production")
     assert app.config["ENABLE_SCHEDULER"] is False
+
+
+def test_production_logs_clear_warning_when_redis_is_missing(monkeypatch, caplog):
+    monkeypatch.setenv("SECRET_KEY", "x" * 48)
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+    monkeypatch.setenv("ALLOW_SQLITE_IN_PRODUCTION", "1")
+    monkeypatch.delenv("REDIS_URL", raising=False)
+
+    caplog.set_level("WARNING")
+    create_app("production")
+
+    assert "REDIS_URL tanımlı değil" in caplog.text
+    assert "memory:// fallback" in caplog.text

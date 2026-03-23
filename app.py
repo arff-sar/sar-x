@@ -356,7 +356,7 @@ def create_app(config_name=None):
     if rate_limit_storage.startswith("memory://"):
         if selected_env == "production":
             app.logger.warning(
-                "Production ortamında memory rate-limit storage kullanılıyor. REDIS_URL tanımlanması zorunlu olmalı."
+                "Production ortamında REDIS_URL tanımlı değil; rate-limit storage memory:// fallback ile çalışıyor. Çoklu instance ortamında brute-force ve oran sınırlama koruması zayıflayabilir."
             )
         elif selected_env != "testing":
             app.logger.warning(
