@@ -16,19 +16,41 @@ branch_labels = None
 depends_on = None
 
 
-def upgrade():
-    with op.batch_alter_table("assignment_record", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("delivered_by_name", sa.String(length=160), nullable=True))
+def _inspector():
+    return sa.inspect(op.get_bind())
 
-    with op.batch_alter_table("tatbikat_belgesi", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("tatbikat_tarihi", sa.Date(), nullable=True))
-        batch_op.create_index(batch_op.f("ix_tatbikat_belgesi_tatbikat_tarihi"), ["tatbikat_tarihi"], unique=False)
+
+def _has_table(table_name):
+    return _inspector().has_table(table_name)
+
+
+def _has_column(table_name, column_name):
+    if not _has_table(table_name):
+        return False
+    return column_name in {column["name"] for column in _inspector().get_columns(table_name)}
+
+
+def _has_index(table_name, index_name):
+    if not _has_table(table_name):
+        return False
+    return index_name in {index["name"] for index in _inspector().get_indexes(table_name)}
+
+
+def upgrade():
+    if not _has_column("assignment_record", "delivered_by_name"):
+        op.add_column("assignment_record", sa.Column("delivered_by_name", sa.String(length=160), nullable=True))
+
+    if not _has_column("tatbikat_belgesi", "tatbikat_tarihi"):
+        op.add_column("tatbikat_belgesi", sa.Column("tatbikat_tarihi", sa.Date(), nullable=True))
+    if not _has_index("tatbikat_belgesi", "ix_tatbikat_belgesi_tatbikat_tarihi"):
+        op.create_index("ix_tatbikat_belgesi_tatbikat_tarihi", "tatbikat_belgesi", ["tatbikat_tarihi"], unique=False)
 
 
 def downgrade():
-    with op.batch_alter_table("tatbikat_belgesi", schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f("ix_tatbikat_belgesi_tatbikat_tarihi"))
-        batch_op.drop_column("tatbikat_tarihi")
+    if _has_index("tatbikat_belgesi", "ix_tatbikat_belgesi_tatbikat_tarihi"):
+        op.drop_index("ix_tatbikat_belgesi_tatbikat_tarihi", table_name="tatbikat_belgesi")
+    if _has_column("tatbikat_belgesi", "tatbikat_tarihi"):
+        op.drop_column("tatbikat_belgesi", "tatbikat_tarihi")
 
-    with op.batch_alter_table("assignment_record", schema=None) as batch_op:
-        batch_op.drop_column("delivered_by_name")
+    if _has_column("assignment_record", "delivered_by_name"):
+        op.drop_column("assignment_record", "delivered_by_name")

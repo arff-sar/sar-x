@@ -16,51 +16,88 @@ branch_labels = None
 depends_on = None
 
 
+def _inspector():
+    return sa.inspect(op.get_bind())
+
+
+def _has_column(table_name, column_name):
+    if not _inspector().has_table(table_name):
+        return False
+    return column_name in {column["name"] for column in _inspector().get_columns(table_name)}
+
+
+def _has_index(table_name, index_name):
+    if not _inspector().has_table(table_name):
+        return False
+    return index_name in {index["name"] for index in _inspector().get_indexes(table_name)}
+
+
 def upgrade():
-    with op.batch_alter_table("islem_log") as batch_op:
-        batch_op.add_column(sa.Column("error_code", sa.String(length=32), nullable=True))
-        batch_op.add_column(sa.Column("title", sa.String(length=180), nullable=True))
-        batch_op.add_column(sa.Column("user_message", sa.String(length=255), nullable=True))
-        batch_op.add_column(sa.Column("owner_message", sa.Text(), nullable=True))
-        batch_op.add_column(sa.Column("module", sa.String(length=24), nullable=True))
-        batch_op.add_column(sa.Column("severity", sa.String(length=20), nullable=True))
-        batch_op.add_column(sa.Column("exception_type", sa.String(length=120), nullable=True))
-        batch_op.add_column(sa.Column("exception_message", sa.Text(), nullable=True))
-        batch_op.add_column(sa.Column("traceback_summary", sa.Text(), nullable=True))
-        batch_op.add_column(sa.Column("route", sa.String(length=255), nullable=True))
-        batch_op.add_column(sa.Column("method", sa.String(length=12), nullable=True))
-        batch_op.add_column(sa.Column("request_id", sa.String(length=64), nullable=True))
-        batch_op.add_column(sa.Column("user_email", sa.String(length=150), nullable=True))
-        batch_op.add_column(sa.Column("resolved", sa.Boolean(), nullable=False, server_default=sa.false()))
-        batch_op.add_column(sa.Column("resolution_note", sa.Text(), nullable=True))
-        batch_op.add_column(sa.Column("ip_address", sa.String(length=45), nullable=True))
-        batch_op.create_index("ix_islem_log_error_code", ["error_code"], unique=False)
-        batch_op.create_index("ix_islem_log_module", ["module"], unique=False)
-        batch_op.create_index("ix_islem_log_request_id", ["request_id"], unique=False)
-        batch_op.create_index("ix_islem_log_resolved", ["resolved"], unique=False)
-        batch_op.create_index("ix_islem_log_severity", ["severity"], unique=False)
+    columns_to_add = [
+        sa.Column("error_code", sa.String(length=32), nullable=True),
+        sa.Column("title", sa.String(length=180), nullable=True),
+        sa.Column("user_message", sa.String(length=255), nullable=True),
+        sa.Column("owner_message", sa.Text(), nullable=True),
+        sa.Column("module", sa.String(length=24), nullable=True),
+        sa.Column("severity", sa.String(length=20), nullable=True),
+        sa.Column("exception_type", sa.String(length=120), nullable=True),
+        sa.Column("exception_message", sa.Text(), nullable=True),
+        sa.Column("traceback_summary", sa.Text(), nullable=True),
+        sa.Column("route", sa.String(length=255), nullable=True),
+        sa.Column("method", sa.String(length=12), nullable=True),
+        sa.Column("request_id", sa.String(length=64), nullable=True),
+        sa.Column("user_email", sa.String(length=150), nullable=True),
+        sa.Column("resolved", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column("resolution_note", sa.Text(), nullable=True),
+        sa.Column("ip_address", sa.String(length=45), nullable=True),
+    ]
+
+    for column in columns_to_add:
+        if not _has_column("islem_log", column.name):
+            op.add_column("islem_log", column)
+
+    indexes_to_add = [
+        ("ix_islem_log_error_code", ["error_code"]),
+        ("ix_islem_log_module", ["module"]),
+        ("ix_islem_log_request_id", ["request_id"]),
+        ("ix_islem_log_resolved", ["resolved"]),
+        ("ix_islem_log_severity", ["severity"]),
+    ]
+    for index_name, columns in indexes_to_add:
+        if not _has_index("islem_log", index_name):
+            op.create_index(index_name, "islem_log", columns, unique=False)
 
 
 def downgrade():
-    with op.batch_alter_table("islem_log") as batch_op:
-        batch_op.drop_index("ix_islem_log_severity")
-        batch_op.drop_index("ix_islem_log_resolved")
-        batch_op.drop_index("ix_islem_log_request_id")
-        batch_op.drop_index("ix_islem_log_module")
-        batch_op.drop_index("ix_islem_log_error_code")
-        batch_op.drop_column("ip_address")
-        batch_op.drop_column("resolution_note")
-        batch_op.drop_column("resolved")
-        batch_op.drop_column("user_email")
-        batch_op.drop_column("request_id")
-        batch_op.drop_column("method")
-        batch_op.drop_column("route")
-        batch_op.drop_column("traceback_summary")
-        batch_op.drop_column("exception_message")
-        batch_op.drop_column("exception_type")
-        batch_op.drop_column("severity")
-        batch_op.drop_column("module")
-        batch_op.drop_column("owner_message")
-        batch_op.drop_column("user_message")
-        batch_op.drop_column("title")
-        batch_op.drop_column("error_code")
+    indexes_to_drop = [
+        "ix_islem_log_severity",
+        "ix_islem_log_resolved",
+        "ix_islem_log_request_id",
+        "ix_islem_log_module",
+        "ix_islem_log_error_code",
+    ]
+    for index_name in indexes_to_drop:
+        if _has_index("islem_log", index_name):
+            op.drop_index(index_name, table_name="islem_log")
+
+    columns_to_drop = [
+        "ip_address",
+        "resolution_note",
+        "resolved",
+        "user_email",
+        "request_id",
+        "method",
+        "route",
+        "traceback_summary",
+        "exception_message",
+        "exception_type",
+        "severity",
+        "module",
+        "owner_message",
+        "user_message",
+        "title",
+        "error_code",
+    ]
+    for column_name in columns_to_drop:
+        if _has_column("islem_log", column_name):
+            op.drop_column("islem_log", column_name)

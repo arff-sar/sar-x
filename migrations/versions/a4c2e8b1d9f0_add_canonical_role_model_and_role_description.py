@@ -96,10 +96,10 @@ def _role_table():
 
 def _core_role_insert_statement(role_table):
     return sa.insert(role_table).values(
-        key=sa.bindparam("key"),
-        label=sa.bindparam("label"),
-        description=sa.bindparam("description"),
-        scope=sa.bindparam("scope"),
+        key=sa.bindparam("role_key"),
+        label=sa.bindparam("role_label"),
+        description=sa.bindparam("role_description"),
+        scope=sa.bindparam("role_scope"),
         is_system=sa.true(),
         is_active=sa.true(),
         created_at=sa.func.current_timestamp(),
@@ -110,11 +110,11 @@ def _core_role_insert_statement(role_table):
 def _core_role_update_statement(role_table):
     return (
         sa.update(role_table)
-        .where(role_table.c.key == sa.bindparam("key"))
+        .where(role_table.c.key == sa.bindparam("lookup_key"))
         .values(
-            label=sa.bindparam("label"),
-            scope=sa.bindparam("scope"),
-            description=sa.bindparam("description"),
+            label=sa.bindparam("role_label"),
+            scope=sa.bindparam("role_scope"),
+            description=sa.bindparam("role_description"),
             is_system=sa.true(),
             is_active=sa.true(),
         )
@@ -124,7 +124,7 @@ def _core_role_update_statement(role_table):
 def _legacy_role_deactivate_statement(role_table):
     return (
         sa.update(role_table)
-        .where(role_table.c.key == sa.bindparam("legacy_key"))
+        .where(role_table.c.key == sa.bindparam("legacy_lookup_key"))
         .values(
             is_system=sa.true(),
             is_active=sa.false(),
@@ -148,34 +148,34 @@ def upgrade():
 
     for key, label, scope, description in CORE_ROLES:
         role_id = bind.execute(
-            sa.select(role_table.c.id).where(role_table.c.key == sa.bindparam("key")),
-            {"key": key},
+            sa.select(role_table.c.id).where(role_table.c.key == sa.bindparam("lookup_key")),
+            {"lookup_key": key},
         ).scalar()
         if role_id:
             bind.execute(
                 _core_role_update_statement(role_table),
                 {
-                    "key": key,
-                    "label": label,
-                    "scope": scope,
-                    "description": description,
+                    "lookup_key": key,
+                    "role_label": label,
+                    "role_scope": scope,
+                    "role_description": description,
                 },
             )
         else:
             bind.execute(
                 _core_role_insert_statement(role_table),
                 {
-                    "key": key,
-                    "label": label,
-                    "scope": scope,
-                    "description": description,
+                    "role_key": key,
+                    "role_label": label,
+                    "role_scope": scope,
+                    "role_description": description,
                 },
             )
 
     for key in LEGACY_KEYS:
         bind.execute(
             _legacy_role_deactivate_statement(role_table),
-            {"legacy_key": key},
+            {"legacy_lookup_key": key},
         )
 
 
