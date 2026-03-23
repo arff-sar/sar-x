@@ -1,9 +1,14 @@
 import random
+import json
+import re
+from html import unescape
+from pathlib import Path
 from datetime import timedelta
 
 from flask import current_app
+from sqlalchemy import false
 
-from decorators import ROLE_ADMIN, ROLE_AIRPORT_MANAGER, ROLE_EDITOR, ROLE_MAINTENANCE, ROLE_OWNER, ROLE_PERSONNEL, ROLE_READONLY, ROLE_WAREHOUSE
+from decorators import ROLE_ADMIN, ROLE_AIRPORT_MANAGER, ROLE_EDITOR, ROLE_MAINTENANCE, ROLE_MANAGER, ROLE_OWNER, ROLE_PERSONNEL, ROLE_READONLY, ROLE_WAREHOUSE
 from extensions import db, log_kaydet, table_exists
 from models import (
     CalibrationRecord,
@@ -22,6 +27,7 @@ from models import (
     MaintenanceTriggerRule,
     Malzeme,
     MeterDefinition,
+    SiteAyarlari,
     SparePart,
     SparePartStock,
     Supplier,
@@ -31,20 +37,63 @@ from models import (
 
 DEMO_SEED_TAG = "demo_seed"
 DEMO_PASSWORD = "Demo.SARx.2026!"
+PLATFORM_DEMO_STATE_KEY = "platform_demo_state"
 AIRPORTS = [
     ("Erzurum Havalimanı", "ERZ"),
-    ("Trabzon Havalimanı", "TZX"),
-    ("Kars Havalimanı", "KSY"),
+    ("Balıkesir Koca Seyit Havalimanı", "EDO"),
+    ("Kocaeli Cengiz Topel Havalimanı", "KCO"),
 ]
-ROLE_DISTRIBUTION = [
-    ROLE_OWNER,
-    ROLE_ADMIN, ROLE_ADMIN,
-    ROLE_EDITOR, ROLE_EDITOR, ROLE_EDITOR,
-    ROLE_AIRPORT_MANAGER, ROLE_AIRPORT_MANAGER, ROLE_AIRPORT_MANAGER, ROLE_AIRPORT_MANAGER, ROLE_AIRPORT_MANAGER, ROLE_AIRPORT_MANAGER,
-    ROLE_MAINTENANCE, ROLE_MAINTENANCE, ROLE_MAINTENANCE, ROLE_MAINTENANCE, ROLE_MAINTENANCE, ROLE_MAINTENANCE,
-    ROLE_WAREHOUSE, ROLE_WAREHOUSE, ROLE_WAREHOUSE, ROLE_WAREHOUSE, ROLE_WAREHOUSE, ROLE_WAREHOUSE,
-    ROLE_PERSONNEL, ROLE_PERSONNEL, ROLE_PERSONNEL, ROLE_PERSONNEL, ROLE_PERSONNEL, ROLE_PERSONNEL, ROLE_PERSONNEL, ROLE_PERSONNEL, ROLE_PERSONNEL, ROLE_PERSONNEL,
-    ROLE_READONLY, ROLE_READONLY, ROLE_READONLY, ROLE_READONLY, ROLE_READONLY, ROLE_READONLY,
+AIRPORT_PERSONNEL_COUNT = 20
+USAR_HTML_CANDIDATES = [
+    Path("/mnt/data/usar_envanter_tablo_html.html"),
+    Path("/Users/mehmetcinocevi/Downloads/usar_envanter_tablo_html.html"),
+]
+USAR_FALLBACK_ROWS = [
+    {
+        "category": "Kentsel Arama/Kurtarma",
+        "name": "Gaz Ölçüm Cihazı",
+        "brand": "Dräger",
+        "model": "X-am 2500",
+        "quantity": 1,
+        "function": "Çoklu gaz tespiti ve kapalı alan atmosfer güvenliği",
+        "manual_url": "https://www.draeger.com/Content/Documents/Products/x-am-2500-ifu-9033366-en.pdf",
+    },
+    {
+        "category": "Kentsel Arama/Kurtarma",
+        "name": "Radyasyon Ölçüm Cihazı",
+        "brand": "TENMAK",
+        "model": "NEB 250 D1",
+        "quantity": 1,
+        "function": "Radyasyon ölçümü ile güvenli alan tayini",
+        "manual_url": "https://www.thermofisher.com/order/catalog/product/4250670#/4250670",
+    },
+    {
+        "category": "Kentsel Arama/Kurtarma",
+        "name": "GPS Cihazı",
+        "brand": "Garmin",
+        "model": "Montana 760i",
+        "quantity": 1,
+        "function": "Saha koordinasyonunda konum/navigasyon desteği",
+        "manual_url": "https://support.garmin.com/en-GB/?partNumber=010-02964-11&tab=manuals",
+    },
+    {
+        "category": "Kentsel Arama/Kurtarma",
+        "name": "Sismik Dinleme Seti",
+        "brand": "Scorpe",
+        "model": "ASB10",
+        "quantity": 1,
+        "function": "Enkaz altında ses/titreşim ile canlı tespiti",
+        "manual_url": "https://scorpe.net/download/",
+    },
+    {
+        "category": "Kentsel Arama/Kurtarma",
+        "name": "Görüntüleme Cihazı",
+        "brand": "Scorpe",
+        "model": "BVA7",
+        "quantity": 1,
+        "function": "Dar boşluklarda fiber optik görüntüleme",
+        "manual_url": "https://scorpe.net/app/uploads/2025/03/EN-Manuel-Vibrascope%C2%AE-BVA7.pdf",
+    },
 ]
 
 
@@ -110,6 +159,186 @@ def format_demo_summary(summary):
     )
 
 
+def _load_site_meta(ayarlar):
+    if not ayarlar or not ayarlar.iletisim_notu:
+        return {}
+    try:
+        parsed = json.loads(ayarlar.iletisim_notu)
+        return parsed if isinstance(parsed, dict) else {}
+    except (TypeError, ValueError):
+        legacy = str(ayarlar.iletisim_notu).strip()
+        return {"site_notu": legacy} if legacy else {}
+
+
+def _save_site_meta(ayarlar, meta):
+    ayarlar.iletisim_notu = json.dumps(meta, ensure_ascii=False)
+
+
+def _ensure_site_settings():
+    ayarlar = SiteAyarlari.query.first()
+    if ayarlar:
+        return ayarlar
+    ayarlar = SiteAyarlari()
+    db.session.add(ayarlar)
+    db.session.flush()
+    return ayarlar
+
+
+def _set_platform_demo_state(active, action, summary=None):
+    if not table_exists("site_ayarlari"):
+        return
+    ayarlar = _ensure_site_settings()
+    meta = _load_site_meta(ayarlar)
+    state = {
+        "active": bool(active),
+        "action": action,
+        "updated_at": get_tr_now().strftime("%d.%m.%Y %H:%M"),
+        "summary": summary or {},
+    }
+    if state["active"]:
+        state["batch_id"] = f"demo-{get_tr_now().strftime('%Y%m%d%H%M%S')}"
+    meta[PLATFORM_DEMO_STATE_KEY] = state
+    _save_site_meta(ayarlar, meta)
+
+
+def get_platform_demo_status():
+    if not table_exists("site_ayarlari") or not table_exists("demo_seed_record"):
+        return {"active": False, "summary": _summary(), "updated_at": "-", "action": "unavailable"}
+    ayarlar = SiteAyarlari.query.first()
+    meta = _load_site_meta(ayarlar)
+    state = meta.get(PLATFORM_DEMO_STATE_KEY, {}) if isinstance(meta.get(PLATFORM_DEMO_STATE_KEY), dict) else {}
+    return {
+        "active": bool(state.get("active")),
+        "summary": _summary(),
+        "updated_at": state.get("updated_at", "-"),
+        "action": state.get("action", "idle"),
+    }
+
+
+def platform_demo_is_active():
+    status = get_platform_demo_status()
+    return bool(status.get("active"))
+
+
+def demo_record_ids(model_name):
+    if not table_exists("demo_seed_record"):
+        return set()
+    return {
+        int(row.record_id)
+        for row in DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name=model_name).all()
+        if row.record_id is not None
+    }
+
+
+def apply_platform_demo_scope(query, model_name, id_column):
+    if not platform_demo_is_active():
+        return query
+    ids = demo_record_ids(model_name)
+    if not ids:
+        return query.filter(false())
+    return query.filter(id_column.in_(ids))
+
+
+def _strip_html(value):
+    text = re.sub(r"<[^>]+>", " ", str(value or ""))
+    text = unescape(text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _parse_quantity(raw_quantity):
+    match = re.search(r"(\d+)", str(raw_quantity or ""))
+    if not match:
+        return 1
+    try:
+        return max(int(match.group(1)), 1)
+    except ValueError:
+        return 1
+
+
+def _load_usar_rows():
+    for candidate in USAR_HTML_CANDIDATES:
+        if not candidate.exists():
+            continue
+        try:
+            html = candidate.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+
+        row_blocks = re.findall(r"<tr[^>]*>(.*?)</tr>", html, flags=re.IGNORECASE | re.DOTALL)
+        parsed_rows = []
+        for row_html in row_blocks:
+            cells = re.findall(r"<td[^>]*>(.*?)</td>", row_html, flags=re.IGNORECASE | re.DOTALL)
+            if len(cells) < 7:
+                continue
+            manual_match = re.search(
+                r'href=["\']([^"\']+)["\']',
+                row_html,
+                flags=re.IGNORECASE,
+            )
+            parsed_rows.append(
+                {
+                    "category": _strip_html(cells[1]),
+                    "name": _strip_html(cells[2]),
+                    "brand": _strip_html(cells[3]),
+                    "model": _strip_html(cells[4]),
+                    "quantity": _parse_quantity(_strip_html(cells[5])),
+                    "function": _strip_html(cells[6]),
+                    "manual_url": (manual_match.group(1).strip() if manual_match else ""),
+                }
+            )
+        if parsed_rows:
+            return parsed_rows
+    return list(USAR_FALLBACK_ROWS)
+
+
+def _criticality_from_name(name):
+    normalized = str(name or "").lower()
+    critical_keywords = ["gaz", "solunum", "radyasyon", "termal", "sismik", "kamera", "jenerator"]
+    return "kritik" if any(keyword in normalized for keyword in critical_keywords) else "normal"
+
+
+def _maintenance_period_from_name(name):
+    normalized = str(name or "").lower()
+    if any(keyword in normalized for keyword in ["gaz", "solunum", "radyasyon"]):
+        return 30
+    if any(keyword in normalized for keyword in ["jenerator", "beton", "testere", "kesme"]):
+        return 60
+    return 90
+
+
+def _seed_homepage_demo_if_available():
+    if not demo_tools_enabled():
+        return None
+    if not table_exists("home_slider") or not table_exists("home_section") or not table_exists("announcement"):
+        return None
+    try:
+        from homepage_demo import seed_homepage_demo_data
+
+        return seed_homepage_demo_data()
+    except RuntimeError:
+        return None
+    except Exception:
+        db.session.rollback()
+        return None
+
+
+def _clear_homepage_demo_if_available():
+    if not demo_tools_enabled():
+        return None
+    if not table_exists("demo_seed_record"):
+        return None
+    try:
+        from homepage_demo import clear_homepage_demo_data
+
+        return clear_homepage_demo_data()
+    except RuntimeError:
+        return None
+    except Exception:
+        db.session.rollback()
+        return None
+
+
 def clear_demo_data():
     _guard_demo_tools()
     if not table_exists("demo_seed_record"):
@@ -147,16 +376,26 @@ def clear_demo_data():
                 db.session.delete(obj)
                 deleted += 1
     DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG).delete(synchronize_session=False)
+    _set_platform_demo_state(False, "cleared", summary={"deleted": deleted})
     db.session.commit()
-    return {"deleted": deleted}
+    homepage_result = _clear_homepage_demo_if_available() or {}
+    return {"deleted": deleted, "homepage_deleted": int(homepage_result.get("deleted") or 0)}
 
 
 def seed_demo_data(reset=False):
     _guard_demo_tools()
     if reset:
         clear_demo_data()
+        # Clear akışı kendi commit/rollback zincirini çalıştırıyor. SQLite test DB'de
+        # aynı scoped session'ın yeniden kullanılması disk I/O / readonly yan etkisi
+        # üretebildiği için temiz bir session ile devam ediyoruz.
+        db.session.remove()
     elif DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG).first():
-        return _summary()
+        summary = _summary()
+        _set_platform_demo_state(True, "reused", summary=summary)
+        db.session.commit()
+        _seed_homepage_demo_if_available()
+        return summary
 
     rng = random.Random(20260318)
     today = get_tr_now().date()
@@ -169,38 +408,81 @@ def seed_demo_data(reset=False):
         "Yilmaz", "Demir", "Kaya", "Sahin", "Aydin", "Arslan", "Cetin", "Koc", "Ozdemir", "Kaplan",
         "Aslan", "Kurt", "Polat", "Gunes", "Kilic", "Bulut", "Tas", "Kara", "Avci", "Eren",
     ]
-    equipment_specs = [
-        ("Hidrolik Kesici", "Kurtarma", 90, "kritik"),
-        ("Hidrolik Ayirici", "Kurtarma", 90, "kritik"),
-        ("Beton Delici", "Kurtarma", 180, "normal"),
-        ("Jenerator", "Enerji", 30, "kritik"),
-        ("Gaz Olcum Cihazi", "Olcum", 30, "kritik"),
-        ("Termal Kamera", "Gozlem", 90, "kritik"),
-        ("Halat Seti", "Kurtarma", 180, "normal"),
-        ("Sedye", "Tahliye", 180, "normal"),
-        ("El Feneri", "Aydinlatma", 90, "normal"),
-        ("Telsiz", "Haberlesme", 180, "kritik"),
-        ("Ilk Yardim Cantasi", "Saglik", 180, "normal"),
-        ("Koruyucu Kiyafet", "KKD", 180, "normal"),
-        ("Solunum Seti", "KKD", 90, "kritik"),
-        ("Yangin Sondurucu", "Yangin", 30, "kritik"),
-        ("Akulu Projektor", "Aydinlatma", 90, "normal"),
-        ("Arama Kamerasi", "Gozlem", 90, "kritik"),
-        ("El Aletleri Seti", "Kurtarma", 180, "normal"),
-        ("Batarya Sarj Unitesi", "Enerji", 90, "normal"),
-        ("Tripod Aydinlatma", "Aydinlatma", 180, "normal"),
-        ("Kesme Motoru", "Kurtarma", 90, "kritik"),
-        ("Kurtarma Testeresi", "Kurtarma", 90, "kritik"),
-        ("Su Tahliye Pompası", "Pompa", 90, "normal"),
-        ("Portatif Kompresor", "Enerji", 180, "normal"),
-        ("Duman Tahliye Fanı", "Yangin", 90, "kritik"),
-        ("Kask Lambasi", "KKD", 180, "normal"),
-        ("Kurtarma Yastigi", "Kurtarma", 180, "kritik"),
-        ("Bicakli Kurtarma Seti", "Kurtarma", 180, "normal"),
-        ("Navigasyon GPS", "Haberlesme", 180, "normal"),
-        ("Drone Gozlem Kiti", "Gozlem", 90, "kritik"),
-        ("Mobil Isitici", "Destek", 180, "normal"),
-    ]
+    usar_rows = _load_usar_rows()
+    equipment_specs = []
+    for row in usar_rows:
+        equipment_specs.append(
+            {
+                "name": row["name"],
+                "category": row["category"] or "Kentsel Arama/Kurtarma",
+                "period_days": _maintenance_period_from_name(row["name"]),
+                "criticality": _criticality_from_name(row["name"]),
+                "brand": row["brand"] or "USAR",
+                "model": row["model"] or "STD",
+                "description": row["function"] or f"{row['name']} demo ekipman kaydı",
+                "manual_url": row["manual_url"] or "",
+                "unit_count": max(int(row.get("quantity") or 1), 1),
+            }
+        )
+    equipment_specs.extend(
+        [
+            {
+                "name": "Hidrolik Kesici",
+                "category": "Kurtarma",
+                "period_days": 90,
+                "criticality": "kritik",
+                "brand": "Holmatro",
+                "model": "HCT-300",
+                "description": "Yüksek basınçlı kesici seti",
+                "manual_url": "",
+                "unit_count": 1,
+            },
+            {
+                "name": "Hidrolik Ayırıcı",
+                "category": "Kurtarma",
+                "period_days": 90,
+                "criticality": "kritik",
+                "brand": "Holmatro",
+                "model": "SP-5240",
+                "description": "Sıkışmış bölgelere erişim için ayırıcı set",
+                "manual_url": "",
+                "unit_count": 1,
+            },
+            {
+                "name": "Termal Kamera",
+                "category": "Gözlem",
+                "period_days": 90,
+                "criticality": "kritik",
+                "brand": "FLIR",
+                "model": "K55",
+                "description": "Isı izi tabanlı saha tarama kamerası",
+                "manual_url": "",
+                "unit_count": 1,
+            },
+            {
+                "name": "Portatif Jeneratör",
+                "category": "Enerji",
+                "period_days": 30,
+                "criticality": "kritik",
+                "brand": "AKSA",
+                "model": "AAP-8000",
+                "description": "Saha enerji beslemesi için jeneratör",
+                "manual_url": "",
+                "unit_count": 1,
+            },
+            {
+                "name": "Aydınlatma Kulesi",
+                "category": "Aydınlatma",
+                "period_days": 60,
+                "criticality": "normal",
+                "brand": "Will-Burt",
+                "model": "Solaris Pro",
+                "description": "Gece operasyonu saha aydınlatması",
+                "manual_url": "",
+                "unit_count": 1,
+            },
+        ]
+    )
     form_specs = [
         (
             "Jenerator Bakim Formu",
@@ -343,13 +625,18 @@ def seed_demo_data(reset=False):
         airports.append(airport)
 
     boxes_by_airport = {}
+    box_seed_rows = (usar_rows[:5] if usar_rows else USAR_FALLBACK_ROWS[:5]) or USAR_FALLBACK_ROWS[:5]
     for airport in airports:
-        box_codes = ["KUTU-01", "KUTU-02", "RAF-A1", "RAF-B2", "ARAC-1", "DEPO-01"]
         boxes = []
-        for code in box_codes:
+        for index, row in enumerate(box_seed_rows, start=1):
+            code = f"{airport.kodu}-USAR-{index:02d}"
+            function_excerpt = (row.get("function") or "").strip()[:72]
+            location = f"{airport.ad} / {row.get('name') or 'USAR'}"
+            if function_excerpt:
+                location = f"{location} / {function_excerpt}"
             box = Kutu(
-                kodu=f"{airport.kodu}-{code}",
-                konum=f"{airport.ad} / {code}",
+                kodu=code,
+                konum=location,
                 havalimani_id=airport.id,
             )
             db.session.add(box)
@@ -359,23 +646,54 @@ def seed_demo_data(reset=False):
         boxes_by_airport[airport.id] = boxes
 
     users = []
-    for index, role in enumerate(ROLE_DISTRIBUTION, start=1):
-        first_name = first_names[(index - 1) % len(first_names)]
-        last_name = last_names[(index * 3) % len(last_names)]
-        airport = None if role in {ROLE_OWNER, ROLE_ADMIN, ROLE_EDITOR, ROLE_READONLY} and index % 2 == 0 else airports[(index - 1) % len(airports)]
-        username = f"demo.user{index:02d}@sarx.local"
+    global_roles = [
+        (ROLE_OWNER, "sistem.sahibi@demo.sarx.local", "Demo Sistem Sahibi"),
+        (ROLE_ADMIN, "sistem.admin@demo.sarx.local", "Demo Sistem Yöneticisi"),
+    ]
+    for role, username, full_name in global_roles:
         user = Kullanici(
             kullanici_adi=username,
-            tam_ad=f"{first_name} {last_name}",
+            tam_ad=full_name,
             rol=role,
-            havalimani_id=airport.id if airport else None,
-            uzmanlik_alani=rng.choice(["Operasyon", "Bakim", "Lojistik", "Iletisim"]),
+            havalimani_id=None,
+            telefon_numarasi=f"+90 530 900 {rng.randint(10, 99)} {rng.randint(10, 99)}",
+            uzmanlik_alani=rng.choice(["Koordinasyon", "Operasyon", "Bakım", "Lojistik"]),
         )
         user.sifre_set(DEMO_PASSWORD)
         db.session.add(user)
         db.session.flush()
         _register_record(user, username)
         users.append(user)
+
+    airport_role_pattern = (
+        [ROLE_MANAGER]
+        + [ROLE_MAINTENANCE] * 4
+        + [ROLE_WAREHOUSE] * 2
+        + [ROLE_PERSONNEL] * 11
+        + [ROLE_EDITOR]
+        + [ROLE_READONLY]
+    )
+    for airport in airports:
+        for person_index in range(1, AIRPORT_PERSONNEL_COUNT + 1):
+            role = airport_role_pattern[(person_index - 1) % len(airport_role_pattern)]
+            name_seed = (airport.id * 100) + person_index
+            first_name = first_names[name_seed % len(first_names)]
+            last_name = last_names[(name_seed * 3) % len(last_names)]
+            username = f"demo.{airport.kodu.lower()}.{person_index:02d}@demo.sarx.local"
+            phone = f"+90 5{rng.randint(10, 99)} {rng.randint(100, 999)} {rng.randint(10, 99)} {rng.randint(10, 99)}"
+            user = Kullanici(
+                kullanici_adi=username,
+                tam_ad=f"{first_name} {last_name}",
+                rol=role,
+                havalimani_id=airport.id,
+                telefon_numarasi=phone,
+                uzmanlik_alani=rng.choice(["Operasyon", "Bakım", "Lojistik", "İletişim", "Arama Kurtarma"]),
+            )
+            user.sifre_set(DEMO_PASSWORD)
+            db.session.add(user)
+            db.session.flush()
+            _register_record(user, username)
+            users.append(user)
 
     forms = []
     for name, description, field_specs in form_specs:
@@ -421,14 +739,21 @@ def seed_demo_data(reset=False):
         return forms[3]
 
     templates = []
-    for index, (name, category, period_days, criticality) in enumerate(equipment_specs, start=1):
+    template_default_units = {}
+    for index, spec in enumerate(equipment_specs, start=1):
+        name = spec["name"]
+        category = spec["category"]
+        period_days = spec["period_days"]
+        criticality = spec["criticality"]
+        description = spec.get("description") or f"{name} saha operasyonlari icin demo kaydi"
+        manual_url = spec.get("manual_url") or ""
         template = EquipmentTemplate(
             name=name,
             category=category,
-            brand=rng.choice(["Holmatro", "Drager", "Flir", "Milwaukee", "Motorola", "Rosenbauer"]),
-            model_code=f"MDL-{index:03d}",
-            description=f"{name} saha operasyonlari icin demo kaydi",
-            technical_specs=f"{category} segmenti icin demo teknik ozellik seti",
+            brand=spec.get("brand") or rng.choice(["Holmatro", "Drager", "Flir", "Milwaukee", "Motorola", "Rosenbauer"]),
+            model_code=(spec.get("model") or f"MDL-{index:03d}")[:80],
+            description=description,
+            technical_specs=f"{category} segmenti icin demo teknik ozellik seti. Kilavuz: {manual_url}" if manual_url else f"{category} segmenti icin demo teknik ozellik seti",
             manufacturer=rng.choice(["ARFFTech", "RescuePro", "Opsline"]),
             maintenance_period_days=period_days,
             criticality_level=criticality,
@@ -439,6 +764,7 @@ def seed_demo_data(reset=False):
         db.session.flush()
         _register_record(template, name)
         templates.append(template)
+        template_default_units[template.id] = max(int(spec.get("unit_count") or 1), 1)
 
     suppliers = []
     for supplier_index in range(1, 6):
@@ -527,10 +853,13 @@ def seed_demo_data(reset=False):
     work_order_statuses = ["acik", "atandi", "islemde", "beklemede_parca", "tamamlandi"]
     work_order_types = ["preventive", "corrective", "inspection", "calibration", "emergency"]
     for airport in airports:
-        for asset_index in range(1, 19):
+        for asset_index in range(1, 25):
             template = templates[(asset_index + airport.id) % len(templates)]
             box = boxes_by_airport[airport.id][asset_index % len(boxes_by_airport[airport.id])]
             status = statuses[(asset_index + airport.id) % len(statuses)]
+            default_units = template_default_units.get(template.id, 1)
+            serial = f"{airport.kodu}-{template.id:03d}-{asset_index:03d}-{rng.randint(100, 999)}"
+            asset_tag = f"USAR-{airport.kodu}-{template.id:03d}-{asset_index:03d}"
             last_maintenance = today - timedelta(days=rng.randint(5, 160))
             next_maintenance = last_maintenance + timedelta(days=template.maintenance_period_days or 90)
             if asset_index % 6 == 0:
@@ -539,9 +868,9 @@ def seed_demo_data(reset=False):
                 next_maintenance = today + timedelta(days=rng.randint(1, 12))
             material = Malzeme(
                 ad=template.name,
-                seri_no=f"{airport.kodu}-SN-{asset_index:04d}",
+                seri_no=serial,
                 teknik_ozellikler=template.technical_specs,
-                stok_miktari=1,
+                stok_miktari=default_units,
                 durum={"aktif": "Aktif", "bakimda": "Bakımda", "arizali": "Arızalı", "pasif": "Pasif"}[status],
                 kritik_mi=template.criticality_level == "kritik",
                 son_bakim_tarihi=last_maintenance,
@@ -557,10 +886,10 @@ def seed_demo_data(reset=False):
                 equipment_template_id=template.id,
                 havalimani_id=airport.id,
                 legacy_material_id=material.id,
-                serial_no=material.seri_no,
+                serial_no=serial,
                 qr_code="pending",
-                asset_tag=f"{airport.kodu}-ASSET-{asset_index:04d}",
-                unit_count=1,
+                asset_tag=asset_tag,
+                unit_count=default_units,
                 depot_location=box.kodu,
                 status=status,
                 maintenance_state="gecikmis" if next_maintenance < today else "normal",
@@ -682,6 +1011,10 @@ def seed_demo_data(reset=False):
         _register_record(order, order.work_order_no)
 
     db.session.commit()
+    summary = _summary()
+    _set_platform_demo_state(True, "seeded", summary=summary)
+    db.session.commit()
+    _seed_homepage_demo_if_available()
     log_kaydet(
         "Demo Veri",
         "Demo seed verileri oluşturuldu.",
@@ -689,4 +1022,4 @@ def seed_demo_data(reset=False):
         target_model="DemoSeedRecord",
         outcome="success",
     )
-    return _summary()
+    return summary
