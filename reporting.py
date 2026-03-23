@@ -8,7 +8,6 @@ from models import (
     CalibrationSchedule,
     ConsumableItem,
     ConsumableStockMovement,
-    DemoSeedRecord,
     Havalimani,
     InventoryAsset,
     MaintenanceTriggerRule,
@@ -16,6 +15,7 @@ from models import (
     WorkOrder,
     get_tr_now,
 )
+from demo_data import apply_platform_demo_scope, demo_record_ids, platform_demo_is_active
 
 OPEN_WORK_ORDER_STATUSES = {"acik", "atandi", "islemde", "beklemede_parca", "beklemede_onay"}
 REPORT_DEFINITIONS = {
@@ -61,9 +61,13 @@ def parse_report_filters(args):
 
 def filter_options(user):
     if _can_view_all(user):
-        airports = Havalimani.query.filter_by(is_deleted=False).order_by(Havalimani.kodu.asc()).all()
+        airport_query = Havalimani.query.filter_by(is_deleted=False)
+        airport_query = apply_platform_demo_scope(airport_query, "Havalimani", Havalimani.id)
+        airports = airport_query.order_by(Havalimani.kodu.asc()).all()
     else:
-        airports = [user.havalimani] if getattr(user, "havalimani", None) else []
+        airport_query = Havalimani.query.filter_by(is_deleted=False, id=getattr(user, "havalimani_id", None))
+        airport_query = apply_platform_demo_scope(airport_query, "Havalimani", Havalimani.id)
+        airports = airport_query.order_by(Havalimani.kodu.asc()).all()
 
     user_map = {}
     for airport in airports:
@@ -590,8 +594,12 @@ def _calibration_rows(user, filters):
 
 def _visible_airports(user):
     if _can_view_all(user):
-        return Havalimani.query.filter_by(is_deleted=False).order_by(Havalimani.kodu.asc()).all()
-    return [user.havalimani] if getattr(user, "havalimani", None) else []
+        query = Havalimani.query.filter_by(is_deleted=False)
+        query = apply_platform_demo_scope(query, "Havalimani", Havalimani.id)
+        return query.order_by(Havalimani.kodu.asc()).all()
+    query = Havalimani.query.filter_by(is_deleted=False, id=getattr(user, "havalimani_id", None))
+    query = apply_platform_demo_scope(query, "Havalimani", Havalimani.id)
+    return query.order_by(Havalimani.kodu.asc()).all()
 
 
 def _can_view_all(user):
@@ -599,9 +607,13 @@ def _can_view_all(user):
 
 
 def _filter_demo_rows(rows, model_name, demo_scope):
-    if demo_scope == "all" or not table_exists("demo_seed_record"):
+    if not table_exists("demo_seed_record"):
         return rows
     demo_ids = _demo_ids(model_name)
+    if platform_demo_is_active():
+        return [row for row in rows if row.id in demo_ids]
+    if demo_scope == "all":
+        return rows
     if demo_scope == "exclude":
         return [row for row in rows if row.id not in demo_ids]
     if demo_scope == "only":
@@ -612,10 +624,7 @@ def _filter_demo_rows(rows, model_name, demo_scope):
 def _demo_ids(model_name):
     if not table_exists("demo_seed_record"):
         return set()
-    return {
-        row.record_id
-        for row in DemoSeedRecord.query.filter_by(model_name=model_name, seed_tag="demo_seed").all()
-    }
+    return demo_record_ids(model_name)
 
 
 def _is_demo(model_name, record_id):

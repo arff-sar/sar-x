@@ -1,6 +1,6 @@
 import json
 
-from flask import current_app, render_template, request, redirect, url_for, flash, abort
+from flask import current_app, render_template, request, redirect, url_for, flash, abort, session
 from flask_login import login_required, current_user
 
 from extensions import db, limiter, log_kaydet, guvenli_metin
@@ -13,7 +13,9 @@ from homepage_demo import (
 from models import Havalimani, Haber, Kullanici, NavMenu, SliderResim, SiteAyarlari
 from . import admin_bp
 from decorators import (
+    CANONICAL_ROLE_ADMIN,
     DEFAULT_ROLE_LABELS,
+    get_effective_role,
     get_manageable_role_options,
     get_permission_catalog,
     get_role_permissions,
@@ -60,6 +62,29 @@ def _resolve_role_labels(ayarlar):
             labels[role_key] = _clean_role_label(raw_labels.get(role_key), labels[role_key])
 
     return labels
+
+
+def _can_manage_demo_mode():
+    def _is_demo_manager(user):
+        if user is None:
+            return False
+        effective_role = get_effective_role(user)
+        legacy_role = str(getattr(user, "rol", "") or "").strip().lower()
+        return bool(
+            getattr(user, "is_sahip", False)
+            or effective_role == CANONICAL_ROLE_ADMIN
+            or legacy_role in {"admin", "sahip", "sistem_sorumlusu"}
+        )
+
+    if current_user.is_authenticated and _is_demo_manager(current_user):
+        return True
+
+    # Session üzerinde kullanıcı id varken Flask-Login bağlamı düşerse güvenli fallback.
+    try:
+        session_user_id = int(str(session.get("_user_id") or "").strip())
+    except (TypeError, ValueError):
+        return False
+    return _is_demo_manager(db.session.get(Kullanici, session_user_id))
 
 
 # --- HAVALİMANI YÖNETİMİ (SİTE AYARLARI İÇİNE TAŞINDI) ---
@@ -193,7 +218,7 @@ def yetki_isimlerini_guncelle():
 @permission_required('settings.manage')
 def site_yonetimi():
     """Site ayarları, organizasyon ve içerik yönetimi."""
-    if not current_user.is_sahip:
+    if not _can_manage_demo_mode():
         abort(403)
 
     ayarlar = SiteAyarlari.query.first()
@@ -235,9 +260,8 @@ def site_yonetimi():
 @admin_bp.route('/demo-veri/olustur', methods=['POST'])
 @login_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
-@permission_required('settings.manage')
 def demo_veri_olustur():
-    if not current_user.is_sahip:
+    if not _can_manage_demo_mode():
         abort(403)
     if not current_app.config.get("DEMO_TOOLS_ENABLED", False):
         abort(404)
@@ -256,9 +280,8 @@ def demo_veri_olustur():
 @admin_bp.route('/demo-veri/temizle', methods=['POST'])
 @login_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
-@permission_required('settings.manage')
 def demo_veri_temizle():
-    if not current_user.is_sahip:
+    if not _can_manage_demo_mode():
         abort(403)
     if not current_app.config.get("DEMO_TOOLS_ENABLED", False):
         abort(404)
@@ -277,9 +300,8 @@ def demo_veri_temizle():
 @admin_bp.route('/demo-veri/anasayfa/olustur', methods=['POST'])
 @login_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
-@permission_required('settings.manage')
 def anasayfa_demo_olustur():
-    if not current_user.is_sahip:
+    if not _can_manage_demo_mode():
         abort(403)
     if not current_app.config.get("DEMO_TOOLS_ENABLED", False):
         abort(404)
@@ -306,9 +328,8 @@ def anasayfa_demo_olustur():
 @admin_bp.route('/demo-veri/anasayfa/temizle', methods=['POST'])
 @login_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
-@permission_required('settings.manage')
 def anasayfa_demo_temizle():
-    if not current_user.is_sahip:
+    if not _can_manage_demo_mode():
         abort(403)
     if not current_app.config.get("DEMO_TOOLS_ENABLED", False):
         abort(404)

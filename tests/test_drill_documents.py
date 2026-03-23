@@ -239,6 +239,9 @@ def test_tatbikat_page_shows_airport_select_only_for_owner(client, app):
     assert 'select name="airport_id"' in owner_html
     assert 'type="hidden" name="airport_id"' in manager_html
     assert 'value="VAS - Sivas" readonly' in manager_html
+    assert 'class="form-group drill-filter-actions-shell"' in owner_html
+    assert '>İşlemler<' in owner_html
+    assert 'class="drill-filter-actions"' in owner_html
 
 
 def test_airport_manager_can_upload_zip_tatbikat_document(client, app, monkeypatch):

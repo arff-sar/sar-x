@@ -73,6 +73,7 @@ from decorators import (
 from google_drive_service import GoogleDriveError, get_drill_drive_service
 from reporting import build_dashboard_kpis
 from storage import get_storage_adapter
+from demo_data import apply_platform_demo_scope
 
 
 inventory_bp = Blueprint("inventory", __name__)
@@ -106,8 +107,12 @@ DRILL_ALLOWED_MIME_TYPES = (
 
 def havalimani_filtreli_sorgu(model_sinifi):
     if _can_view_all_operational_scope():
-        return model_sinifi.query.filter_by(is_deleted=False)
-    return model_sinifi.query.filter_by(havalimani_id=current_user.havalimani_id, is_deleted=False)
+        query = model_sinifi.query.filter_by(is_deleted=False)
+    else:
+        query = model_sinifi.query.filter_by(havalimani_id=current_user.havalimani_id, is_deleted=False)
+    if hasattr(model_sinifi, "id"):
+        query = apply_platform_demo_scope(query, model_sinifi.__name__, model_sinifi.id)
+    return query
 
 
 def _can_view_all_operational_scope():
@@ -116,33 +121,42 @@ def _can_view_all_operational_scope():
 
 def _visible_operational_airports():
     if _can_view_all_operational_scope():
-        return Havalimani.query.filter_by(is_deleted=False).order_by(Havalimani.kodu.asc()).all()
-    return Havalimani.query.filter_by(
-        is_deleted=False,
-        id=current_user.havalimani_id,
-    ).order_by(Havalimani.kodu.asc()).all()
+        query = Havalimani.query.filter_by(is_deleted=False)
+    else:
+        query = Havalimani.query.filter_by(
+            is_deleted=False,
+            id=current_user.havalimani_id,
+        )
+    query = apply_platform_demo_scope(query, "Havalimani", Havalimani.id)
+    return query.order_by(Havalimani.kodu.asc()).all()
 
 
 def _visible_personnel_query(airport_id=None):
     query = Kullanici.query.filter_by(is_deleted=False)
     if _can_view_all_operational_scope():
         if airport_id == "global":
-            return query.filter(Kullanici.havalimani_id.is_(None))
+            scoped = query.filter(Kullanici.havalimani_id.is_(None))
+            return apply_platform_demo_scope(scoped, "Kullanici", Kullanici.id)
         if airport_id:
-            return query.filter(Kullanici.havalimani_id == airport_id)
-        return query
+            scoped = query.filter(Kullanici.havalimani_id == airport_id)
+            return apply_platform_demo_scope(scoped, "Kullanici", Kullanici.id)
+        return apply_platform_demo_scope(query, "Kullanici", Kullanici.id)
     if current_user.havalimani_id is None:
-        return query.filter(Kullanici.havalimani_id.is_(None))
-    return query.filter(Kullanici.havalimani_id == current_user.havalimani_id)
+        scoped = query.filter(Kullanici.havalimani_id.is_(None))
+        return apply_platform_demo_scope(scoped, "Kullanici", Kullanici.id)
+    scoped = query.filter(Kullanici.havalimani_id == current_user.havalimani_id)
+    return apply_platform_demo_scope(scoped, "Kullanici", Kullanici.id)
 
 
 def _visible_material_query(airport_id=None):
     query = Malzeme.query.filter_by(is_deleted=False)
     if _can_view_all_operational_scope():
         if airport_id:
-            return query.filter(Malzeme.havalimani_id == airport_id)
-        return query
-    return query.filter(Malzeme.havalimani_id == current_user.havalimani_id)
+            scoped = query.filter(Malzeme.havalimani_id == airport_id)
+            return apply_platform_demo_scope(scoped, "Malzeme", Malzeme.id)
+        return apply_platform_demo_scope(query, "Malzeme", Malzeme.id)
+    scoped = query.filter(Malzeme.havalimani_id == current_user.havalimani_id)
+    return apply_platform_demo_scope(scoped, "Malzeme", Malzeme.id)
 
 
 def _can_issue_assignments(actor=None):
@@ -174,10 +188,12 @@ def _ppe_scope():
 def _drill_scope():
     query = TatbikatBelgesi.query.filter_by(is_deleted=False)
     if get_effective_role(current_user) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
-        return query
+        return apply_platform_demo_scope(query, "TatbikatBelgesi", TatbikatBelgesi.id)
     if current_user.havalimani_id is None:
-        return query.filter(TatbikatBelgesi.havalimani_id.is_(None))
-    return query.filter(TatbikatBelgesi.havalimani_id == current_user.havalimani_id)
+        scoped = query.filter(TatbikatBelgesi.havalimani_id.is_(None))
+        return apply_platform_demo_scope(scoped, "TatbikatBelgesi", TatbikatBelgesi.id)
+    scoped = query.filter(TatbikatBelgesi.havalimani_id == current_user.havalimani_id)
+    return apply_platform_demo_scope(scoped, "TatbikatBelgesi", TatbikatBelgesi.id)
 
 
 def _can_view_drills_for_airport(airport_id):
@@ -198,13 +214,17 @@ def _can_manage_drills_for_airport(airport_id):
 
 def _visible_drill_airports():
     if get_effective_role(current_user) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
-        return Havalimani.query.filter_by(is_deleted=False).order_by(Havalimani.kodu.asc()).all()
+        query = Havalimani.query.filter_by(is_deleted=False)
+        query = apply_platform_demo_scope(query, "Havalimani", Havalimani.id)
+        return query.order_by(Havalimani.kodu.asc()).all()
     if current_user.havalimani_id is None:
         return []
-    return Havalimani.query.filter_by(
+    query = Havalimani.query.filter_by(
         is_deleted=False,
         id=current_user.havalimani_id,
-    ).order_by(Havalimani.kodu.asc()).all()
+    )
+    query = apply_platform_demo_scope(query, "Havalimani", Havalimani.id)
+    return query.order_by(Havalimani.kodu.asc()).all()
 
 
 def _drill_file_size(upload):
@@ -399,8 +419,10 @@ def _assignment_pdf_font_uris():
 def _asset_scope():
     query = InventoryAsset.query.filter_by(is_deleted=False)
     if has_permission("logs.view") or has_permission("settings.manage"):
-        return query
-    return query.filter_by(havalimani_id=current_user.havalimani_id)
+        scoped = query
+    else:
+        scoped = query.filter_by(havalimani_id=current_user.havalimani_id)
+    return apply_platform_demo_scope(scoped, "InventoryAsset", InventoryAsset.id)
 
 
 def _asset_qr_url(asset):
@@ -422,8 +444,10 @@ def _asset_qr_context(asset):
 def _box_scope():
     query = Kutu.query.filter_by(is_deleted=False)
     if has_permission("settings.manage") or has_permission("logs.view"):
-        return query
-    return query.filter_by(havalimani_id=current_user.havalimani_id)
+        scoped = query
+    else:
+        scoped = query.filter_by(havalimani_id=current_user.havalimani_id)
+    return apply_platform_demo_scope(scoped, "Kutu", Kutu.id)
 
 
 def _box_qr_context(box):
@@ -453,6 +477,7 @@ def _ensure_operational_state(asset):
 
 def _consumable_scope():
     query = ConsumableItem.query.filter_by(is_deleted=False, is_active=True)
+    query = apply_platform_demo_scope(query, "ConsumableItem", ConsumableItem.id)
     return query.order_by(ConsumableItem.title.asc())
 
 
@@ -979,7 +1004,7 @@ def envanter():
 
     if _can_view_all_operational_scope():
         h_ad = "Genel Envanter (Tüm Birimler)"
-        havalimanlari = Havalimani.query.filter_by(is_deleted=False).order_by(Havalimani.kodu.asc()).all()
+        havalimanlari = _visible_operational_airports()
     else:
         h_ad = current_user.havalimani.ad
         havalimanlari = [current_user.havalimani] if current_user.havalimani else []
@@ -1075,7 +1100,7 @@ def malzeme_ekle():
         return redirect(url_for("inventory.envanter"))
 
     if current_user.is_sahip:
-        havalimanlari = Havalimani.query.filter_by(is_deleted=False).order_by(Havalimani.kodu.asc()).all()
+        havalimanlari = _visible_operational_airports()
     else:
         havalimanlari = [current_user.havalimani] if current_user.havalimani else []
     parent_candidates = _asset_scope().order_by(InventoryAsset.created_at.desc()).limit(200).all()
@@ -1099,7 +1124,7 @@ def merkezi_katalog():
     form_templates = MaintenanceFormTemplate.query.filter_by(is_deleted=False, is_active=True).order_by(
         MaintenanceFormTemplate.name.asc()
     ).all()
-    airports = Havalimani.query.filter_by(is_deleted=False).order_by(Havalimani.kodu.asc()).all()
+    airports = _visible_operational_airports()
     return render_template(
         "ekipman_sablonlari.html",
         templates=templates,
@@ -1896,7 +1921,11 @@ def tatbikat_yukle():
     if not _can_manage_drills_for_airport(airport_id):
         abort(403)
 
-    airport = Havalimani.query.filter_by(id=airport_id, is_deleted=False).first_or_404()
+    airport = apply_platform_demo_scope(
+        Havalimani.query.filter_by(id=airport_id, is_deleted=False),
+        "Havalimani",
+        Havalimani.id,
+    ).first_or_404()
     title = guvenli_metin(request.form.get("title") or "")
     description = guvenli_metin(request.form.get("description") or "")
     upload = request.files.get("document")
@@ -2325,7 +2354,7 @@ def asset_lifecycle():
         return redirect(url_for("inventory.asset_lifecycle"))
 
     assets = [asset for asset in _asset_scope().order_by(InventoryAsset.created_at.desc()).all()]
-    airports = Havalimani.query.filter_by(is_deleted=False).order_by(Havalimani.kodu.asc()).all()
+    airports = _visible_operational_airports()
     return render_template("asset_lifecycle.html", assets=assets, airports=airports, lifecycle_statuses=["planned", "received", "active", "in_maintenance", "calibration_due", "out_of_service", "decommissioned", "disposed", "transferred"])
 
 

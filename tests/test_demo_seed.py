@@ -1,4 +1,4 @@
-from demo_data import DEMO_SEED_TAG, clear_demo_data, seed_demo_data
+from demo_data import AIRPORT_PERSONNEL_COUNT, AIRPORTS, DEMO_SEED_TAG, clear_demo_data, seed_demo_data
 from extensions import db
 from models import DemoSeedRecord, Havalimani, InventoryAsset, Kutu, Kullanici, MaintenancePlan, SparePart, WorkOrder
 
@@ -8,14 +8,18 @@ def test_seed_demo_data_creates_expected_records(app):
         summary = seed_demo_data(reset=True)
 
         assert summary["havalimani"] == 3
-        assert summary["kullanici"] == 40
+        assert summary["kullanici"] == (len(AIRPORTS) * AIRPORT_PERSONNEL_COUNT) + 2
         assert Havalimani.query.count() == 3
-        assert Kullanici.query.count() == 40
+        assert Kullanici.query.count() == (len(AIRPORTS) * AIRPORT_PERSONNEL_COUNT) + 2
         assert InventoryAsset.query.count() > 0
         assert Kutu.query.count() > 0
         assert MaintenancePlan.query.count() > 0
         assert WorkOrder.query.count() > 0
         assert SparePart.query.count() >= 20
+        assert {airport.kodu for airport in Havalimani.query.order_by(Havalimani.kodu.asc()).all()} == {"EDO", "ERZ", "KCO"}
+        for airport in Havalimani.query.all():
+            assert Kullanici.query.filter_by(havalimani_id=airport.id, is_deleted=False).count() >= AIRPORT_PERSONNEL_COUNT
+            assert Kutu.query.filter_by(havalimani_id=airport.id, is_deleted=False).count() >= 5
 
         sample_asset = InventoryAsset.query.first()
         assert sample_asset is not None

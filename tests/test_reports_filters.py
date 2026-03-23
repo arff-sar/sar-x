@@ -31,3 +31,6 @@ def test_reports_filters_apply_airport_and_category(client, app):
     assert "Erzurum Havalimanı" in html
     assert "Gaz Ölçüm Cihazı" not in html
     assert "TZX-001" not in html
+    assert 'class="report-toolbar"' in html
+    assert 'class="report-tabs-shell"' in html
+    assert 'class="panel report-filters-panel"' in html

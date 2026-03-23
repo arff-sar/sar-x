@@ -25,4 +25,8 @@ def test_manager_summary_shows_critical_metrics_and_demo_data(client, app):
     assert "Yaklaşan Riskler" in html
     assert "En Çok İş Emri Üreten Lokasyon" in html
     assert "Kapanmayan Kritik İşler" in html
-    assert "Erzurum Havalimanı" in html or "Trabzon Havalimanı" in html or "Kars Havalimanı" in html
+    assert (
+        "Erzurum Havalimanı" in html
+        or "Balıkesir Koca Seyit Havalimanı" in html
+        or "Kocaeli Cengiz Topel Havalimanı" in html
+    )
