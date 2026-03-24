@@ -20,6 +20,9 @@ def test_seed_demo_data_creates_expected_records(app):
         for airport in Havalimani.query.all():
             assert Kullanici.query.filter_by(havalimani_id=airport.id, is_deleted=False).count() >= AIRPORT_PERSONNEL_COUNT
             assert Kutu.query.filter_by(havalimani_id=airport.id, is_deleted=False).count() >= 5
+        for box in Kutu.query.all():
+            assert box.konum is not None
+            assert len(box.konum) <= 100
 
         sample_asset = InventoryAsset.query.first()
         assert sample_asset is not None

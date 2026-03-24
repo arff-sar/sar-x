@@ -307,6 +307,83 @@ def _maintenance_period_from_name(name):
     return 90
 
 
+def _normalize_text(value):
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def _shorten_label(value, max_len):
+    text = _normalize_text(value)
+    if max_len <= 0:
+        return ""
+    if len(text) <= max_len:
+        return text
+    if max_len == 1:
+        return "…"
+
+    tokens = text.split(" ")
+    compact = []
+    limit = max_len - 1
+    for token in tokens:
+        candidate = token if not compact else f"{' '.join(compact)} {token}"
+        if len(candidate) > limit:
+            break
+        compact.append(token)
+
+    if compact:
+        return f"{' '.join(compact)}…"
+    return f"{text[:limit].rstrip()}…"
+
+
+def _build_demo_box_location(airport_name, airport_code, equipment_name, function_text, max_len=100):
+    airport_name = _normalize_text(airport_name)
+    airport_code = _normalize_text(airport_code).upper()
+    equipment_name = _normalize_text(equipment_name) or "USAR"
+    function_text = _normalize_text(function_text)
+
+    airport_without_suffix = airport_name.replace(" Havalimanı", "").strip()
+    airport_candidates = [airport_name]
+    if airport_without_suffix and airport_without_suffix != airport_name:
+        airport_candidates.append(airport_without_suffix)
+    if airport_without_suffix and airport_code:
+        airport_candidates.append(f"{airport_without_suffix} ({airport_code})")
+    if airport_code:
+        airport_candidates.append(airport_code)
+
+    seen = set()
+    for airport_label in airport_candidates:
+        if not airport_label:
+            continue
+        airport_label = _normalize_text(airport_label)
+        if airport_label in seen:
+            continue
+        seen.add(airport_label)
+
+        core = f"{airport_label} / {equipment_name}"
+        if len(core) > max_len:
+            remaining_for_equipment = max_len - len(airport_label) - 3
+            if remaining_for_equipment < 4:
+                continue
+            core = f"{airport_label} / {_shorten_label(equipment_name, remaining_for_equipment)}"
+            if len(core) > max_len:
+                continue
+
+        if function_text:
+            remaining_for_hint = max_len - len(core) - 3
+            if remaining_for_hint >= 12:
+                hint = _shorten_label(function_text, remaining_for_hint)
+                candidate = f"{core} / {hint}"
+                if len(candidate) <= max_len:
+                    return candidate
+
+        if len(core) <= max_len:
+            return core
+
+    fallback_airport = airport_code or _shorten_label(airport_without_suffix or airport_name, 24)
+    remaining_for_equipment = max(max_len - len(fallback_airport) - 3, 4)
+    fallback = f"{fallback_airport} / {_shorten_label(equipment_name, remaining_for_equipment)}"
+    return _shorten_label(fallback, max_len)
+
+
 def _seed_homepage_demo_if_available():
     if not demo_tools_enabled():
         return None
@@ -630,10 +707,12 @@ def seed_demo_data(reset=False):
         boxes = []
         for index, row in enumerate(box_seed_rows, start=1):
             code = f"{airport.kodu}-USAR-{index:02d}"
-            function_excerpt = (row.get("function") or "").strip()[:72]
-            location = f"{airport.ad} / {row.get('name') or 'USAR'}"
-            if function_excerpt:
-                location = f"{location} / {function_excerpt}"
+            location = _build_demo_box_location(
+                airport_name=airport.ad,
+                airport_code=airport.kodu,
+                equipment_name=row.get("name") or "USAR",
+                function_text=row.get("function") or "",
+            )
             box = Kutu(
                 kodu=code,
                 konum=location,
