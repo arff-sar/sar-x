@@ -16,8 +16,16 @@ class _FakeDriveService:
     def __init__(self):
         self.deleted_ids = []
         self.exchanged_codes = []
+        self.upload_calls = []
 
     def upload_file(self, airport, upload, filename, mime_type):
+        self.upload_calls.append(
+            {
+                "airport_id": airport.id,
+                "filename": filename,
+                "mime_type": mime_type,
+            }
+        )
         return {
             "drive_file_id": f"drive-{airport.id}",
             "drive_folder_id": f"folder-{airport.id}",
@@ -137,7 +145,7 @@ def test_airport_manager_can_upload_tatbikat_document_with_drive_metadata(client
             "title": "Yıllık Tatbikat",
             "drill_date": "2026-03-21",
             "description": "Google Drive üzerinde tutulur.",
-            "document": (io.BytesIO(b"%PDF-1.4\nfake\n"), "tatbikat.pdf"),
+            "document": (io.BytesIO(b"PK\x03\x04zip"), "orijinal ad.zip", "application/zip"),
         },
         content_type="multipart/form-data",
         follow_redirects=True,
@@ -151,6 +159,8 @@ def test_airport_manager_can_upload_tatbikat_document_with_drive_metadata(client
         assert record.drive_file_id == f"drive-{airport_id}"
         assert record.drive_folder_id == f"folder-{airport_id}"
         assert record.tatbikat_tarihi.isoformat() == "2026-03-21"
+        assert record.dosya_adi == "21.03.2026_tatbikat.zip"
+    assert fake_drive.upload_calls[-1]["filename"] == "21.03.2026_tatbikat.zip"
 
 
 def test_cross_airport_tatbikat_detail_returns_403(client, app):
@@ -242,6 +252,9 @@ def test_tatbikat_page_shows_airport_select_only_for_owner(client, app):
     assert 'class="form-group drill-filter-actions-shell"' in owner_html
     assert '>İşlemler<' in owner_html
     assert 'class="drill-filter-actions"' in owner_html
+    assert 'drill-filter-actions .btn' in owner_html
+    assert 'accept=".rar,.zip,.7z' in owner_html
+    assert "Desteklenen türler: RAR, ZIP, 7Z" in owner_html
 
 
 def test_airport_manager_can_upload_zip_tatbikat_document(client, app, monkeypatch):
@@ -271,6 +284,169 @@ def test_airport_manager_can_upload_zip_tatbikat_document(client, app, monkeypat
 
     assert response.status_code == 200
     assert "ZIP Tatbikat Paketi" in response.data.decode("utf-8")
+
+
+def test_airport_manager_can_upload_rar_tatbikat_document(client, app, monkeypatch):
+    fake_drive = _FakeDriveService()
+    monkeypatch.setattr("routes.inventory.get_drill_drive_service", lambda: fake_drive)
+
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Kars", kodu="KSY")
+        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        db.session.add_all([airport, manager])
+        db.session.commit()
+        manager_id = manager.id
+        airport_id = airport.id
+
+    _login(client, manager_id)
+    response = client.post(
+        "/tatbikatlar/yukle",
+        data={
+            "airport_id": airport_id,
+            "title": "RAR Tatbikat Paketi",
+            "drill_date": "2026-03-24",
+            "document": (io.BytesIO(b"Rar!\x1a\x07\x00"), "arsiv.rar", "application/x-rar-compressed"),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "RAR Tatbikat Paketi" in response.data.decode("utf-8")
+    assert fake_drive.upload_calls[-1]["filename"] == "24.03.2026_tatbikat.rar"
+
+
+def test_airport_manager_can_upload_7z_tatbikat_document(client, app, monkeypatch):
+    fake_drive = _FakeDriveService()
+    monkeypatch.setattr("routes.inventory.get_drill_drive_service", lambda: fake_drive)
+
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Kayseri", kodu="ASR")
+        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        db.session.add_all([airport, manager])
+        db.session.commit()
+        manager_id = manager.id
+        airport_id = airport.id
+
+    _login(client, manager_id)
+    response = client.post(
+        "/tatbikatlar/yukle",
+        data={
+            "airport_id": airport_id,
+            "title": "7Z Tatbikat Paketi",
+            "drill_date": "2026-03-25",
+            "document": (io.BytesIO(b"7z\xbc\xaf\x27\x1c"), "paket.7z", "application/x-7z-compressed"),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "7Z Tatbikat Paketi" in response.data.decode("utf-8")
+    assert fake_drive.upload_calls[-1]["filename"] == "25.03.2026_tatbikat.7z"
+
+
+def test_tatbikat_upload_rejects_pdf_extension(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Adana", kodu="ADA")
+        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        db.session.add_all([airport, manager])
+        db.session.commit()
+        manager_id = manager.id
+        airport_id = airport.id
+
+    _login(client, manager_id)
+    response = client.post(
+        "/tatbikatlar/yukle",
+        data={
+            "airport_id": airport_id,
+            "title": "PDF Denemesi",
+            "drill_date": "2026-03-25",
+            "document": (io.BytesIO(b"%PDF-1.4\nfake\n"), "tatbikat.pdf", "application/pdf"),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Sadece RAR, ZIP veya 7Z arşiv dosyası yükleyebilirsiniz." in response.data.decode("utf-8")
+
+
+def test_tatbikat_upload_rejects_jpg_extension(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Ordu", kodu="OGU")
+        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        db.session.add_all([airport, manager])
+        db.session.commit()
+        manager_id = manager.id
+        airport_id = airport.id
+
+    _login(client, manager_id)
+    response = client.post(
+        "/tatbikatlar/yukle",
+        data={
+            "airport_id": airport_id,
+            "title": "JPG Denemesi",
+            "drill_date": "2026-03-25",
+            "document": (io.BytesIO(b"\xff\xd8\xff"), "tatbikat.jpg", "image/jpeg"),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Sadece RAR, ZIP veya 7Z arşiv dosyası yükleyebilirsiniz." in response.data.decode("utf-8")
+
+
+def test_tatbikat_upload_rejects_when_date_missing(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Sinop", kodu="NOP")
+        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        db.session.add_all([airport, manager])
+        db.session.commit()
+        manager_id = manager.id
+        airport_id = airport.id
+
+    _login(client, manager_id)
+    response = client.post(
+        "/tatbikatlar/yukle",
+        data={
+            "airport_id": airport_id,
+            "title": "Tarihsiz Deneme",
+            "document": (io.BytesIO(b"PK\x03\x04zip"), "tatbikat.zip", "application/zip"),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Tatbikat tarihi zorunludur. Geçerli bir tarih seçin." in response.data.decode("utf-8")
+
+
+def test_tatbikat_upload_rejects_when_date_format_invalid(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Amasya", kodu="MZH")
+        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        db.session.add_all([airport, manager])
+        db.session.commit()
+        manager_id = manager.id
+        airport_id = airport.id
+
+    _login(client, manager_id)
+    response = client.post(
+        "/tatbikatlar/yukle",
+        data={
+            "airport_id": airport_id,
+            "title": "Geçersiz Tarih",
+            "drill_date": "2026/12/23",
+            "document": (io.BytesIO(b"PK\x03\x04zip"), "tatbikat.zip", "application/zip"),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Tatbikat tarihi zorunludur. Geçerli bir tarih seçin." in response.data.decode("utf-8")
 
 
 def test_google_drive_oauth_callback_matches_expected_route_and_redirects_owner(client, app, monkeypatch):

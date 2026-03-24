@@ -5,10 +5,10 @@
 <style>
   .drill-layout { display:grid; grid-template-columns:minmax(0, 1.2fr) minmax(320px, .8fr); gap:20px; align-items:start; }
   .drill-filter-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:12px 16px; align-items:end; }
-  .drill-filter-actions-shell { display:grid; align-content:end; min-width:220px; }
-  .drill-filter-actions-shell label { visibility:hidden; margin-bottom:8px; }
-  .drill-filter-actions { display:flex; gap:8px; align-items:stretch; }
-  .drill-filter-actions .btn { width:100%; min-height:46px; margin-bottom:0; }
+  .drill-filter-actions-shell { display:flex; align-items:flex-end; min-width:260px; margin-bottom:0; }
+  .drill-filter-actions-shell label { display:none; }
+  .drill-filter-actions { display:flex; gap:8px; align-items:center; width:100%; }
+  .drill-filter-actions .btn { min-height:44px; margin-bottom:0; display:inline-flex; align-items:center; justify-content:center; padding-inline:20px; }
   .drill-meta { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
   .drill-meta-chip { display:inline-flex; align-items:center; min-height:32px; padding:0 12px; border-radius:999px; background:var(--surface2); border:1px solid var(--border); color:var(--text2); font-size:11.5px; font-weight:700; }
   .drill-upload-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
@@ -28,6 +28,7 @@
     .drill-upload-grid { grid-template-columns:1fr; }
     .drill-filter-actions-shell { min-width:0; }
     .drill-filter-actions { flex-direction:column; }
+    .drill-filter-actions .btn { width:100%; }
     .drill-actions { justify-content:flex-start; }
   }
 </style>
@@ -71,7 +72,7 @@
         <input type="text" class="form-control" value="{{ airports[0].kodu ~ ' - ' ~ airports[0].ad if airports else 'Kapsam bulunamadı' }}" readonly>
         {% endif %}
       </div>
-      <div class="form-group drill-filter-actions-shell" style="margin-bottom:0;">
+      <div class="form-group drill-filter-actions-shell">
         <label>İşlemler</label>
         <div class="drill-filter-actions">
           <button type="submit" class="btn btn-navy">Filtrele</button>
@@ -181,7 +182,7 @@
           </div>
           <div class="form-group">
             <label>Tatbikat Tarihi</label>
-            <input type="date" name="drill_date" class="form-control">
+            <input type="date" name="drill_date" class="form-control" required>
           </div>
           <div class="form-group full">
             <label>Açıklama</label>
@@ -189,8 +190,8 @@
           </div>
           <div class="form-group full">
             <label>Dosya</label>
-            <input type="file" name="document" class="form-control" accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png,.zip" required>
-            <div class="drill-subtle">Desteklenen türler: PDF, DOCX, XLSX, JPG, JPEG, PNG, ZIP</div>
+            <input type="file" name="document" class="form-control" accept=".rar,.zip,.7z,application/x-rar-compressed,application/vnd.rar,application/zip,application/x-zip-compressed,application/x-7z-compressed" required>
+            <div class="drill-subtle">Desteklenen türler: RAR, ZIP, 7Z</div>
           </div>
         </div>
         <button type="submit" class="btn btn-primary">Kaydı Yükle</button>

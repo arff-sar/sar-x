@@ -95,14 +95,14 @@ PPE_STATUS_LABELS = {
 }
 SIGNED_ASSIGNMENT_ALLOWED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "webp"}
 PPE_ALLOWED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "webp"}
-DRILL_ALLOWED_EXTENSIONS = {"pdf", "docx", "xlsx", "jpg", "jpeg", "png", "zip"}
+DRILL_ALLOWED_EXTENSIONS = {"rar", "zip", "7z"}
 DRILL_ALLOWED_MIME_TYPES = (
-    "application/pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/zip",
     "application/x-zip-compressed",
-    "image/",
+    "application/x-7z-compressed",
+    "application/x-rar-compressed",
+    "application/vnd.rar",
+    "application/octet-stream",
 )
 
 
@@ -256,9 +256,11 @@ def _validate_drill_upload(upload):
     if not safe_name:
         return None, None, "Dosya adı güvenli hale getirilemedi."
     if not is_allowed_file(safe_name, DRILL_ALLOWED_EXTENSIONS):
-        return None, None, "Dosya uzantısı desteklenmiyor."
+        return None, None, "Sadece RAR, ZIP veya 7Z arşiv dosyası yükleyebilirsiniz."
 
     file_size = _drill_file_size(upload)
+    if file_size <= 0:
+        return None, None, "Boş dosya yüklenemez."
     max_bytes = int(current_app.config.get("DRILL_MAX_FILE_SIZE") or current_app.config.get("MAX_CONTENT_LENGTH") or 0)
     if max_bytes and file_size > max_bytes:
         max_mb = max(1, int(max_bytes / (1024 * 1024)))
@@ -266,8 +268,16 @@ def _validate_drill_upload(upload):
 
     mime_type = getattr(upload, "mimetype", None) or mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
     if not any(mime_type.startswith(prefix) for prefix in DRILL_ALLOWED_MIME_TYPES):
-        return None, None, "Dosya türü desteklenmiyor."
+        return None, None, "Arşiv dosyası türü doğrulanamadı. RAR, ZIP veya 7Z yükleyin."
     return safe_name, mime_type, None
+
+
+def _build_drill_storage_filename(drill_date, safe_name):
+    extension = Path(safe_name).suffix.lower()
+    candidate = secure_upload_filename(f"{drill_date.strftime('%d.%m.%Y')}_tatbikat{extension}")
+    if not candidate or not is_allowed_file(candidate, DRILL_ALLOWED_EXTENSIONS):
+        raise ValueError("Tatbikat dosya adı güvenli biçimde oluşturulamadı.")
+    return candidate
 
 
 def _format_drill_file_size(size):
@@ -501,12 +511,11 @@ def _next_box_code_for_airport(airport):
     return f"{airport_code}-SAR-{next_serial:02d}"
 
 
-def _create_box_with_generated_code(airport_id, konum=None, marka=None):
+def _create_box_with_generated_code(airport_id, marka=None):
     airport = db.session.get(Havalimani, airport_id)
     if not airport or airport.is_deleted:
         raise ValueError("Geçerli bir havalimanı bulunamadı.")
 
-    normalized_location = guvenli_metin(konum or "").strip() or None
     normalized_brand = guvenli_metin(marka or "").strip() or None
 
     for _ in range(8):
@@ -514,7 +523,7 @@ def _create_box_with_generated_code(airport_id, konum=None, marka=None):
         kutu = Kutu(
             kodu=generated_code,
             marka=normalized_brand,
-            konum=normalized_location or generated_code,
+            konum=generated_code,
             havalimani_id=airport.id,
         )
         db.session.add(kutu)
@@ -652,10 +661,13 @@ def _create_operational_alerts():
 def _parse_date(raw_value):
     if not raw_value:
         return None
-    try:
-        return datetime.strptime(raw_value, "%Y-%m-%d").date()
-    except (TypeError, ValueError):
-        return None
+    normalized = str(raw_value).strip()
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(normalized, fmt).date()
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 def _parse_positive_int(raw_value, default=1):
@@ -2016,16 +2028,25 @@ def tatbikat_yukle():
     if error:
         flash(error, "danger")
         return redirect(url_for("inventory.tatbikat_listesi", airport_id=airport_id))
+    drill_date_raw = request.form.get("drill_date")
+    drill_date = _parse_date(drill_date_raw)
+    if not drill_date:
+        flash("Tatbikat tarihi zorunludur. Geçerli bir tarih seçin.", "danger")
+        return redirect(url_for("inventory.tatbikat_listesi", airport_id=airport_id))
+    try:
+        storage_filename = _build_drill_storage_filename(drill_date, safe_name)
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("inventory.tatbikat_listesi", airport_id=airport_id))
     if not title:
-        title = safe_name
-    drill_date = _parse_date(request.form.get("drill_date")) or get_tr_now().date()
+        title = Path(storage_filename).stem
 
     drive_service = get_drill_drive_service()
     try:
         drive_result = drive_service.upload_file(
             airport=airport,
             upload=upload,
-            filename=safe_name,
+            filename=storage_filename,
             mime_type=mime_type,
         )
         record = TatbikatBelgesi(
