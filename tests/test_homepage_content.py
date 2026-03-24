@@ -62,6 +62,10 @@ def test_homepage_announcement_preview_payload_renders(client, app):
     assert "Eğitim Daveti" in page
     assert "18.03.2026" in page
     assert "Duyuru içeriğine ulaşmak için tıklayınız." in page
+    assert 'id="announcementCarouselImage"' in page
+    assert 'loading="eager"' in page
+    assert 'fetchpriority="high"' in page
+    assert 'decoding="async"' in page
 
 
 def test_public_dropdown_pages_open_and_render_section_content(client, app):

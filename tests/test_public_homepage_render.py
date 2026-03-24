@@ -26,6 +26,22 @@ def test_active_sliders_visible_on_public_homepage(client, app):
     assert "https://example.com/passive-slider.jpg" not in page
 
 
+def test_non_primary_slider_backgrounds_are_deferred(client, app):
+    first_slider = HomeSliderFactory(title="Public Slider 1", image_url="https://example.com/slider-1.jpg", is_active=True)
+    second_slider = HomeSliderFactory(title="Public Slider 2", image_url="https://example.com/slider-2.jpg", is_active=True)
+    db.session.add_all([first_slider, second_slider])
+    db.session.commit()
+
+    response = client.get("/")
+    page = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert 'style="background-image:url(\'https://example.com/slider-1.jpg\')"' in page
+    assert 'data-bg="https://example.com/slider-2.jpg"' in page
+    assert 'style="background-image:url(\'https://example.com/slider-2.jpg\')"' not in page
+    assert "function ensureSlideBackground(index)" in page
+
+
 def test_homepage_renders_fallback_content_when_cms_empty(client, app):
     response = client.get("/")
     page = response.data.decode("utf-8")

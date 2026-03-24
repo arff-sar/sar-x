@@ -682,9 +682,20 @@
         </div>
         {% for slide in sliders %}
           {% set slide_bg = safe_media(slide.image_path if slide.image_path is defined else slide.image_url, hero_fallback_image) %}
-          <article class="hero-slide {% if loop.first %}active{% endif %}" data-slide-title="{{ slide.title }}" style="background-image:url('{{ slide_bg }}')"></article>
+          <article
+            class="hero-slide {% if loop.first %}active{% endif %}"
+            data-slide-title="{{ slide.title }}"
+            data-bg="{{ slide_bg }}"
+            data-bg-loaded="{% if loop.first %}true{% else %}false{% endif %}"
+            {% if loop.first %}style="background-image:url('{{ slide_bg }}')"{% endif %}
+          ></article>
         {% else %}
-          <article class="hero-slide active" style="background-image:url('{{ hero_fallback_image }}')"></article>
+          <article
+            class="hero-slide active"
+            data-bg="{{ hero_fallback_image }}"
+            data-bg-loaded="true"
+            style="background-image:url('{{ hero_fallback_image }}')"
+          ></article>
         {% endfor %}
 
         {% if sliders|length > 1 %}
@@ -761,7 +772,9 @@
               src="{{ safe_media(active_announcement.image_url, default_announcement_image) }}"
               alt="{{ active_announcement.title }}"
               id="announcementCarouselImage"
-              loading="lazy"
+              loading="eager"
+              fetchpriority="high"
+              decoding="async"
               onerror="this.src='{{ default_announcement_image }}'"
             >
             <div class="announcement-media-badge" id="announcementCarouselBadge">{{ active_announcement.badge_label or active_announcement.title }}</div>
@@ -839,14 +852,42 @@
   (function () {
     const slides = Array.from(document.querySelectorAll(".hero-slide"));
     const dots = Array.from(document.querySelectorAll(".hero-dot"));
+    function ensureSlideBackground(index) {
+      const slide = slides[index];
+      if (!slide || slide.dataset.bgLoaded === "true") return;
+      const bg = (slide.dataset.bg || "").trim();
+      if (!bg) return;
+      slide.style.backgroundImage = 'url("' + bg + '")';
+      slide.dataset.bgLoaded = "true";
+    }
+
+    function prewarmNext(index) {
+      if (slides.length < 2) return;
+      const nextIndex = (index + 1) % slides.length;
+      const nextSlide = slides[nextIndex];
+      if (!nextSlide || nextSlide.dataset.bgLoaded === "true") return;
+      const warm = function () {
+        ensureSlideBackground(nextIndex);
+      };
+      if ("requestIdleCallback" in window) {
+        window.requestIdleCallback(warm, { timeout: 700 });
+        return;
+      }
+      window.setTimeout(warm, 300);
+    }
+
+    ensureSlideBackground(0);
+    prewarmNext(0);
     if (slides.length > 1 && dots.length) {
       let activeIndex = 0;
       let timer = null;
 
       function setActive(index) {
         activeIndex = (index + slides.length) % slides.length;
+        ensureSlideBackground(activeIndex);
         slides.forEach((slide, idx) => slide.classList.toggle("active", idx === activeIndex));
         dots.forEach((dot, idx) => dot.classList.toggle("active", idx === activeIndex));
+        prewarmNext(activeIndex);
       }
 
       function startTimer() {

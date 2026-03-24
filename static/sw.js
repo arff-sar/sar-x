@@ -1,11 +1,11 @@
 // 1. Dış Kütüphaneler HER ZAMAN en üstte tanımlanmalıdır
 importScripts('https://cdn.jsdelivr.net/npm/idb@7/build/umd.js');
 
-const CACHE_NAME = 'sar-x-v1';
+const CACHE_NAME = 'sar-x-v2';
 const ASSETS_TO_CACHE = [
-  '/',
   '/manifest.json',
-  'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap'
+  '/static/img/icon-192.png',
+  '/static/img/icon-512.png'
 ];
 const AUTH_CACHE_BYPASS_PREFIXES = ['/login', '/logout', '/sifre-yenile', '/sifre-sifirla-talep'];
 
@@ -17,10 +17,23 @@ self.addEventListener('install', (event) => {
   self.skipWaiting(); // Yeni versiyonu hemen devreye al
 });
 
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
+    )
+  );
+  self.clients.claim();
+});
+
 // İnternet yoksa önbellekten getir (SADECE GET İSTEKLERİ İÇİN)
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return; // POST isteklerini önbellekte arama!
   const requestUrl = new URL(event.request.url);
+
+  if (event.request.mode === 'navigate') {
+    return;
+  }
 
   if (
     requestUrl.origin === self.location.origin &&
