@@ -23,7 +23,7 @@ def test_box_create_generates_airport_based_code_and_brand(client, app):
     _login(client, manager_id)
     response = client.post(
         "/kutular/yeni",
-        data={"havalimani_id": str(airport_id), "konum": "Ana Depo", "marka": "RescuePro"},
+        data={"havalimani_id": str(airport_id), "marka": "RescuePro"},
         follow_redirects=True,
     )
     assert response.status_code == 200
@@ -32,14 +32,13 @@ def test_box_create_generates_airport_based_code_and_brand(client, app):
         created = Kutu.query.filter_by(havalimani_id=airport_id, kodu="ERZ-SAR-03").first()
         assert created is not None
         assert created.marka == "RescuePro"
-        assert created.konum == "Ana Depo"
 
 
 def test_box_brand_can_be_updated_from_detail(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Samsun Havalimanı", kodu="SZF")
         manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
-        box = KutuFactory(kodu="SZF-SAR-01", havalimani=airport, marka="Eski Marka", konum="Raf 1")
+        box = KutuFactory(kodu="SZF-SAR-01", havalimani=airport, marka="Eski Marka")
         db.session.add_all([airport, manager, box])
         db.session.commit()
         manager_id = manager.id
@@ -47,7 +46,7 @@ def test_box_brand_can_be_updated_from_detail(client, app):
     _login(client, manager_id)
     response = client.post(
         "/kutu/SZF-SAR-01/guncelle",
-        data={"konum": "Raf 2", "marka": "Yeni Marka"},
+        data={"marka": "Yeni Marka"},
         follow_redirects=True,
     )
     assert response.status_code == 200
@@ -55,7 +54,6 @@ def test_box_brand_can_be_updated_from_detail(client, app):
     with app.app_context():
         updated = Kutu.query.filter_by(kodu="SZF-SAR-01").first()
         assert updated is not None
-        assert updated.konum == "Raf 2"
         assert updated.marka == "Yeni Marka"
 
 
@@ -106,7 +104,7 @@ def test_owner_can_create_box_for_any_airport(client, app):
     _login(client, owner_id)
     response = client.post(
         "/kutular/yeni",
-        data={"havalimani_id": str(airport_id), "konum": "Araç Depo", "marka": "Omni"},
+        data={"havalimani_id": str(airport_id), "marka": "Omni"},
         follow_redirects=True,
     )
     assert response.status_code == 200
@@ -211,3 +209,73 @@ def test_box_archive_and_delete_lifecycle(client, app):
         deleted = Kutu.query.filter_by(kodu="ERZ-SAR-21").first()
         assert archived is not None and archived.is_deleted is True
         assert deleted is None
+
+
+def test_box_management_filter_layout_is_aligned_and_location_removed(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Erzurum", kodu="ERZ")
+        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False)
+        box = KutuFactory(kodu="ERZ-SAR-01", havalimani=airport, marka="Pelican")
+        db.session.add_all([airport, owner, box])
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+    response = client.get("/kutular")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "box-filter-grid" in html
+    assert "box-filter-actions" in html
+    assert "Filtrele" in html and "Temizle" in html
+    assert ">Konum<" not in html
+
+
+def test_box_detail_uses_accordion_edit_pattern(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Van", kodu="VAN")
+        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        box = KutuFactory(kodu="VAN-SAR-01", havalimani=airport)
+        material = MalzemeFactory(ad="Telsiz", seri_no="SN-500", kutu=box, havalimani=airport, is_deleted=False)
+        template = EquipmentTemplateFactory(name="Telsiz", brand="Motorola", model_code="DP4400")
+        asset = InventoryAssetFactory(equipment_template=template, airport=airport, status="aktif")
+        db.session.add_all([airport, manager, box, material, template, asset])
+        db.session.flush()
+        asset.legacy_material_id = material.id
+        db.session.commit()
+        manager_id = manager.id
+
+    _login(client, manager_id)
+    response = client.get("/kutu/VAN-SAR-01")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert 'data-box-accordion' in html
+    assert 'data-accordion-toggle' in html
+    assert "closeOthers" in html
+    assert "Kutudan Sil" in html
+    assert "Düzenle" in html
+    assert "Konum tanımsız" not in html
+
+
+def test_personnel_sees_box_detail_without_edit_controls(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Ankara", kodu="ESB")
+        personel = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False)
+        box = KutuFactory(kodu="ESB-SAR-01", havalimani=airport)
+        material = MalzemeFactory(ad="Halat", kutu=box, havalimani=airport, is_deleted=False)
+        template = EquipmentTemplateFactory(name="Halat")
+        asset = InventoryAssetFactory(equipment_template=template, airport=airport, status="aktif")
+        db.session.add_all([airport, personel, box, material, template, asset])
+        db.session.flush()
+        asset.legacy_material_id = material.id
+        db.session.commit()
+        user_id = personel.id
+
+    _login(client, user_id)
+    response = client.get("/kutu/ESB-SAR-01")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Düzenle" not in html
+    assert "Kutudan Sil" not in html

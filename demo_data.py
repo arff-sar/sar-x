@@ -703,19 +703,14 @@ def seed_demo_data(reset=False):
 
     boxes_by_airport = {}
     box_seed_rows = (usar_rows[:5] if usar_rows else USAR_FALLBACK_ROWS[:5]) or USAR_FALLBACK_ROWS[:5]
+    box_brands = ["Pelican", "Peli", "Zarges", "SKB", "Explorer", "Nanuk"]
     for airport in airports:
         boxes = []
         for index, row in enumerate(box_seed_rows, start=1):
-            code = f"{airport.kodu}-USAR-{index:02d}"
-            location = _build_demo_box_location(
-                airport_name=airport.ad,
-                airport_code=airport.kodu,
-                equipment_name=row.get("name") or "USAR",
-                function_text=row.get("function") or "",
-            )
+            code = f"{airport.kodu}-SAR-{index:02d}"
             box = Kutu(
                 kodu=code,
-                konum=location,
+                marka=box_brands[(index - 1) % len(box_brands)],
                 havalimani_id=airport.id,
             )
             db.session.add(box)

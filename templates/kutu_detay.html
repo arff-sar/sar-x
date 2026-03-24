@@ -7,11 +7,16 @@
 .box-summary { display:flex; flex-wrap:wrap; gap:10px; }
 .box-stat { padding:10px 12px; border-radius:12px; border:1px solid var(--border); background:var(--surface2); min-width:120px; }
 .box-stat strong { display:block; font-size:18px; color:var(--navy); }
-.material-card { border:1px solid var(--border); border-radius:14px; padding:14px; background:#fff; display:grid; gap:10px; }
-.material-grid { display:grid; grid-template-columns: 1.4fr .8fr .9fr auto auto; gap:10px; align-items:end; }
-.mini-list { display:grid; gap:10px; }
-.material-meta-list { margin-top:10px; border-top:1px solid var(--border); }
-.material-meta-row { display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); align-items:flex-start; flex-wrap:wrap; }
+.material-accordion { border:1px solid var(--border); border-radius:14px; background:#fff; overflow:hidden; }
+.material-accordion + .material-accordion { margin-top:10px; }
+.material-accordion-summary { list-style:none; display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding:14px; cursor:pointer; }
+.material-accordion-summary::-webkit-details-marker { display:none; }
+.material-title { font-size:15px; font-weight:800; color:var(--navy); line-height:1.4; }
+.material-subtitle { font-size:12px; color:var(--text3); margin-top:4px; }
+.material-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+.material-panel { border-top:1px solid var(--border); padding:14px; display:grid; gap:10px; }
+.material-grid { display:grid; grid-template-columns: 1.4fr .8fr auto; gap:10px; align-items:end; }
+.material-row-split { display:flex; justify-content:space-between; gap:10px; font-size:12px; color:var(--text3); padding-top:8px; border-top:1px solid var(--border); }
 .print-preview { border:1px dashed var(--border-strong); border-radius:16px; padding:16px; background:linear-gradient(180deg, #fff, #f8fafc); }
 .print-preview img { width:132px; height:132px; object-fit:contain; display:block; margin:0 auto 10px; }
 @media (max-width: 980px) {
@@ -26,8 +31,6 @@
     <div>
         <div class="page-title">Kutu: {{ kutu.kodu }}</div>
         <div class="page-meta">
-            <span>{{ kutu.konum or 'Konum tanımsız' }}</span>
-            <div class="meta-dot" style="width:3px; height:3px; background:var(--text4); border-radius:50%;"></div>
             <span>{{ qr_context.airport_name }}</span>
             {% if kutu.marka %}
             <div class="meta-dot" style="width:3px; height:3px; background:var(--text4); border-radius:50%;"></div>
@@ -41,7 +44,7 @@
         <a href="{{ url_for('inventory.kutu_etiket', kodu=kutu.kodu) }}" target="_blank" class="btn btn-primary">Etiket Görünümü</a>
         <a href="{{ url_for('inventory.kutu_etiket_pdf', kodu=kutu.kodu) }}" class="btn btn-secondary">PDF Dışa Aktar</a>
         {% endif %}
-        {% if has_permission('inventory.delete') and (current_user.is_sahip or (current_user.is_airport_manager and current_user.havalimani_id == kutu.havalimani_id)) %}
+        {% if has_permission('inventory.delete') and can_manage_box %}
         <form method="POST" action="{{ url_for('inventory.kutu_arsivle', kodu=kutu.kodu) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-secondary">Arşivle</button>
@@ -67,18 +70,17 @@
                 <div class="box-stat"><span>Marka</span><strong style="font-size:15px;">{{ kutu.marka or '-' }}</strong></div>
             </div>
 
-            {% if has_permission('inventory.edit') %}
-            {% if current_user.is_sahip or (current_user.is_airport_manager and current_user.havalimani_id == kutu.havalimani_id) %}
+            {% if has_permission('inventory.edit') and can_manage_box %}
             <form method="POST" action="{{ url_for('inventory.kutu_guncelle', kodu=kutu.kodu) }}" class="panel" style="margin:0;">
                 <div class="panel-header"><div class="panel-title">Kutu Bilgileri</div></div>
-                <div class="panel-body" style="display:grid; grid-template-columns: 1fr 1fr auto; gap:10px;">
+                <div class="panel-body" style="display:grid; grid-template-columns: 1fr auto; gap:10px;">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="text" name="konum" class="form-control" value="{{ kutu.konum or '' }}" placeholder="Konum">
                     <input type="text" name="marka" class="form-control" value="{{ kutu.marka or '' }}" placeholder="Marka">
                     <button class="btn btn-navy" type="submit">Kaydet</button>
                 </div>
             </form>
             {% endif %}
+            {% if has_permission('inventory.edit') and can_manage_box %}
             <form method="POST" action="{{ url_for('inventory.kutu_malzeme_ekle', kodu=kutu.kodu) }}" class="panel" style="margin:0;">
                 <div class="panel-header"><div class="panel-title">Malzeme Ekle</div></div>
                 <div class="panel-body" style="display:grid; grid-template-columns: 1.5fr auto; gap:10px;">
@@ -93,88 +95,78 @@
             </form>
             {% endif %}
 
-            <div class="mini-list">
+            <div>
                 {% for malzeme in materials %}
-                <div class="material-card">
-                    <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
+                {% set brand_name = malzeme.linked_asset.equipment_template.brand if malzeme.linked_asset and malzeme.linked_asset.equipment_template else None %}
+                {% set model_name = malzeme.linked_asset.equipment_template.model_code if malzeme.linked_asset and malzeme.linked_asset.equipment_template else None %}
+                {% set material_title = malzeme.ad ~ (' (' ~ (brand_name or '-') ~ (' ' ~ model_name if model_name else '') ~ ')' if brand_name or model_name else '') %}
+                {% if has_permission('inventory.edit') and can_manage_box %}
+                <details class="material-accordion" data-box-accordion>
+                    <summary class="material-accordion-summary">
                         <div>
-                            <div style="font-size:15px; font-weight:800; color:var(--navy);">{{ malzeme.ad }}</div>
-                            <div style="font-size:12px; color:var(--text3); margin-top:4px;">
-                                SN: {{ malzeme.seri_no or '-' }} · Durum: {{ malzeme.durum }}
-                            </div>
-                            {% if malzeme.linked_asset and malzeme.linked_asset.equipment_template %}
-                            <div style="font-size:12px; color:var(--text2); margin-top:4px;">
-                                {{ malzeme.linked_asset.equipment_template.brand or 'Marka yok' }}
-                                {% if malzeme.linked_asset.equipment_template.model_code %} {{ malzeme.linked_asset.equipment_template.model_code }}{% endif %}
-                            </div>
-                            {% endif %}
+                            <div class="material-title">{{ material_title }}</div>
+                            <div class="material-subtitle">SN: {{ malzeme.seri_no or '-' }} · Durum: {{ malzeme.durum }} · Adet: {{ malzeme.stok_miktari or 1 }}</div>
                             {% if malzeme.linked_asset %}
-                            <div style="font-size:12px; color:var(--text2); margin-top:6px;">
+                            <div class="material-subtitle">
                                 {{ malzeme.linked_asset.asset_code }} ·
-                                <form method="POST" action="{{ url_for('maintenance.asset_hizli_bakim', asset_id=malzeme.linked_asset.id) }}" style="display:inline;">
+                                <form method="POST" action="{{ url_for('maintenance.asset_hizli_bakim', asset_id=malzeme.linked_asset.id) }}" style="display:inline;" onclick="event.stopPropagation();">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                     <button type="submit" style="background:none; border:none; color:var(--blue); padding:0; cursor:pointer; font:inherit;">Bakım Formunu Aç</button>
                                 </form>
                             </div>
                             {% endif %}
                         </div>
-                        {% if malzeme.kritik_mi %}
-                        <span class="status-pill status-kritik">Kritik</span>
-                        {% endif %}
-                    </div>
-                    {% if malzeme.linked_asset and malzeme.linked_asset.equipment_template %}
-                    <div class="material-meta-list">
-                        <div class="material-meta-row">
-                            <span>{{ malzeme.ad }}{% if malzeme.linked_asset.equipment_template.brand or malzeme.linked_asset.equipment_template.model_code %} ({{ malzeme.linked_asset.equipment_template.brand or '-' }} {{ malzeme.linked_asset.equipment_template.model_code or '' }}){% endif %}</span>
-                            <strong>{{ malzeme.stok_miktari or 1 }}</strong>
+                        <div class="material-actions">
+                            {% if malzeme.linked_asset %}
+                            <a href="{{ url_for('inventory.asset_detail', asset_id=malzeme.linked_asset.id) }}" class="row-btn" onclick="event.stopPropagation();">Detay</a>
+                            {% endif %}
+                            <button type="button" class="row-btn" data-accordion-toggle>Düzenle</button>
                         </div>
-                    </div>
-                    {% endif %}
-
-                    {% if has_permission('inventory.edit') %}
-                    <form method="POST" action="{{ url_for('inventory.kutu_icerik_guncelle', kodu=kutu.kodu, malzeme_id=malzeme.id) }}" class="material-grid">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <div class="form-group" style="margin-bottom:0;">
-                            <label>Hedef Kutu</label>
-                            <select name="target_kutu_id" class="form-control">
-                                <option value="{{ kutu.id }}">Bu kutuda kalsın</option>
-                                {% for sibling_box in kutu.havalimani.kutular if not sibling_box.is_deleted %}
-                                {% if sibling_box.id != kutu.id %}
-                                <option value="{{ sibling_box.id }}">{{ sibling_box.kodu }}</option>
-                                {% endif %}
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="form-group" style="margin-bottom:0;">
-                            <label>Miktar</label>
-                            <input type="number" min="1" name="stok_miktari" value="{{ malzeme.stok_miktari or 1 }}" class="form-control">
-                        </div>
-                        <div class="form-group" style="margin-bottom:0;">
-                            <label>Bakım</label>
-                            <div style="display:flex; align-items:center; height:44px;">
-                                {% if malzeme.linked_asset %}
-                                <form method="POST" action="{{ url_for('maintenance.asset_hizli_bakim', asset_id=malzeme.linked_asset.id) }}">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <button class="row-btn" type="submit">Checklist</button>
-                                </form>
-                                {% else %}
-                                <span style="font-size:12px; color:var(--text3);">Asset bağlı değil</span>
-                                {% endif %}
+                    </summary>
+                    <div class="material-panel">
+                        <form method="POST" action="{{ url_for('inventory.kutu_icerik_guncelle', kodu=kutu.kodu, malzeme_id=malzeme.id) }}" class="material-grid">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label>Hedef Kutu</label>
+                                <select name="target_kutu_id" class="form-control">
+                                    <option value="{{ kutu.id }}">Bu kutuda kalsın</option>
+                                    {% for sibling_box in kutu.havalimani.kutular if not sibling_box.is_deleted %}
+                                    {% if sibling_box.id != kutu.id %}
+                                    <option value="{{ sibling_box.id }}">{{ sibling_box.kodu }}</option>
+                                    {% endif %}
+                                    {% endfor %}
+                                </select>
                             </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label>Miktar</label>
+                                <input type="number" min="1" name="stok_miktari" value="{{ malzeme.stok_miktari or 1 }}" class="form-control">
+                            </div>
+                            <button class="btn btn-navy" type="submit">Kaydet</button>
+                        </form>
+                        <div class="material-row-split">
+                            <span>Checklist ve bakım bağlantısı üst alandaki “Bakım Formunu Aç” aksiyonundadır.</span>
+                            <form method="POST" action="{{ url_for('inventory.kutu_malzeme_cikar', kodu=kutu.kodu, malzeme_id=malzeme.id) }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button class="btn btn-secondary" type="submit">Kutudan Sil</button>
+                            </form>
                         </div>
-                        <button class="btn btn-navy" type="submit">Kaydet</button>
-                        <div style="display:flex; align-items:end;">
-                            <span style="font-size:12px; color:var(--text3);">Taşıma ve miktar güncelleme</span>
+                    </div>
+                </details>
+                {% else %}
+                <div class="material-accordion">
+                    <div class="material-accordion-summary" style="cursor:default;">
+                        <div>
+                            <div class="material-title">{{ material_title }}</div>
+                            <div class="material-subtitle">SN: {{ malzeme.seri_no or '-' }} · Durum: {{ malzeme.durum }} · Adet: {{ malzeme.stok_miktari or 1 }}</div>
                         </div>
-                    </form>
-                    <form method="POST" action="{{ url_for('inventory.kutu_malzeme_cikar', kodu=kutu.kodu, malzeme_id=malzeme.id) }}" style="margin-top:8px;">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button class="btn btn-secondary" type="submit">Kutudan Çıkar</button>
-                    </form>
-                    {% else %}
-                    <div style="font-size:12px; color:var(--text3);">Miktar: {{ malzeme.stok_miktari or 1 }}</div>
-                    {% endif %}
+                        <div class="material-actions">
+                            {% if malzeme.linked_asset %}
+                            <a href="{{ url_for('inventory.asset_detail', asset_id=malzeme.linked_asset.id) }}" class="row-btn">Detay</a>
+                            {% endif %}
+                        </div>
+                    </div>
                 </div>
+                {% endif %}
                 {% else %}
                 <div style="text-align:center; color:var(--text3); padding:28px;">Bu kutuda henüz malzeme bulunmuyor.</div>
                 {% endfor %}
@@ -206,4 +198,29 @@
         </div>
     </div>
 </div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const accordions = Array.from(document.querySelectorAll('[data-box-accordion]'));
+  const closeOthers = function (active) {
+    accordions.forEach(function (item) {
+      if (item !== active) item.open = false;
+    });
+  };
+  accordions.forEach(function (accordion) {
+    accordion.addEventListener('toggle', function () {
+      if (accordion.open) closeOthers(accordion);
+    });
+    const toggleBtn = accordion.querySelector('[data-accordion-toggle]');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        const willOpen = !accordion.open;
+        closeOthers(accordion);
+        accordion.open = willOpen;
+      });
+    }
+  });
+});
+</script>
 {% endblock %}

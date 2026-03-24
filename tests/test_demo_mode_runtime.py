@@ -44,7 +44,7 @@ def test_demo_mode_active_shows_demo_inventory_to_non_admin_users(client, app):
         airport = Havalimani.query.filter_by(kodu="ERZ", is_deleted=False).first()
         assert airport is not None
 
-        real_box = Kutu(kodu=f"{airport.kodu}-REAL-KUTU", konum="Gerçek Depo", havalimani_id=airport.id)
+        real_box = Kutu(kodu=f"{airport.kodu}-REAL-KUTU", havalimani_id=airport.id)
         db.session.add(real_box)
         db.session.flush()
 

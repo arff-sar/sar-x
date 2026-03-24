@@ -1314,10 +1314,7 @@ def asset_duzenle(asset_id):
         asset.legacy_material.durum = _display_status(asset.status)
         asset.legacy_material.son_bakim_tarihi = asset.last_maintenance_date
         asset.legacy_material.gelecek_bakim_tarihi = asset.next_maintenance_date
-        if asset.depot_location and asset.legacy_material.kutu:
-            asset.legacy_material.kutu.konum = asset.depot_location
-
-    db.session.commit()
+        db.session.commit()
     log_kaydet("Envanter", f"Yerel asset güncellendi: ID {asset.id}")
     if asset.parent_asset_id:
         audit_log(
@@ -2335,6 +2332,7 @@ def kutu_detay(kodu):
         materials=kutu.active_materials,
         available_materials=available_materials,
         qr_context=_box_qr_context(kutu),
+        can_manage_box=_can_manage_box_airport(kutu.havalimani_id),
     )
 
 
@@ -2342,14 +2340,36 @@ def kutu_detay(kodu):
 @login_required
 @permission_required("inventory.view")
 def kutular():
+    selected_airport = request.args.get("havalimani_id", type=int)
+    selected_brand = guvenli_metin(request.args.get("marka") or "").strip()
     if current_user.is_sahip:
         havalimanlari = _visible_operational_airports()
     elif current_user.havalimani:
         havalimanlari = [current_user.havalimani]
     else:
         havalimanlari = []
-    kutular_listesi = _box_scope().order_by(Kutu.kodu.asc()).all()
-    return render_template("kutular.html", kutular=kutular_listesi, havalimanlari=havalimanlari)
+    visible_airport_ids = {airport.id for airport in havalimanlari}
+    if selected_airport and selected_airport not in visible_airport_ids:
+        abort(403)
+
+    query = _box_scope()
+    if selected_airport:
+        query = query.filter(Kutu.havalimani_id == selected_airport)
+    if selected_brand:
+        query = query.filter(Kutu.marka.ilike(f"%{selected_brand}%"))
+
+    kutular_listesi = query.order_by(Kutu.kodu.asc()).all()
+    manageable_box_ids = {box.id for box in kutular_listesi if _can_manage_box_airport(box.havalimani_id)}
+    can_create_box = bool(has_permission("inventory.create") and (current_user.is_sahip or current_user.is_airport_manager))
+    return render_template(
+        "kutular.html",
+        kutular=kutular_listesi,
+        havalimanlari=havalimanlari,
+        selected_airport=selected_airport,
+        selected_brand=selected_brand,
+        manageable_box_ids=manageable_box_ids,
+        can_create_box=can_create_box,
+    )
 
 
 @inventory_bp.route("/kutular/yeni", methods=["POST"])
@@ -2366,12 +2386,10 @@ def kutu_olustur():
         return redirect(url_for("inventory.kutular"))
     _validate_box_write_access(airport_id)
 
-    konum = request.form.get("konum")
     marka = request.form.get("marka")
     try:
         kutu = _create_box_with_generated_code(
             airport_id=airport_id,
-            konum=konum,
             marka=marka,
         )
     except ValueError as exc:
@@ -2393,7 +2411,6 @@ def kutu_guncelle(kodu):
     kutu = _box_scope().filter(Kutu.kodu == kodu).first_or_404()
     _validate_box_write_access(kutu.havalimani_id)
 
-    kutu.konum = guvenli_metin(request.form.get("konum") or "").strip() or kutu.konum
     kutu.marka = guvenli_metin(request.form.get("marka") or "").strip() or None
     db.session.commit()
     log_kaydet("Kutu", f"Kutu bilgisi güncellendi: {kutu.kodu}", event_key="box.update", target_model="Kutu", target_id=kutu.id)
