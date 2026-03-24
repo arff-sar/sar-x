@@ -7,6 +7,7 @@ from urllib.parse import unquote, urlparse
 from datetime import datetime, timedelta
 
 import pandas as pd
+from sqlalchemy.exc import IntegrityError
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from reportlab.rl_config import TTFSearchPath
@@ -443,11 +444,86 @@ def _asset_qr_context(asset):
 
 def _box_scope():
     query = Kutu.query.filter_by(is_deleted=False)
-    if has_permission("settings.manage") or has_permission("logs.view"):
+    if _can_view_all_box_scope():
         scoped = query
     else:
         scoped = query.filter_by(havalimani_id=current_user.havalimani_id)
     return apply_platform_demo_scope(scoped, "Kutu", Kutu.id)
+
+
+def _can_view_all_box_scope():
+    return get_effective_role(current_user) == CANONICAL_ROLE_SYSTEM
+
+
+def _can_manage_box_airport(airport_id):
+    actor_role = get_effective_role(current_user)
+    if actor_role == CANONICAL_ROLE_SYSTEM:
+        return True
+    return bool(
+        actor_role == CANONICAL_ROLE_TEAM_LEAD
+        and current_user.havalimani_id
+        and current_user.havalimani_id == airport_id
+    )
+
+
+def _validate_box_write_access(airport_id):
+    if not _can_manage_box_airport(airport_id):
+        abort(403)
+
+
+def _extract_box_sequence(code, airport_code):
+    if not code:
+        return None
+    normalized = str(code).strip().upper()
+    prefix = f"{airport_code}-SAR-"
+    if not normalized.startswith(prefix):
+        return None
+    serial_part = normalized[len(prefix):]
+    if not serial_part.isdigit():
+        return None
+    return int(serial_part)
+
+
+def _next_box_code_for_airport(airport):
+    airport_code = (airport.kodu or "").strip().upper()
+    if not airport_code:
+        raise ValueError("Havalimanı kodu bulunamadı.")
+    existing_codes = [
+        row[0]
+        for row in db.session.query(Kutu.kodu)
+        .filter(
+            Kutu.havalimani_id == airport.id,
+        )
+        .all()
+    ]
+    sequences = [seq for seq in (_extract_box_sequence(code, airport_code) for code in existing_codes) if seq is not None]
+    next_serial = (max(sequences) + 1) if sequences else 1
+    return f"{airport_code}-SAR-{next_serial:02d}"
+
+
+def _create_box_with_generated_code(airport_id, konum=None, marka=None):
+    airport = db.session.get(Havalimani, airport_id)
+    if not airport or airport.is_deleted:
+        raise ValueError("Geçerli bir havalimanı bulunamadı.")
+
+    normalized_location = guvenli_metin(konum or "").strip() or None
+    normalized_brand = guvenli_metin(marka or "").strip() or None
+
+    for _ in range(8):
+        generated_code = _next_box_code_for_airport(airport)
+        kutu = Kutu(
+            kodu=generated_code,
+            marka=normalized_brand,
+            konum=normalized_location or generated_code,
+            havalimani_id=airport.id,
+        )
+        db.session.add(kutu)
+        try:
+            db.session.flush()
+            return kutu
+        except IntegrityError:
+            db.session.rollback()
+    raise ValueError("Kutu kodu üretilemedi. Lütfen tekrar deneyin.")
 
 
 def _box_qr_context(box):
@@ -617,11 +693,18 @@ def _display_status(status_value):
     return mapping.get(status_value, "Aktif")
 
 
-def _ensure_box(kutu_kodu, havalimani_id):
+def _ensure_box(kutu_kodu, havalimani_id, marka=None):
     kutu = Kutu.query.filter_by(kodu=kutu_kodu, havalimani_id=havalimani_id, is_deleted=False).first()
     if kutu:
+        if marka:
+            kutu.marka = guvenli_metin(marka).strip()
         return kutu
-    kutu = Kutu(kodu=kutu_kodu, havalimani_id=havalimani_id, konum=kutu_kodu)
+    kutu = Kutu(
+        kodu=kutu_kodu,
+        marka=guvenli_metin(marka or "").strip() or None,
+        havalimani_id=havalimani_id,
+        konum=kutu_kodu,
+    )
     db.session.add(kutu)
     db.session.flush()
     return kutu
@@ -2125,6 +2208,30 @@ def asset_hierarchy_detail(asset_id):
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
 @permission_required("inventory.view")
 def quick_asset_view(asset_id):
+    return _asset_detail_view(asset_id, detail_mode=False)
+
+
+@inventory_bp.route("/asset/<int:asset_id>/detay", methods=["GET", "POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+@permission_required("inventory.view")
+def asset_detail(asset_id):
+    return _asset_detail_view(asset_id, detail_mode=True)
+
+
+def _asset_maintenance_summary(asset):
+    today = get_tr_now().date()
+    next_maintenance = asset.next_maintenance_date
+    if not next_maintenance:
+        return "Planlanmadı"
+    if next_maintenance < today:
+        return "Gecikmiş"
+    if next_maintenance <= today + timedelta(days=15):
+        return "Yaklaşan"
+    return "Planlı"
+
+
+def _asset_detail_view(asset_id, detail_mode=False):
     asset = _asset_scope().filter(InventoryAsset.id == asset_id).first_or_404()
 
     if request.method == "POST":
@@ -2153,7 +2260,8 @@ def quick_asset_view(asset_id):
         db.session.commit()
         log_kaydet("Saha Hızlı Güncelleme", f"Asset hızlı güncellendi: ID {asset.id} / durum={asset.status}")
         flash("Hızlı ekipman güncellemesi kaydedildi.", "success")
-        return redirect(url_for("inventory.quick_asset_view", asset_id=asset.id))
+        target_endpoint = "inventory.asset_detail" if detail_mode else "inventory.quick_asset_view"
+        return redirect(url_for(target_endpoint, asset_id=asset.id))
 
     related_work_orders = (
         WorkOrder.query.filter_by(asset_id=asset.id, is_deleted=False)
@@ -2172,6 +2280,7 @@ def quick_asset_view(asset_id):
         .all()
     )
     open_work_order = next((order for order in related_work_orders if order.status in {"acik", "atandi", "islemde", "beklemede_parca", "beklemede_onay"}), None)
+    linked_box = asset.legacy_material.kutu if asset.legacy_material else None
     return render_template(
         "quick_asset_view.html",
         asset=asset,
@@ -2181,6 +2290,9 @@ def quick_asset_view(asset_id):
         assignment_status_label=_assignment_status_label,
         qr_context=_asset_qr_context(asset),
         open_work_order=open_work_order,
+        detail_mode=detail_mode,
+        linked_box=linked_box,
+        maintenance_summary=_asset_maintenance_summary(asset),
     )
 
 
@@ -2209,8 +2321,100 @@ def kutu_detay(kodu):
 @login_required
 @permission_required("inventory.view")
 def kutular():
+    if current_user.is_sahip:
+        havalimanlari = _visible_operational_airports()
+    elif current_user.havalimani:
+        havalimanlari = [current_user.havalimani]
+    else:
+        havalimanlari = []
     kutular_listesi = _box_scope().order_by(Kutu.kodu.asc()).all()
-    return render_template("kutular.html", kutular=kutular_listesi)
+    return render_template("kutular.html", kutular=kutular_listesi, havalimanlari=havalimanlari)
+
+
+@inventory_bp.route("/kutular/yeni", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+@permission_required("inventory.create")
+def kutu_olustur():
+    if current_user.is_sahip:
+        airport_id = request.form.get("havalimani_id", type=int) or current_user.havalimani_id
+    else:
+        airport_id = current_user.havalimani_id
+    if not airport_id:
+        flash("Kutu oluşturmak için geçerli bir havalimanı seçilmelidir.", "danger")
+        return redirect(url_for("inventory.kutular"))
+    _validate_box_write_access(airport_id)
+
+    konum = request.form.get("konum")
+    marka = request.form.get("marka")
+    try:
+        kutu = _create_box_with_generated_code(
+            airport_id=airport_id,
+            konum=konum,
+            marka=marka,
+        )
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("inventory.kutular"))
+
+    db.session.commit()
+    log_kaydet("Kutu", f"Yeni kutu oluşturuldu: {kutu.kodu}", event_key="box.create", target_model="Kutu", target_id=kutu.id)
+    audit_log("box.create", outcome="success", box_id=kutu.id, airport_id=kutu.havalimani_id, box_code=kutu.kodu)
+    flash(f"Yeni kutu oluşturuldu: {kutu.kodu}", "success")
+    return redirect(url_for("inventory.kutu_detay", kodu=kutu.kodu))
+
+
+@inventory_bp.route("/kutu/<string:kodu>/guncelle", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+@permission_required("inventory.edit")
+def kutu_guncelle(kodu):
+    kutu = _box_scope().filter(Kutu.kodu == kodu).first_or_404()
+    _validate_box_write_access(kutu.havalimani_id)
+
+    kutu.konum = guvenli_metin(request.form.get("konum") or "").strip() or kutu.konum
+    kutu.marka = guvenli_metin(request.form.get("marka") or "").strip() or None
+    db.session.commit()
+    log_kaydet("Kutu", f"Kutu bilgisi güncellendi: {kutu.kodu}", event_key="box.update", target_model="Kutu", target_id=kutu.id)
+    audit_log("box.update", outcome="success", box_id=kutu.id, airport_id=kutu.havalimani_id)
+    flash("Kutu bilgileri güncellendi.", "success")
+    return redirect(url_for("inventory.kutu_detay", kodu=kutu.kodu))
+
+
+@inventory_bp.route("/kutu/<string:kodu>/arsivle", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+@permission_required("inventory.delete")
+def kutu_arsivle(kodu):
+    kutu = _box_scope().filter(Kutu.kodu == kodu).first_or_404()
+    _validate_box_write_access(kutu.havalimani_id)
+    if kutu.active_materials:
+        flash("İçinde aktif malzeme bulunan kutu arşivlenemez.", "danger")
+        return redirect(url_for("inventory.kutu_detay", kodu=kodu))
+    kutu.soft_delete()
+    db.session.commit()
+    log_kaydet("Kutu", f"Kutu arşivlendi: {kutu.kodu}", event_key="box.archive", target_model="Kutu", target_id=kutu.id)
+    audit_log("box.archive", outcome="success", box_id=kutu.id, airport_id=kutu.havalimani_id)
+    flash("Kutu arşive alındı.", "success")
+    return redirect(url_for("inventory.kutular"))
+
+
+@inventory_bp.route("/kutu/<string:kodu>/sil", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+@permission_required("inventory.delete")
+def kutu_sil(kodu):
+    kutu = _box_scope().filter(Kutu.kodu == kodu).first_or_404()
+    _validate_box_write_access(kutu.havalimani_id)
+    if kutu.active_materials:
+        flash("İçinde aktif malzeme bulunan kutu silinemez. Önce içeriği taşıyın.", "danger")
+        return redirect(url_for("inventory.kutu_detay", kodu=kodu))
+    db.session.delete(kutu)
+    db.session.commit()
+    log_kaydet("Kutu", f"Kutu kalıcı silindi: {kodu}", event_key="box.delete", target_model="Kutu")
+    audit_log("box.delete", outcome="success", box_code=kodu)
+    flash("Kutu kalıcı olarak silindi.", "warning")
+    return redirect(url_for("inventory.kutular"))
 
 
 @inventory_bp.route("/sarf-malzemeler", methods=["GET", "POST"])

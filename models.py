@@ -131,6 +131,7 @@ class Kutu(db.Model, TimestampMixin, SoftDeleteMixin):
     __tablename__ = 'kutu'
     id = db.Column(db.Integer, primary_key=True)
     kodu = db.Column(db.String(50), unique=True, nullable=False)
+    marka = db.Column(db.String(120))
     konum = db.Column(db.String(100)) 
     havalimani_id = db.Column(db.Integer, db.ForeignKey('havalimani.id'), nullable=False, index=True)
     

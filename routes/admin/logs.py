@@ -45,7 +45,7 @@ TARGET_MODEL_LABELS = {
     "Role": "Rol",
     "Permission": "Yetki",
     "InventoryAsset": "Envanter Varlığı",
-    "Kutu": "Kutu / Ünite",
+    "Kutu": "Kutu",
     "ConsumableItem": "Sarf Kalemi",
     "WorkOrder": "İş Emri",
     "MaintenancePlan": "Bakım Planı",

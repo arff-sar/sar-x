@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Hızlı Ekipman Görünümü{% endblock %}
+{% block title %}Envanter Detayı{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -27,7 +27,7 @@
 {% block body %}
 <div class="page-header">
     <div>
-        <div class="page-title">Hızlı Ekipman Ekranı</div>
+        <div class="page-title">{% if detail_mode %}Envanter Detayı{% else %}Hızlı Ekipman Ekranı{% endif %}</div>
         <div class="page-meta">
             <span>{{ asset.equipment_template.name if asset.equipment_template else 'Ekipman' }}</span>
             <div class="meta-dot" style="width:3px; height:3px; background: var(--text4); border-radius:50%;"></div>
@@ -48,6 +48,9 @@
         {% if has_permission('qr.generate') %}
         <a href="{{ url_for('inventory.qr_uret', asset_id=asset.id) }}" target="_blank" class="btn btn-secondary">QR Etiketi</a>
         {% endif %}
+        {% if linked_box %}
+        <a href="{{ url_for('inventory.kutu_detay', kodu=linked_box.kodu) }}" class="btn btn-secondary">Bağlı Kutuyu Gör</a>
+        {% endif %}
     </div>
 </div>
 
@@ -66,11 +69,30 @@
     </div>
 </div>
 
+<div class="panel" style="margin-bottom:20px;">
+    <div class="panel-header"><div class="panel-title">Envanter Bilgileri</div></div>
+    <div class="panel-body">
+        <div class="quick-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));">
+            <div><strong>Ad</strong><div>{{ asset.equipment_template.name if asset.equipment_template else '-' }}</div></div>
+            <div><strong>Kategori / Tip</strong><div>{{ asset.equipment_template.category if asset.equipment_template else '-' }}</div></div>
+            <div><strong>Marka / Model</strong><div>{{ asset.equipment_template.brand if asset.equipment_template and asset.equipment_template.brand else '-' }}{% if asset.equipment_template and asset.equipment_template.model_code %} {{ asset.equipment_template.model_code }}{% endif %}</div></div>
+            <div><strong>Seri No</strong><div>{{ asset.serial_no or '-' }}</div></div>
+            <div><strong>Varlık Kodu</strong><div>{{ qr_context.asset_code }}</div></div>
+            <div><strong>Havalimanı</strong><div>{{ asset.airport.kodu if asset.airport else '-' }}</div></div>
+            <div><strong>Bağlı Kutu</strong><div>{{ linked_box.kodu if linked_box else '-' }}</div></div>
+            <div><strong>Zimmet Durumu</strong><div>{% if assignment_history and assignment_history[0].assignment %}{{ assignment_status_label(assignment_history[0].assignment.status) }}{% else %}Kayıt yok{% endif %}</div></div>
+            <div><strong>Bakım Özeti</strong><div>{{ maintenance_summary }}</div></div>
+            <div><strong>Yaklaşan Bakım</strong><div>{{ asset.next_maintenance_date.strftime('%d.%m.%Y') if asset.next_maintenance_date else '-' }}</div></div>
+            <div><strong>Kritik Uyarı</strong><div>{% if asset.is_critical %}Kritik ekipman{% elif maintenance_summary == 'Gecikmiş' %}Bakım gecikmiş{% else %}-{% endif %}</div></div>
+        </div>
+    </div>
+</div>
+
 <div class="asset-detail-grid">
     <div style="display:grid; gap:20px;">
         <div class="panel">
             <div class="panel-body mobile-form">
-                <form method="POST" action="{{ url_for('inventory.quick_asset_view', asset_id=asset.id) }}">
+                <form method="POST" action="{{ url_for('inventory.asset_detail', asset_id=asset.id) if detail_mode else url_for('inventory.quick_asset_view', asset_id=asset.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="quick-grid" style="margin-bottom:12px;">
                         <button name="status" value="aktif" class="quick-btn" type="submit">Aktif</button>
@@ -80,7 +102,7 @@
                     </div>
                 </form>
 
-                <form method="POST" action="{{ url_for('inventory.quick_asset_view', asset_id=asset.id) }}">
+                <form method="POST" action="{{ url_for('inventory.asset_detail', asset_id=asset.id) if detail_mode else url_for('inventory.quick_asset_view', asset_id=asset.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
                         <div class="form-group">

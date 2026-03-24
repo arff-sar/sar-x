@@ -3,7 +3,7 @@ from datetime import timedelta
 from flask import Blueprint, jsonify
 from flask_login import current_user, login_required
 
-from decorators import permission_required
+from decorators import CANONICAL_ROLE_SYSTEM, get_effective_role, permission_required
 from models import (
     AssetMeterReading,
     InventoryAsset,
@@ -24,6 +24,10 @@ api_bp = Blueprint("api", __name__)
 
 def _can_view_all():
     return current_user.rol in ["sahip", "genel_mudurluk"]
+
+
+def _can_view_all_boxes():
+    return get_effective_role(current_user) == CANONICAL_ROLE_SYSTEM
 
 
 def _asset_scope():
@@ -65,7 +69,7 @@ def api_kutu_detay(kodu):
     if not kutu:
         return jsonify({"durum": "hata", "mesaj": "Kutu bulunamadi"}), 404
 
-    if not _can_view_all() and kutu.havalimani_id != current_user.havalimani_id:
+    if not _can_view_all_boxes() and kutu.havalimani_id != current_user.havalimani_id:
         return jsonify({"durum": "hata", "mesaj": "Yetkisiz erisim"}), 403
 
     malzemeler = [{"ad": m.ad, "durum": m.durum, "seri_no": m.seri_no} for m in kutu.malzemeler if not m.is_deleted]

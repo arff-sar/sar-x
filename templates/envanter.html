@@ -122,7 +122,7 @@
                     {% if has_permission('logs.view') or has_permission('settings.manage') %}
                     <th>BİRİM</th>
                     {% endif %}
-                    <th style="text-align: center;">ÜNİTE / QR</th>
+                    <th style="text-align: center;">ENVANTER KODU / QR</th>
                     <th style="text-align: center;">MİKTAR</th>
                     <th style="text-align: center;">DURUM</th>
                     <th style="text-align: center;">BAKIM DURUMU</th>
@@ -151,7 +151,7 @@
                     {% endif %}
 
                     <td style="text-align: center;">
-                        <div style="font-size: 13px; font-weight: 700; margin-bottom: 4px;">{{ m.linked_asset.asset_code if m.linked_asset else m.kutu.kodu }}</div>
+                        <div style="font-size: 13px; font-weight: 700; margin-bottom: 4px;">{{ m.linked_asset.asset_code if m.linked_asset else '-' }}</div>
                         {% if m.linked_asset and has_permission('qr.generate') %}
                         <a href="{{ url_for('inventory.qr_uret', asset_id=m.linked_asset.id) }}" target="_blank" title="QR Kodunu Görüntüle" style="text-decoration: none; font-size: 18px; filter: grayscale(100%); opacity: 0.7; transition: 0.2s;">🖼️</a>
                         {% endif %}
@@ -183,7 +183,12 @@
 
                     <td style="text-align: right;">
                         <div class="row-actions">
-                            <a href="{{ url_for('inventory.kutu_detay', kodu=m.kutu.kodu) }}" class="row-btn">🔍 Detay</a>
+                            {% if m.linked_asset %}
+                            <a href="{{ url_for('inventory.asset_detail', asset_id=m.linked_asset.id) }}" class="row-btn">🔍 Envanter Detayı</a>
+                            {% endif %}
+                            {% if m.kutu %}
+                            <a href="{{ url_for('inventory.kutu_detay', kodu=m.kutu.kodu) }}" class="row-btn">📦 Bağlı Kutuyu Gör</a>
+                            {% endif %}
                             {% if m.linked_asset %}
                             <a href="{{ url_for('inventory.quick_asset_view', asset_id=m.linked_asset.id) }}" class="row-btn">📱 Hızlı</a>
                             {% endif %}

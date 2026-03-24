@@ -24,7 +24,7 @@ def test_sidebar_uses_single_open_group_and_direct_dashboard_link(client, app):
     assert 'data-sidebar-direct="dashboard"' in html
     assert html.count('sidebar-group is-open') == 1
     assert 'data-group="operations"' in html
-    assert "Kutu / Ünite Yönetimi" in html
+    assert "Kutu Yönetimi" in html
     assert 'data-sidebar-target="/envanter"' in html
     assert "İlk durak: Envanter" in html
     assert "Raporlar" not in html

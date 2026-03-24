@@ -16,6 +16,9 @@
         <img class="qr" src="{{ url_for('inventory.kutu_qr_img', box_id=kutu.id) }}" alt="Kutu QR">
         <div class="code">{{ qr_context.box_code }}</div>
         <div class="airport">{{ qr_context.airport_name }}</div>
+        {% if kutu.marka %}
+        <div class="airport" style="font-size:13px; font-weight:600;">Marka: {{ kutu.marka }}</div>
+        {% endif %}
     </div>
 </body>
 </html>

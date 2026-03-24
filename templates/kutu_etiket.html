@@ -18,10 +18,13 @@
         <img src="{{ url_for('inventory.kutu_qr_img', box_id=kutu.id) }}" alt="Kutu QR">
         <div class="code">{{ qr_context.box_code }}</div>
         <div class="airport">{{ qr_context.airport_name }}</div>
+        {% if kutu.marka %}
+        <div class="airport" style="font-size:13px; font-weight:600;">Marka: {{ kutu.marka }}</div>
+        {% endif %}
         <div class="list">
             {% for malzeme in materials %}
             <div class="item">
-                <span>{{ malzeme.ad }}</span>
+                <span>{{ malzeme.ad }}{% if malzeme.linked_asset and malzeme.linked_asset.equipment_template and (malzeme.linked_asset.equipment_template.brand or malzeme.linked_asset.equipment_template.model_code) %} ({{ malzeme.linked_asset.equipment_template.brand or '-' }} {{ malzeme.linked_asset.equipment_template.model_code or '' }}){% endif %}</span>
                 <strong>{{ malzeme.stok_miktari or 1 }}</strong>
             </div>
             {% else %}

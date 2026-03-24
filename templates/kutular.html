@@ -1,17 +1,41 @@
 {% extends "base.html" %}
-{% block title %}Kutu / Ünite Yönetimi{% endblock %}
+{% block title %}Kutu Yönetimi{% endblock %}
 
 {% block body %}
 <div class="page-header">
     <div>
-        <div class="page-title">Kutu / Ünite Yönetimi</div>
-        <div class="page-meta">Sahadaki kutu, raf, depo ve araç ünitelerini tek listede görün.</div>
+        <div class="page-title">Kutu Yönetimi</div>
+        <div class="page-meta">Kutu kodlarını, marka bilgilerini ve içerik yoğunluğunu tek ekrandan yönetin.</div>
     </div>
+    {% if has_permission('inventory.create') %}
+    <form method="POST" action="{{ url_for('inventory.kutu_olustur') }}" style="display:flex; gap:10px; align-items:end; flex-wrap:wrap;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if current_user.is_sahip %}
+        <div class="form-group" style="margin:0;">
+            <label>Havalimanı</label>
+            <select name="havalimani_id" class="form-control" required>
+                {% for h in havalimanlari %}
+                <option value="{{ h.id }}">{{ h.kodu }} - {{ h.ad }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+        <div class="form-group" style="margin:0;">
+            <label>Konum</label>
+            <input type="text" name="konum" class="form-control" placeholder="Depo A Raf 2">
+        </div>
+        <div class="form-group" style="margin:0;">
+            <label>Marka</label>
+            <input type="text" name="marka" class="form-control" placeholder="Marka adı">
+        </div>
+        <button type="submit" class="btn btn-primary">➕ Yeni Kutu Oluştur</button>
+    </form>
+    {% endif %}
 </div>
 
 <div class="panel">
     <div class="panel-header">
-        <div class="panel-title">Yerleşim Birimleri</div>
+        <div class="panel-title">Kutular</div>
     </div>
     <div class="panel-body" style="padding:0;">
         <div class="table-container">
@@ -19,6 +43,7 @@
                 <thead>
                     <tr>
                         <th>Kod</th>
+                        <th>Marka</th>
                         <th>Konum</th>
                         <th>Havalimanı</th>
                         <th>Malzeme</th>
@@ -30,6 +55,7 @@
                     {% for kutu in kutular %}
                     <tr>
                         <td style="font-family:var(--mono); font-weight:700;">{{ kutu.kodu }}</td>
+                        <td>{{ kutu.marka or '-' }}</td>
                         <td>{{ kutu.konum or '-' }}</td>
                         <td>{{ kutu.havalimani.ad if kutu.havalimani else '-' }}</td>
                         <td>{{ kutu.malzemeler|selectattr('is_deleted', 'equalto', false)|list|length }}</td>
@@ -39,11 +65,17 @@
                             {% if has_permission('qr.generate') %}
                             <a href="{{ url_for('inventory.kutu_qr_uret', box_id=kutu.id) }}" target="_blank" class="row-btn">QR</a>
                             {% endif %}
+                            {% if has_permission('inventory.delete') and (current_user.is_sahip or (current_user.is_airport_manager and current_user.havalimani_id == kutu.havalimani_id)) %}
+                            <form method="POST" action="{{ url_for('inventory.kutu_arsivle', kodu=kutu.kodu) }}" style="display:inline;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button class="row-btn" type="submit">Arşivle</button>
+                            </form>
+                            {% endif %}
                         </td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="6" style="text-align:center; color:var(--text3); padding:28px;">Kayıtlı kutu / ünite bulunmuyor.</td>
+                        <td colspan="7" style="text-align:center; color:var(--text3); padding:28px;">Kayıtlı kutu bulunmuyor.</td>
                     </tr>
                     {% endfor %}
                 </tbody>

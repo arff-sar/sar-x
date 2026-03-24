@@ -418,6 +418,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "inventory.view",
         "inventory.create",
         "inventory.edit",
+        "inventory.delete",
         "inventory.export",
         "assignment.view",
         "assignment.create",
@@ -573,7 +574,7 @@ MENU_GROUPS = [
         "label": "Operasyon",
         "icon": "Saha",
         "items": [
-            {"label": "Envanter", "endpoint": "inventory.envanter", "endpoints": ["inventory.envanter", "inventory.malzeme_ekle", "inventory.quick_asset_view", "inventory.kutu_detay"], "permission": "inventory.view"},
+            {"label": "Envanter", "endpoint": "inventory.envanter", "endpoints": ["inventory.envanter", "inventory.malzeme_ekle", "inventory.quick_asset_view", "inventory.asset_detail"], "permission": "inventory.view"},
             {"label": "Zimmetler", "endpoint": "inventory.zimmetler", "prefixes": ["inventory.zimmet"], "permission": "assignment.view"},
             {"label": "Tatbikat", "endpoint": "inventory.tatbikat_listesi", "prefixes": ["inventory.tatbikat_"], "permission": "drill.view"},
             {"label": "Bakım", "endpoint": "maintenance.bakim_paneli", "prefixes": ["maintenance.bakim_"], "permission": "maintenance.view"},
@@ -581,7 +582,7 @@ MENU_GROUPS = [
             {"label": "İş Emirleri", "endpoint": "maintenance.is_emirleri", "prefixes": ["maintenance.is_emir", "maintenance.quick_close_work_order"], "permission": "workorder.view"},
             {"label": "KKD Takibi", "endpoint": "inventory.kkd_listesi", "prefixes": ["inventory.kkd"], "permission": "ppe.view"},
             {"label": "Yedek Parçalar", "endpoint": "parts.spare_parts_list", "prefixes": ["parts."], "permission": "parts.view"},
-            {"label": "Kutu / Ünite Yönetimi", "endpoint": "inventory.kutular", "endpoints": ["inventory.kutular", "inventory.kutu_detay"], "permission": "inventory.view"},
+            {"label": "Kutu Yönetimi", "endpoint": "inventory.kutular", "endpoints": ["inventory.kutular", "inventory.kutu_detay"], "permission": "inventory.view"},
         ],
     },
     {

@@ -22,6 +22,9 @@
             {% endif %}
             <div class="code">{{ qr_context.box_code }}</div>
             <div class="airport">{{ qr_context.airport_name }}</div>
+            {% if kutu.marka %}
+            <div class="airport" style="font-size:12px;">Marka: {{ kutu.marka }}</div>
+            {% endif %}
         </div>
         <table>
             <thead>
@@ -34,7 +37,7 @@
             <tbody>
                 {% for malzeme in materials %}
                 <tr>
-                    <td>{{ malzeme.ad }}</td>
+                    <td>{{ malzeme.ad }}{% if malzeme.linked_asset and malzeme.linked_asset.equipment_template and (malzeme.linked_asset.equipment_template.brand or malzeme.linked_asset.equipment_template.model_code) %} ({{ malzeme.linked_asset.equipment_template.brand or '-' }} {{ malzeme.linked_asset.equipment_template.model_code or '' }}){% endif %}</td>
                     <td>{{ malzeme.seri_no or '-' }}</td>
                     <td>{{ malzeme.stok_miktari or 1 }}</td>
                 </tr>
