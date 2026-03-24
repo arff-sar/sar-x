@@ -20,6 +20,7 @@ def _login(client, user_id):
 def test_legacy_roles_map_to_canonical_effective_roles(app):
     with app.app_context():
         assert get_effective_role(KullaniciFactory.build(rol="sahip")) == CANONICAL_ROLE_SYSTEM
+        assert get_effective_role(KullaniciFactory.build(rol="sistem_sahibi")) == CANONICAL_ROLE_SYSTEM
         assert get_effective_role(KullaniciFactory.build(rol="yetkili")) == CANONICAL_ROLE_TEAM_LEAD
         assert get_effective_role(KullaniciFactory.build(rol="bakim_sorumlusu")) == CANONICAL_ROLE_TEAM_MEMBER
         assert get_effective_role(KullaniciFactory.build(rol="readonly")) == CANONICAL_ROLE_ADMIN

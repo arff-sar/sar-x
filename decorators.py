@@ -6,6 +6,7 @@ from flask_login import current_user
 from extensions import column_exists, table_exists
 
 ROLE_OWNER = "sahip"
+ROLE_SYSTEM_OWNER = "sistem_sahibi"
 ROLE_ADMIN = "admin"
 ROLE_EDITOR = "editor"
 ROLE_MANAGER = "yetkili"
@@ -36,6 +37,7 @@ ROLE_ALIASES = {
     CANONICAL_ROLE_TEAM_MEMBER: CANONICAL_ROLE_TEAM_MEMBER,
     CANONICAL_ROLE_ADMIN: CANONICAL_ROLE_ADMIN,
     ROLE_OWNER: CANONICAL_ROLE_SYSTEM,
+    ROLE_SYSTEM_OWNER: CANONICAL_ROLE_SYSTEM,
     ROLE_MANAGER: CANONICAL_ROLE_TEAM_LEAD,
     ROLE_AIRPORT_MANAGER: CANONICAL_ROLE_TEAM_LEAD,
     ROLE_EDITOR: CANONICAL_ROLE_TEAM_MEMBER,
@@ -77,6 +79,7 @@ ROLE_OPTIONS = [
 
 LEGACY_ROLE_OPTIONS = [
     {"key": ROLE_OWNER, "label": "Sistem Sahibi", "scope": "global", "critical": True, "is_core": False},
+    {"key": ROLE_SYSTEM_OWNER, "label": "Sistem Sahibi", "scope": "global", "critical": True, "is_core": False},
     {"key": ROLE_MANAGER, "label": "Havalimanı Yöneticisi", "scope": "airport", "critical": False, "is_core": False},
     {"key": ROLE_AIRPORT_MANAGER, "label": "Havalimanı Yöneticisi", "scope": "airport", "critical": False, "is_core": False},
     {"key": ROLE_EDITOR, "label": "İçerik Editörü", "scope": "global", "critical": False, "is_core": False},
@@ -463,6 +466,7 @@ DEFAULT_ROLE_PERMISSIONS = {
 
 LEGACY_ROLE_DEFAULT_PERMISSIONS = {
     ROLE_OWNER: set(DEFAULT_ROLE_PERMISSIONS[CANONICAL_ROLE_SYSTEM]),
+    ROLE_SYSTEM_OWNER: set(DEFAULT_ROLE_PERMISSIONS[CANONICAL_ROLE_SYSTEM]),
     ROLE_EDITOR: {
         "dashboard.view",
         "homepage.view",

@@ -57,6 +57,32 @@ def test_owner_user_sees_role_switch_dropdown_even_with_different_email(client, 
     assert "Geçici aktif rolünüzü seçin" in html
 
 
+def test_legacy_system_owner_can_switch_role_and_persist_override(client, app):
+    with app.app_context():
+        user = KullaniciFactory(
+            rol="sistem_sahibi",
+            is_deleted=False,
+            tam_ad="Legacy Sistem Sahibi",
+            kullanici_adi="legacy-owner@sarx.com",
+        )
+        db.session.add(user)
+        db.session.commit()
+        user_id = user.id
+
+    _login(client, user_id)
+    dashboard_response = client.get("/dashboard")
+    assert dashboard_response.status_code == 200
+    assert 'id="userMenuToggle"' in dashboard_response.data.decode("utf-8")
+
+    response = client.post("/role-switch", data={"role": "admin"}, follow_redirects=True)
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Geçici aktif rol güncellendi: Admin" in html
+    with client.session_transaction() as session:
+        assert session.get("temporary_role_override") == "admin"
+
+
 def test_mehmet_user_can_switch_role_and_session_persists(client, app):
     with app.app_context():
         user = KullaniciFactory(

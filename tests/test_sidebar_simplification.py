@@ -68,4 +68,5 @@ def test_operations_group_uses_accessible_toggle_markup_and_mobile_sync(client, 
     assert 'class="sidebar-footer"' in html
     assert "syncSidebarState" in html
     assert "document.querySelectorAll('[data-sidebar-link]')" in html
-    assert "window.location.assign(targetUrl)" in html
+    assert "openSingleGroup(group, !currentlyOpen)" in html
+    assert "syncChevronState" in html

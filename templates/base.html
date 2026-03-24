@@ -390,7 +390,7 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
     <div class="sidebar-scroll">
       <div class="sidebar-head">
         <div class="sidebar-kicker">Navigasyon</div>
-        <div class="sidebar-subtitle">Rolünüze göre açılan ana modüller. Grup başlığına bastığınızda ilk sayfa yüklenir.</div>
+        <div class="sidebar-subtitle">Rolünüze göre açılan ana modüller. Grup başlığıyla akordiyonu açıp kapatabilirsiniz.</div>
       </div>
 
       {% for group in sidebar_groups %}
@@ -710,29 +710,23 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
             }
         }
 
-        sidebarGroups.forEach(function (group) {
-            setGroupState(group, group.classList.contains('is-open'));
+        const syncChevronState = function (group) {
+            if (!group) return;
             const button = group.querySelector('[data-sidebar-group]');
             if (!button) return;
-            button.addEventListener('click', function () {
-                const targetUrl = button.dataset.sidebarTarget || '';
+            button.setAttribute('aria-expanded', group.classList.contains('is-open') ? 'true' : 'false');
+        };
+
+        sidebarGroups.forEach(function (group) {
+            setGroupState(group, group.classList.contains('is-open'));
+            syncChevronState(group);
+            const button = group.querySelector('[data-sidebar-group]');
+            if (!button) return;
+            button.addEventListener('click', function (event) {
+                event.preventDefault();
                 const currentlyOpen = group.classList.contains('is-open');
-                if (mobileSidebarMedia.matches) {
-                    openSingleGroup(group, !currentlyOpen);
-                    return;
-                }
-                openSingleGroup(group, true);
-                if (!targetUrl) {
-                    return;
-                }
-                try {
-                    const targetPath = new URL(targetUrl, window.location.origin).pathname;
-                    if (targetPath !== window.location.pathname) {
-                        window.location.assign(targetUrl);
-                    }
-                } catch (error) {
-                    window.location.assign(targetUrl);
-                }
+                openSingleGroup(group, !currentlyOpen);
+                sidebarGroups.forEach(syncChevronState);
             });
         });
 
