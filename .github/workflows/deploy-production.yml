@@ -322,6 +322,7 @@ jobs:
           env_by_name = {item["name"]: item for item in env_items}
           required_envs = [
               "APP_ENV",
+              "DEMO_TOOLS_ENABLED",
               "SECRET_KEY",
               "DATABASE_URL",
               "ENABLE_SCHEDULER",
