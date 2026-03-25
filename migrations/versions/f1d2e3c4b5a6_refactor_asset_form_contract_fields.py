@@ -89,7 +89,7 @@ def upgrade():
             bind.execute(
                 sa.text(
                     "UPDATE inventory_asset "
-                    "SET is_demirbas = 1 "
+                    "SET is_demirbas = TRUE "
                     "WHERE asset_tag IS NOT NULL AND TRIM(asset_tag) <> ''"
                 )
             )
