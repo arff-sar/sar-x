@@ -458,15 +458,19 @@ def clear_demo_data():
     with db.session.no_autoflush:
         # Demo bakım formuna referans veren, fakat seed kaydı olmayan şablonlar
         # maintenance_form_template silinirken FK hatasına neden olabiliyor.
+        # Demo dışı şablonları silmeyiz; sadece form referansını kaldırırız.
         if demo_form_ids:
             extra_templates = EquipmentTemplate.query.filter(
                 EquipmentTemplate.default_maintenance_form_id.in_(sorted(demo_form_ids))
             )
             if demo_template_ids:
                 extra_templates = extra_templates.filter(~EquipmentTemplate.id.in_(sorted(demo_template_ids)))
-            extra_template_ids = {tpl.id for tpl in extra_templates.all()}
+            extra_template_ids = [tpl.id for tpl in extra_templates.all()]
             if extra_template_ids:
-                demo_template_ids = set(demo_template_ids) | extra_template_ids
+                EquipmentTemplate.query.filter(EquipmentTemplate.id.in_(extra_template_ids)).update(
+                    {EquipmentTemplate.default_maintenance_form_id: None},
+                    synchronize_session=False,
+                )
 
         # Demo şablonuna bağlı fakat seed tablosunda olmayan asset kayıtları,
         # template silinirken equipment_template_id alanını NULL'a düşürüp

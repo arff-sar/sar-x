@@ -156,6 +156,35 @@ def test_clear_demo_data_handles_assets_linked_to_demo_templates(app):
         assert DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG).count() == 0
 
 
+def test_clear_demo_data_detaches_non_seed_templates_from_demo_forms(app):
+    with app.app_context():
+        seed_demo_data(reset=True)
+
+        demo_form_row = DemoSeedRecord.query.filter_by(
+            seed_tag=DEMO_SEED_TAG,
+            model_name="MaintenanceFormTemplate",
+        ).first()
+        assert demo_form_row is not None
+
+        external_template = EquipmentTemplate(
+            name="Gerçek Şablon - Demo Forma Bağlı",
+            category="Harici",
+            default_maintenance_form_id=demo_form_row.record_id,
+            is_active=True,
+        )
+        db.session.add(external_template)
+        db.session.commit()
+        external_template_id = external_template.id
+
+        result = clear_demo_data()
+        assert result["deleted"] > 0
+
+        persisted_template = EquipmentTemplate.query.filter_by(id=external_template_id).first()
+        assert persisted_template is not None
+        assert persisted_template.default_maintenance_form_id is None
+        assert DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG).count() == 0
+
+
 def test_demo_clear_endpoint_succeeds_with_dependent_assets(client, app):
     with app.app_context():
         owner = KullaniciFactory(
