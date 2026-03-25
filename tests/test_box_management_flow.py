@@ -133,7 +133,7 @@ def test_airport_manager_can_archive_own_airport_box(client, app):
         assert archived is not None and archived.is_deleted is True
 
 
-def test_inventory_detail_button_targets_asset_detail_not_box(client, app):
+def test_inventory_accordion_actions_are_simplified(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Kars", kodu="KSY")
         manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
@@ -146,7 +146,6 @@ def test_inventory_detail_button_targets_asset_detail_not_box(client, app):
         asset.legacy_material_id = material.id
         db.session.commit()
         manager_id = manager.id
-        asset_id = asset.id
         box_code = box.kodu
 
     _login(client, manager_id)
@@ -154,9 +153,10 @@ def test_inventory_detail_button_targets_asset_detail_not_box(client, app):
     html = response.data.decode("utf-8")
 
     assert response.status_code == 200
-    assert f'/asset/{asset_id}/detay' in html
-    assert f'/kutu/{box_code}" class="row-btn">📦 Bağlı Kutuyu Gör' in html
-    assert f'/kutu/{box_code}" class="row-btn">🔍 Envanter Detayı' not in html
+    assert f"/kutu/{box_code}" in html
+    assert "🔍 Envanter Detayı" not in html
+    assert "📱 Hızlı" not in html
+    assert "Hızlı Zimmet" in html
 
 
 def test_asset_detail_page_renders_core_inventory_fields(client, app):
@@ -184,7 +184,14 @@ def test_asset_detail_page_renders_core_inventory_fields(client, app):
     assert "Marka / Model" in html
     assert "Seri No" in html
     assert "Bağlı Kutuyu Gör" in html
-    assert "Bakım Özeti" in html
+    assert "Bakım Durumu" in html
+    assert 'data-testid="asset-summary-shell"' in html
+    assert 'data-testid="asset-info-groups"' in html
+    assert "Varlık Kimliği" in html
+    assert "Operasyon ve Doküman" in html
+    assert "Demirbaş No" in html
+    assert "Garanti" in html
+    assert "Kullanım Kılavuzu" in html
 
 
 def test_box_archive_and_delete_lifecycle(client, app):

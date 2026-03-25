@@ -1,6 +1,87 @@
 {% extends "base.html" %}
 {% block title %}Envanter Yönetimi{% endblock %}
 
+{% block extra_css %}
+<style>
+.inventory-table-compact table,
+.inventory-table-compact .data-table {
+    min-width: 0;
+    table-layout: fixed;
+}
+.inventory-table-compact th,
+.inventory-table-compact td {
+    padding: 12px;
+}
+.inventory-table-compact .col-no { width: 64px; text-align: center; }
+.inventory-table-compact .col-material { width: 22%; }
+.inventory-table-compact .col-airport { width: 12%; text-align: center; }
+.inventory-table-compact .col-code { width: 18%; text-align: center; }
+.inventory-table-compact .col-status { width: 12%; text-align: center; }
+.inventory-table-compact .col-maintenance { width: 18%; text-align: center; }
+.inventory-table-compact .col-action { width: 16%; text-align: right; }
+
+.inventory-row-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.inventory-row-toggle .caret {
+    font-size: 11px;
+    transition: transform .2s ease;
+}
+.inventory-row-toggle[aria-expanded="true"] .caret {
+    transform: rotate(180deg);
+}
+
+.inventory-detail-row {
+    display: none;
+}
+.inventory-detail-row.is-open {
+    display: table-row;
+}
+.inventory-detail-panel {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface2);
+    padding: 14px;
+}
+.inventory-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+}
+.inventory-detail-item {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #fff;
+    padding: 10px;
+}
+.inventory-detail-item strong {
+    display: block;
+    font-size: 11px;
+    color: var(--text4);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+.inventory-detail-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+@media (max-width: 900px) {
+    .inventory-table-compact .col-action {
+        text-align: left;
+    }
+    .inventory-detail-grid {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+{% endblock %}
+
 {% block body %}
 <div class="page-header">
     <div>
@@ -10,29 +91,20 @@
             <div class="meta-dot" style="width: 3px; height: 3px; background: var(--text4); border-radius: 50%;"></div>
             <span>Operasyonel ekipman ve malzeme listesi</span>
             <div class="meta-dot" style="width: 3px; height: 3px; background: var(--text4); border-radius: 50%;"></div>
-            <span>{{ malzemeler|length }} Kalem Ürün</span>
+            <span>{{ malzemeler|length }} Kayıt</span>
         </div>
     </div>
-    
+
     <div style="display: flex; gap: 10px; align-items: center;">
         {% if has_permission('inventory.export') %}
-        <a href="{{ url_for('inventory.envanter_excel') }}" class="btn btn-secondary" style="color: #1d6f42;">
-            📊 Excel
-        </a>
-        <a href="{{ url_for('inventory.envanter_pdf') }}" class="btn btn-secondary" style="color: #c62828;">
-            📄 PDF
-        </a>
+        <a href="{{ url_for('inventory.envanter_excel') }}" class="btn btn-secondary" style="color: #1d6f42;">📊 Excel</a>
+        <a href="{{ url_for('inventory.envanter_pdf') }}" class="btn btn-secondary" style="color: #c62828;">📄 PDF</a>
         {% endif %}
         {% if has_permission('reports.view') %}
-        <a href="{{ url_for('reports.index', report='inventory') }}" class="btn btn-secondary">
-            📈 Rapor Merkezi
-        </a>
+        <a href="{{ url_for('reports.index', report='inventory') }}" class="btn btn-secondary">📈 Rapor Merkezi</a>
         {% endif %}
-
-        {% if has_permission('inventory.create') %}
-        <a href="{{ url_for('inventory.malzeme_ekle') }}" class="btn btn-primary">
-            ➕ Yeni Malzeme Ekle
-        </a>
+        {% if has_permission('inventory.create') and (giren_user.is_sahip or giren_user.is_airport_manager) %}
+        <a href="{{ url_for('inventory.malzeme_ekle') }}" class="btn btn-primary">➕ Yeni Malzeme Ekle</a>
         {% endif %}
     </div>
 </div>
@@ -41,7 +113,7 @@
     <div class="panel-header">
         <div>
             <div class="panel-title">Filtreler</div>
-            <div class="panel-subtitle">Listeyi kategori, bakım ve iş emri durumuna göre sade biçimde daraltın.</div>
+            <div class="panel-subtitle">Listeyi birim ve kategoriye göre daraltın.</div>
         </div>
     </div>
     <div class="panel-body" style="padding-bottom: 10px;">
@@ -66,34 +138,6 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="form-group" style="margin-bottom: 0;">
-                <label>Bakım Durumu</label>
-                <select name="bakim_durumu" class="form-control">
-                    <option value="">Tümü</option>
-                    <option value="yaklasan" {% if selected_maintenance == 'yaklasan' %}selected{% endif %}>Yaklaşan</option>
-                    <option value="geciken" {% if selected_maintenance == 'geciken' %}selected{% endif %}>Geciken</option>
-                    <option value="normal" {% if selected_maintenance == 'normal' %}selected{% endif %}>Planlı/Normal</option>
-                </select>
-            </div>
-            <div class="form-group" style="margin-bottom: 0;">
-                <label>İş Emri Durumu</label>
-                <select name="is_emri_durumu" class="form-control">
-                    <option value="">Tümü</option>
-                    <option value="acik" {% if selected_work_order == 'acik' %}selected{% endif %}>Açık</option>
-                    <option value="atandi" {% if selected_work_order == 'atandi' %}selected{% endif %}>Atandı</option>
-                    <option value="islemde" {% if selected_work_order == 'islemde' %}selected{% endif %}>İşlemde</option>
-                    <option value="beklemede_parca" {% if selected_work_order == 'beklemede_parca' %}selected{% endif %}>Parça Bekleniyor</option>
-                    <option value="beklemede_onay" {% if selected_work_order == 'beklemede_onay' %}selected{% endif %}>Onay Bekleniyor</option>
-                    <option value="tamamlandi" {% if selected_work_order == 'tamamlandi' %}selected{% endif %}>Tamamlandı</option>
-                </select>
-            </div>
-            <div class="form-group" style="margin-bottom: 0;">
-                <label>Kritik Ekipman</label>
-                <select name="kritik" class="form-control">
-                    <option value="">Tümü</option>
-                    <option value="1" {% if selected_critical == '1' %}selected{% endif %}>Sadece Kritik</option>
-                </select>
-            </div>
             <div style="display:flex; gap:8px;">
                 <button type="submit" class="btn btn-navy" style="width:100%;">Filtrele</button>
                 <a href="{{ url_for('inventory.envanter') }}" class="btn btn-secondary" style="width:100%; text-align:center;">Sıfırla</a>
@@ -106,109 +150,101 @@
     <div class="panel-header">
         <div class="panel-title">
             <div class="panel-title-icon pi-navy" style="background: var(--blue-light); color: var(--blue); padding: 5px; border-radius: 8px;">📋</div>
-            Malzeme Listesi
+            Envanter Listesi
         </div>
         <div class="search-wrap">
             <span class="search-icon">🔍</span>
-            <input type="text" id="inventorySearch" class="search-input" placeholder="İsim, SN veya Kutu ara..." onkeyup="filterInventory()">
+            <input type="text" id="inventorySearch" class="search-input" placeholder="Malzeme, kod veya birim ara..." onkeyup="filterInventory()">
         </div>
     </div>
-    
-    <div class="table-container">
+
+    <div class="table-container inventory-table-compact">
         <table class="data-table" id="inventoryTable">
             <thead>
                 <tr>
-                    <th>MALZEME / SERİ NO</th>
-                    {% if has_permission('logs.view') or has_permission('settings.manage') %}
-                    <th>BİRİM</th>
-                    {% endif %}
-                    <th style="text-align: center;">ENVANTER KODU / QR</th>
-                    <th style="text-align: center;">MİKTAR</th>
-                    <th style="text-align: center;">DURUM</th>
-                    <th style="text-align: center;">BAKIM DURUMU</th>
-                    <th style="text-align: right;">İŞLEM</th>
+                    <th class="col-no">Sıra No</th>
+                    <th class="col-material">Malzeme</th>
+                    <th class="col-airport">Birim</th>
+                    <th class="col-code">Envanter Kodu</th>
+                    <th class="col-status">Durum</th>
+                    <th class="col-maintenance">Bakım Durumu</th>
+                    <th class="col-action">İşlem</th>
                 </tr>
             </thead>
             <tbody>
                 {% for m in malzemeler %}
-                <tr class="{% if m.kritik_mi %}table-row-critical{% endif %}">
-                    <td>
-                        <div style="font-weight: 700; color: var(--navy); font-size: 14px;">
-                            {{ m.ad }}
-                            {% if m.kritik_mi %}
-                            <span class="status-pill status-ariza" style="font-size: 9px; padding: 2px 6px; margin-left: 6px;">KRİTİK</span>
-                            {% endif %}
-                        </div>
-                        <div style="font-size: 12px; color: var(--text3); margin-top: 4px; font-family: var(--mono);">
-                            SN: {{ m.seri_no if m.seri_no else 'Girilmedi' }}
-                        </div>
+                {% set panel_id = 'inventory-row-' ~ loop.index %}
+                {% set linked_asset = m.linked_asset %}
+                {% set maintenance_label = maintenance_label_tr(m.gelecek_bakim_tarihi, today=today) %}
+                <tr class="inventory-summary-row" data-search-text="{{ (m.ad ~ ' ' ~ (m.seri_no or '') ~ ' ' ~ (m.havalimani.kodu if m.havalimani else '') ~ ' ' ~ (linked_asset.asset_code if linked_asset else ''))|lower }}">
+                    <td class="col-no"><strong>{{ loop.index }}</strong></td>
+                    <td class="col-material">{{ m.ad }}</td>
+                    <td class="col-airport" title="{{ m.havalimani.ad if m.havalimani else 'Bilinmiyor' }}">
+                        <span class="tag-navy" style="font-size: 10px; padding: 4px 8px;">{{ m.havalimani.kodu if m.havalimani else '-' }}</span>
                     </td>
-                    
-                    {% if has_permission('logs.view') or has_permission('settings.manage') %}
-                    <td>
-                        <span class="tag-navy" style="font-size: 10px; padding: 4px 8px;">{{ m.havalimani.kodu }}</span>
-                    </td>
-                    {% endif %}
-
-                    <td style="text-align: center;">
-                        <div style="font-size: 13px; font-weight: 700; margin-bottom: 4px;">{{ m.linked_asset.asset_code if m.linked_asset else '-' }}</div>
-                        {% if m.linked_asset and has_permission('qr.generate') %}
-                        <a href="{{ url_for('inventory.qr_uret', asset_id=m.linked_asset.id) }}" target="_blank" title="QR Kodunu Görüntüle" style="text-decoration: none; font-size: 18px; filter: grayscale(100%); opacity: 0.7; transition: 0.2s;">🖼️</a>
-                        {% endif %}
-                    </td>
-
-                    <td style="text-align: center;">
-                        <span style="font-size: 15px; font-weight: 800; color: var(--navy);">{{ m.stok_miktari }}</span> 
-                        <span style="font-size: 11px; color: var(--text4); font-weight: 600;">ADET</span>
-                    </td>
-
-                    <td style="text-align: center;">
-                        <span class="status-pill 
-                            {% if m.durum == 'Aktif' %}status-aktif
-                            {% elif m.durum == 'Bakımda' %}status-bakim
-                            {% elif m.durum == 'Arızalı' %}status-ariza
-                            {% else %}status-pasif{% endif %}">
-                            {{ m.durum }}
+                    <td class="col-code">{{ linked_asset.asset_code if linked_asset else '-' }}</td>
+                    <td class="col-status">
+                        <span class="status-pill {% if status_label_tr(m.durum) == 'Aktif' %}status-aktif{% else %}status-pasif{% endif %}">
+                            {{ status_label_tr(m.durum) }}
                         </span>
                     </td>
-
-                    <td style="text-align: center;">
-                        <div style="font-size: 12px; font-weight: 700;">{{ m.son_bakim_tarihi.strftime('%d.%m.%Y') if m.son_bakim_tarihi else '-' }}</div>
-                        {% if m.gelecek_bakim_tarihi %}
-                        <div style="font-size: 11px; color: var(--amber); margin-top: 4px; font-weight: 600;">
-                            ⏳ Sırada: {{ m.gelecek_bakim_tarihi.strftime('%d.%m.%Y') }}
-                        </div>
-                        {% endif %}
+                    <td class="col-maintenance">{{ maintenance_label }}</td>
+                    <td class="col-action">
+                        <button
+                            type="button"
+                            class="row-btn inventory-row-toggle"
+                            aria-expanded="false"
+                            aria-controls="{{ panel_id }}"
+                            data-accordion-target="{{ panel_id }}"
+                        >
+                            Detay
+                            <span class="caret">▼</span>
+                        </button>
                     </td>
+                </tr>
+                <tr id="{{ panel_id }}" class="inventory-detail-row" aria-hidden="true">
+                    <td colspan="7">
+                        <div class="inventory-detail-panel">
+                            <div class="inventory-detail-grid">
+                                <div class="inventory-detail-item">
+                                    <strong>Seri No</strong>
+                                    <div>{{ m.seri_no or '-' }}</div>
+                                </div>
+                                <div class="inventory-detail-item">
+                                    <strong>Demirbaş No</strong>
+                                    <div>{{ linked_asset.asset_tag if linked_asset and linked_asset.asset_tag else '-' }}</div>
+                                </div>
+                                <div class="inventory-detail-item">
+                                    <strong>Bağlı Kutu</strong>
+                                    <div>
+                                        {% if m.kutu %}
+                                        <a href="{{ url_for('inventory.kutu_detay', kodu=m.kutu.kodu) }}">{{ m.kutu.kodu }}</a>
+                                        {% else %}
+                                        -
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="inventory-detail-actions">
+                                {% if has_permission('assignment.view') %}
+                                <a href="{{ url_for('inventory.zimmetler') }}{% if linked_asset %}?asset_id={{ linked_asset.id }}{% endif %}" class="row-btn">Hızlı Zimmet</a>
+                                {% endif %}
 
-                    <td style="text-align: right;">
-                        <div class="row-actions">
-                            {% if m.linked_asset %}
-                            <a href="{{ url_for('inventory.asset_detail', asset_id=m.linked_asset.id) }}" class="row-btn">🔍 Envanter Detayı</a>
-                            {% endif %}
-                            {% if m.kutu %}
-                            <a href="{{ url_for('inventory.kutu_detay', kodu=m.kutu.kodu) }}" class="row-btn">📦 Bağlı Kutuyu Gör</a>
-                            {% endif %}
-                            {% if m.linked_asset %}
-                            <a href="{{ url_for('inventory.quick_asset_view', asset_id=m.linked_asset.id) }}" class="row-btn">📱 Hızlı</a>
-                            {% endif %}
-                            {% if has_permission('assignment.view') and m.linked_asset %}
-                            <a href="{{ url_for('inventory.zimmetler') }}" class="row-btn">Zimmetler</a>
-                            {% endif %}
-                            
-                            {% if has_permission('maintenance.edit') %}
-                            <button class="row-btn" onclick="openBakimModal('{{ m.id }}', '{{ m.ad }}')" style="background: var(--navy); color: white; border: none;">🛠️ Bakım</button>
-                            {% endif %}
+                                {% if has_permission('maintenance.edit') %}
+                                <form method="POST" action="{{ url_for('inventory.bakim_kaydet', id=m.id) }}" style="display:inline-flex;">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="not" value="Envanter panelinden hızlı bakım kaydı.">
+                                    <button type="submit" class="row-btn" style="background: var(--navy); color: #fff; border-color: var(--navy);">🛠️ Bakım</button>
+                                </form>
+                                {% endif %}
 
-                            {# ✅ GÜNCELLENDİ: Modern Dinamik Silme Butonu #}
-                            {% if has_permission('inventory.delete') %}
-                            <button type="button" 
-                                    class="row-btn" 
-                                    style="background: var(--red-light); color: var(--red); border: 1px solid var(--red-border); cursor: pointer;"
-                                    onclick="confirmDelete('{{ m.id }}', '{{ m.ad }}')">
-                                🗑️ Sil
-                            </button>
-                            {% endif %}
+                                {% if has_permission('inventory.delete') %}
+                                <form method="POST" action="{{ url_for('inventory.malzeme_sil', id=m.id) }}" style="display:inline-flex;" onsubmit="return confirm('Bu kayıt arşive alınacak. Devam edilsin mi?');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="row-btn" style="background: var(--red-light); color: var(--red); border-color: var(--red-border);">🗑️ Sil</button>
+                                </form>
+                                {% endif %}
+                            </div>
                         </div>
                     </td>
                 </tr>
@@ -217,7 +253,7 @@
                     <td colspan="7" style="padding: 60px; text-align: center; color: var(--text4);">
                         <div style="font-size: 40px; margin-bottom: 15px; opacity: 0.5;">📦</div>
                         <div style="font-weight: 700; font-size: 16px; color: var(--navy);">Listelenecek envanter kaydı bulunamadı.</div>
-                        <div style="font-size: 13px; margin-top: 5px;">Filtreleri genişletin veya yeni bir malzeme ekleyerek listeyi güncelleyin.</div>
+                        <div style="font-size: 13px; margin-top: 5px;">Filtreleri genişletin veya yeni bir malzeme ekleyin.</div>
                     </td>
                 </tr>
                 {% endfor %}
@@ -227,56 +263,55 @@
 </div>
 
 <script>
-// ✅ MODERN SİLME ONAYI (SWEETALERT2)
-function confirmDelete(id, name) {
-    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-    Swal.fire({
-        title: 'Emin misiniz?',
-        text: `'${name}' isimli malzeme arşive gönderilecek!`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#dc2626',
-        cancelButtonColor: '#64748b',
-        confirmButtonText: 'Evet, Arşive Gönder',
-        cancelButtonText: 'Vazgeç',
-        background: '#ffffff',
-        borderRadius: '14px',
-        customClass: {
-            title: 'swal-title-custom',
-            content: 'swal-text-custom'
-        }
-    }).then((result) => {
-        if (result.isConfirmed) {
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = "{{ url_for('inventory.malzeme_sil', id=0) }}".replace("0", id);
+function filterInventory() {
+    const input = document.getElementById('inventorySearch');
+    const filter = (input.value || '').toLowerCase();
+    const rows = document.querySelectorAll('#inventoryTable tbody tr.inventory-summary-row');
 
-            const csrfInput = document.createElement('input');
-            csrfInput.type = 'hidden';
-            csrfInput.name = 'csrf_token';
-            csrfInput.value = csrfToken;
-            form.appendChild(csrfInput);
+    rows.forEach(function (summaryRow) {
+        const text = (summaryRow.getAttribute('data-search-text') || '').toLowerCase();
+        const panelId = summaryRow.querySelector('[data-accordion-target]')?.getAttribute('data-accordion-target');
+        const detailRow = panelId ? document.getElementById(panelId) : null;
+        const matched = text.indexOf(filter) > -1;
 
-            document.body.appendChild(form);
-            form.submit();
+        summaryRow.style.display = matched ? '' : 'none';
+        if (detailRow) {
+            detailRow.style.display = matched && detailRow.classList.contains('is-open') ? 'table-row' : 'none';
         }
     });
 }
 
-function filterInventory() {
-    const input = document.getElementById("inventorySearch");
-    const filter = input.value.toUpperCase();
-    const table = document.getElementById("inventoryTable");
-    const tr = table.getElementsByTagName("tr");
+(function () {
+    const toggles = document.querySelectorAll('[data-accordion-target]');
 
-    for (let i = 1; i < tr.length; i++) {
-        let textContent = tr[i].textContent || tr[i].innerText;
-        if (textContent.toUpperCase().indexOf(filter) > -1) {
-            tr[i].style.display = "";
-        } else {
-            tr[i].style.display = "none";
-        }
+    function closeAll(exceptId) {
+        toggles.forEach(function (toggle) {
+            const panelId = toggle.getAttribute('data-accordion-target');
+            if (!panelId || panelId === exceptId) return;
+            const panel = document.getElementById(panelId);
+            if (!panel) return;
+            panel.classList.remove('is-open');
+            panel.style.display = 'none';
+            panel.setAttribute('aria-hidden', 'true');
+            toggle.setAttribute('aria-expanded', 'false');
+        });
     }
-}
+
+    toggles.forEach(function (toggle) {
+        toggle.addEventListener('click', function () {
+            const panelId = toggle.getAttribute('data-accordion-target');
+            const panel = panelId ? document.getElementById(panelId) : null;
+            if (!panel) return;
+
+            const willOpen = !panel.classList.contains('is-open');
+            closeAll(panelId);
+
+            panel.classList.toggle('is-open', willOpen);
+            panel.style.display = willOpen ? 'table-row' : 'none';
+            panel.setAttribute('aria-hidden', willOpen ? 'false' : 'true');
+            toggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        });
+    });
+})();
 </script>
 {% endblock %}
