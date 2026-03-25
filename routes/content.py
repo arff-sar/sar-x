@@ -8,7 +8,7 @@ from flask_login import current_user, login_required
 from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError
 
-from decorators import homepage_editor_required
+from decorators import has_permission, homepage_editor_required
 from extensions import (
     audit_log,
     db,
@@ -60,11 +60,7 @@ CONTENT_TYPE_MAP = {
 
 
 def _can_publish():
-    if current_user.rol == "sahip":
-        return True
-    if current_user.rol == "editor":
-        return bool(current_app.config.get("HOMEPAGE_EDITOR_CAN_PUBLISH", True))
-    return False
+    return has_permission("homepage.publish")
 
 
 def _resolve_status_from_form(default):

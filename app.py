@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from urllib.parse import urlsplit, urlunsplit
 
 from dotenv import load_dotenv
-from flask import Flask, g, jsonify, make_response, redirect, render_template, request, send_file, send_from_directory, url_for
+from flask import Flask, abort, g, jsonify, make_response, redirect, render_template, request, send_file, send_from_directory, url_for
 from flask_wtf.csrf import CSRFError
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -38,9 +38,12 @@ from decorators import (
     get_role_labels,
     get_role_switch_options,
     has_permission,
+    is_impersonation_mode,
     is_role_switch_active,
     is_editor_only,
     role_home_endpoint,
+    sanitize_role_override,
+    should_block_control_plane,
     sync_authorization_registry,
 )
 from extensions import table_exists
@@ -522,6 +525,7 @@ def create_app(config_name=None):
             effective_role_label = get_effective_role_label(current_user)
             role_switch_enabled = can_use_role_switch(current_user)
             role_switch_active = is_role_switch_active(current_user)
+            impersonation_mode = is_impersonation_mode(current_user)
             if table_exists("notification"):
                 try:
                     from models import Notification
@@ -557,6 +561,7 @@ def create_app(config_name=None):
                 "role_switch_active": role_switch_active,
                 "role_switch_options": get_role_switch_options(current_user) if role_switch_enabled else [],
                 "base_role_label": rol_etiketleri.get(current_user.rol, current_user.rol),
+                "impersonation_mode": impersonation_mode,
                 "unread_notifications": unread_notifications,
                 "unread_notification_count": unread_notification_count,
                 **shared_context,
@@ -576,6 +581,7 @@ def create_app(config_name=None):
             "role_switch_active": False,
             "role_switch_options": [],
             "base_role_label": None,
+            "impersonation_mode": False,
             "unread_notifications": [],
             "unread_notification_count": 0,
             **shared_context,
@@ -603,6 +609,17 @@ def create_app(config_name=None):
     def assign_request_id():
         incoming = str(request.headers.get("X-Request-ID") or "").strip()
         g.request_id = incoming[:64] if incoming else f"sarx-{uuid.uuid4().hex[:20]}"
+        return None
+
+    @app.before_request
+    def apply_role_override_guard():
+        from flask_login import current_user
+
+        if not current_user.is_authenticated:
+            return None
+        sanitize_role_override(current_user)
+        if should_block_control_plane(current_user):
+            abort(403)
         return None
 
     @app.before_request

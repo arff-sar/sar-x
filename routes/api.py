@@ -3,7 +3,7 @@ from datetime import timedelta
 from flask import Blueprint, jsonify
 from flask_login import current_user, login_required
 
-from decorators import CANONICAL_ROLE_SYSTEM, get_effective_role, permission_required
+from decorators import CANONICAL_ROLE_ADMIN, CANONICAL_ROLE_SYSTEM, get_effective_role, permission_required
 from models import (
     AssetMeterReading,
     InventoryAsset,
@@ -23,7 +23,7 @@ api_bp = Blueprint("api", __name__)
 
 
 def _can_view_all():
-    return current_user.rol in ["sahip", "genel_mudurluk"]
+    return get_effective_role(current_user) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}
 
 
 def _can_view_all_boxes():
@@ -48,7 +48,7 @@ def _work_order_scope():
 @login_required
 @permission_required("inventory.view")
 def api_envanter():
-    if current_user.rol != "sahip":
+    if not _can_view_all():
         malzemeler = Malzeme.query.filter_by(havalimani_id=current_user.havalimani_id, is_deleted=False).all()
     else:
         malzemeler = Malzeme.query.filter_by(is_deleted=False).all()

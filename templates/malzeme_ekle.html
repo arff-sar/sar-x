@@ -68,7 +68,7 @@
                     <div class="muted-help">Sahip dışı roller için şablon seçimi zorunludur.</div>
                 </div>
 
-                {% if rol == 'sahip' %}
+                {% if giren_user.is_sahip %}
                 <div class="form-group">
                     <label>Havalimanı</label>
                     <select name="havalimani_id" id="havalimani_id" class="form-control" required>

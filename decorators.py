@@ -638,8 +638,6 @@ ROLE_SWITCH_LABELS = {
     CANONICAL_ROLE_ADMIN: "Admin",
 }
 
-ROLE_SWITCH_KEYS = {item["key"] for item in ROLE_OPTIONS}
-
 
 def _normalize_user_identifier(raw_value):
     return str(raw_value or "").strip().lower()
@@ -715,27 +713,89 @@ def _role_priority(role):
     return ROLE_PRIORITY.get(_canonical_role(role), 0)
 
 
+def _dynamic_role_switch_options():
+    options_map = {
+        item["key"]: {
+            "key": item["key"],
+            "label": ROLE_SWITCH_LABELS.get(item["key"], item["label"]),
+            "scope": item.get("scope", "global"),
+            "is_system": True,
+            "is_active": True,
+        }
+        for item in ROLE_OPTIONS
+    }
+    legacy_role_keys = {item["key"] for item in LEGACY_ROLE_OPTIONS}
+    if table_exists("role") and column_exists("role", "key") and column_exists("role", "label"):
+        selected_columns = ["key", "label", "scope"]
+        has_is_active = column_exists("role", "is_active")
+        has_is_system = column_exists("role", "is_system")
+        if has_is_active:
+            selected_columns.append("is_active")
+        if has_is_system:
+            selected_columns.append("is_system")
+        try:
+            order_clause = "ORDER BY label ASC, key ASC"
+            if has_is_system:
+                order_clause = "ORDER BY is_system DESC, label ASC, key ASC"
+            rows = db.session.execute(
+                text(f"SELECT {', '.join(selected_columns)} FROM role {order_clause}")
+            ).mappings().all()
+            for row in rows:
+                role_key = _normalize_role_key(row.get("key"))
+                if not role_key or role_key in legacy_role_keys:
+                    continue
+                if has_is_active and not bool(row.get("is_active", True)):
+                    continue
+                options_map[role_key] = {
+                    "key": role_key,
+                    "label": str(row.get("label") or role_key).strip() or role_key,
+                    "scope": str(row.get("scope") or "global"),
+                    "is_system": bool(row.get("is_system", False)),
+                    "is_active": True,
+                }
+        except Exception:
+            _rollback_session_safely()
+    return sorted(
+        options_map.values(),
+        key=lambda item: (-_role_priority(item["key"]), str(item["label"]).lower(), item["key"]),
+    )
+
+
+def _get_role_switch_keys():
+    return {item["key"] for item in _dynamic_role_switch_options()}
+
+
 def can_use_role_switch(user=None):
     user = user or current_user
     if not getattr(user, "is_authenticated", False):
         return False
-    role_key = _normalize_role_key(getattr(user, "rol", ""))
-    canonical_role = _canonical_role(role_key)
-    if canonical_role in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
-        return True
     identifier = _normalize_user_identifier(getattr(user, "kullanici_adi", ""))
     return identifier in _role_switch_allow_list()
 
 
-def get_session_role_override(user=None):
+def sanitize_role_override(user=None):
     user = user or current_user
-    if not has_request_context() or not can_use_role_switch(user):
+    if not has_request_context():
+        return ""
+    if not can_use_role_switch(user):
+        session.pop(ROLE_SWITCH_SESSION_KEY, None)
         return ""
     current_id = getattr(current_user, "id", None) if getattr(current_user, "is_authenticated", False) else None
     if getattr(user, "id", None) != current_id:
         return ""
     role_key = _normalize_role_key(session.get(ROLE_SWITCH_SESSION_KEY))
-    return role_key if role_key in ROLE_SWITCH_KEYS else ""
+    if not role_key:
+        session.pop(ROLE_SWITCH_SESSION_KEY, None)
+        return ""
+    if role_key not in _get_role_switch_keys():
+        session.pop(ROLE_SWITCH_SESSION_KEY, None)
+        session.modified = True
+        return ""
+    return role_key
+
+
+def get_session_role_override(user=None):
+    return sanitize_role_override(user)
 
 
 def get_effective_role(user=None):
@@ -757,6 +817,69 @@ def is_role_switch_active(user=None):
     return bool(get_session_role_override(user))
 
 
+def is_impersonation_mode(user=None):
+    user = user or current_user
+    if not getattr(user, "is_authenticated", False):
+        return False
+    base_role = _canonical_role(getattr(user, "rol", ""))
+    override = get_session_role_override(user)
+    return bool(override and _canonical_role(override) != base_role)
+
+
+CONTROL_PLANE_ENDPOINTS = {
+    "admin.roles",
+    "admin.role_detail",
+    "admin.permissions",
+    "admin.permissions_export_pdf",
+    "admin.role_create",
+    "admin.role_update",
+    "admin.role_delete",
+    "admin.kullanicilar",
+    "admin.kullanici_ekle",
+    "admin.kullanici_guncelle",
+    "admin.kullanici_sil",
+    "admin.yetki_isimlerini_guncelle",
+    "admin.site_yonetimi",
+    "admin.site_ayarlarini_guncelle",
+    "admin.approvals",
+    "admin.approval_detail",
+}
+
+CONTROL_PLANE_PREFIXES = (
+    "admin.kullanici_",
+    "admin.kullanicilar",
+    "admin.role_",
+    "admin.permission",
+    "admin.approval",
+    "admin.havalimani",
+    "admin.demo_veri",
+    "admin.anasayfa_demo",
+    "admin.site_",
+    "admin.slider_",
+    "admin.menu_",
+    "admin.haber_",
+)
+
+CONTROL_PLANE_WHITELIST_ENDPOINTS = {
+    "auth.role_switch",
+    "auth.logout",
+}
+
+
+def should_block_control_plane(user=None, endpoint=None):
+    user = user or current_user
+    if not has_request_context():
+        return False
+    if not is_impersonation_mode(user):
+        return False
+    resolved_endpoint = str(endpoint or request.endpoint or "").strip()
+    if not resolved_endpoint or resolved_endpoint in CONTROL_PLANE_WHITELIST_ENDPOINTS:
+        return False
+    if resolved_endpoint in CONTROL_PLANE_ENDPOINTS:
+        return True
+    return any(resolved_endpoint.startswith(prefix) for prefix in CONTROL_PLANE_PREFIXES)
+
+
 def clear_role_override(user=None):
     user = user or current_user
     if has_request_context() and can_use_role_switch(user):
@@ -769,7 +892,8 @@ def set_role_override(role, user=None):
     if not has_request_context() or not can_use_role_switch(user):
         return False, ""
     role_key = _normalize_role_key(role)
-    if role_key not in ROLE_SWITCH_KEYS:
+    allowed_keys = _get_role_switch_keys()
+    if role_key not in allowed_keys:
         return False, ""
     base_role = _normalize_role_key(getattr(user, "rol", ""))
     if _canonical_role(role_key) == _canonical_role(base_role):
@@ -786,13 +910,14 @@ def get_role_switch_options(user=None):
         return []
     base_role = _canonical_role(getattr(user, "rol", ""))
     active_role = get_effective_role(user)
+    labels = get_role_labels()
     options = []
-    for item in ROLE_OPTIONS:
+    for item in _dynamic_role_switch_options():
         role_key = item["key"]
         options.append(
             {
                 "key": role_key,
-                "label": ROLE_SWITCH_LABELS.get(role_key, item["label"]),
+                "label": labels.get(role_key, ROLE_SWITCH_LABELS.get(role_key, item["label"])),
                 "active": role_key == active_role,
                 "base": role_key == base_role,
             }

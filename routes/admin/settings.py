@@ -17,6 +17,7 @@ from decorators import (
     DEFAULT_ROLE_LABELS,
     get_effective_role,
     get_manageable_role_options,
+    has_permission,
     get_permission_catalog,
     get_role_permissions,
     get_role_options,
@@ -68,12 +69,12 @@ def _can_manage_demo_mode():
     def _is_demo_manager(user):
         if user is None:
             return False
-        effective_role = get_effective_role(user)
-        legacy_role = str(getattr(user, "rol", "") or "").strip().lower()
+        if not getattr(user, "is_authenticated", True):
+            return False
         return bool(
             getattr(user, "is_sahip", False)
-            or effective_role == CANONICAL_ROLE_ADMIN
-            or legacy_role in {"admin", "sahip", "sistem_sorumlusu"}
+            or get_effective_role(user) == CANONICAL_ROLE_ADMIN
+            or has_permission("settings.manage", user=user)
         )
 
     if current_user.is_authenticated and _is_demo_manager(current_user):

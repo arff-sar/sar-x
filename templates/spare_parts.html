@@ -7,7 +7,7 @@
         <div class="page-title">Yedek Parça Yönetimi</div>
         <div class="page-meta">Stok görünürlüğü, kritik seviye ve parça tüketim takibi</div>
     </div>
-    {% if rol in ['sahip', 'yetkili'] %}
+    {% if has_permission('parts.edit') %}
     <a href="{{ url_for('parts.spare_part_create') }}" class="btn btn-primary">➕ Yeni Parça</a>
     {% endif %}
 </div>

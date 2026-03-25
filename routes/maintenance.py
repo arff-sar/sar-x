@@ -7,7 +7,13 @@ from flask_login import login_required, current_user
 from xhtml2pdf import pisa
 
 from extensions import audit_log, create_approval_request, create_notification, db, limiter, log_kaydet, guvenli_metin
-from decorators import has_permission, permission_required
+from decorators import (
+    CANONICAL_ROLE_ADMIN,
+    CANONICAL_ROLE_TEAM_MEMBER,
+    get_effective_role,
+    has_permission,
+    permission_required,
+)
 from models import (
     AssetMeterReading,
     EquipmentTemplate,
@@ -740,7 +746,7 @@ def is_emri_durum_guncelle(work_order_id):
         flash("Geçersiz iş emri durumu.", "danger")
         return redirect(url_for("maintenance.is_emri_detay", work_order_id=order.id))
 
-    if current_user.rol == "personel" and yeni_durum not in ["islemde", "tamamlandi", "beklemede_parca"]:
+    if get_effective_role(current_user) == CANONICAL_ROLE_TEAM_MEMBER and yeni_durum not in ["islemde", "tamamlandi", "beklemede_parca"]:
         abort(403)
 
     order.status = yeni_durum
@@ -1035,7 +1041,7 @@ def inspection_mobile(work_order_id):
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
 @permission_required("maintenance.edit")
 def meter_readings():
-    if current_user.rol == "genel_mudurluk":
+    if get_effective_role(current_user) == CANONICAL_ROLE_ADMIN:
         abort(403)
 
     assets = _asset_scope().order_by(InventoryAsset.updated_at.desc()).all()

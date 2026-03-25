@@ -5,7 +5,7 @@ from flask import Blueprint, abort, current_app, flash, redirect, render_templat
 from flask_login import current_user, login_required
 from xhtml2pdf import pisa
 
-from decorators import permission_required
+from decorators import CANONICAL_ROLE_ADMIN, CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_TEAM_LEAD, get_effective_role, permission_required
 from extensions import audit_log, limiter, log_kaydet
 from reporting import (
     build_dashboard_kpis,
@@ -54,14 +54,14 @@ def index():
 @login_required
 @permission_required("reports.view")
 def manager_summary_view():
-    if current_user.rol not in {"sahip", "admin", "yetkili", "havalimani_yoneticisi", "genel_mudurluk"}:
+    if get_effective_role(current_user) not in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN, CANONICAL_ROLE_TEAM_LEAD}:
         abort(403)
 
     filters = parse_report_filters(request.args)
     summary = manager_summary(current_user, filters)
 
     log_kaydet("Rapor", "Yönetici özeti görüntülendi.", event_key="reports.manager_summary.view", target_model="manager_summary")
-    audit_log("reports.manager_summary.view", outcome="success", role=current_user.rol)
+    audit_log("reports.manager_summary.view", outcome="success", role=get_effective_role(current_user))
     return render_template(
         "reports/manager_summary.html",
         filters=filters,

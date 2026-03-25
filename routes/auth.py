@@ -6,7 +6,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from urllib.parse import urljoin
 
-from flask import Blueprint, abort, current_app, flash, jsonify, make_response, redirect, render_template, request, session, url_for
+from flask import Blueprint, abort, current_app, flash, g, jsonify, make_response, redirect, render_template, request, session, url_for
 from flask_login import login_user, logout_user, login_required, current_user
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from sqlalchemy import func
@@ -443,6 +443,17 @@ def role_switch():
     if not selected_role or selected_role == "__default__":
         clear_role_override(current_user)
         flash("Geçici rol kaldırıldı. Varsayılan rolünüz yeniden etkin.", "success")
+        audit_log(
+            "auth.role_switch.ended",
+            outcome="success",
+            real_user_id=current_user.id,
+            real_user_email=current_user.kullanici_adi,
+            base_role=current_user.rol,
+            acting_role=current_user.rol,
+            effective_role=current_user.rol,
+            request_id=str(getattr(g, "request_id", "") or ""),
+            ip=_client_ip(),
+        )
         return redirect(redirect_target)
 
     if selected_role not in selected_option_map:
@@ -454,13 +465,20 @@ def role_switch():
         flash("Geçici rol değiştirilemedi.", "danger")
         return redirect(redirect_target)
 
+    event_key = "auth.role_switch.started"
+    if selected_option_map.get(selected_role, {}).get("active"):
+        event_key = "auth.role_switch.changed"
     flash(f"Geçici aktif rol güncellendi: {get_effective_role_label(current_user)}", "success")
     audit_log(
-        "auth.role_switch",
+        event_key,
         outcome="success",
-        user_id=current_user.id,
-        username=current_user.kullanici_adi,
+        real_user_id=current_user.id,
+        real_user_email=current_user.kullanici_adi,
+        base_role=current_user.rol,
+        acting_role=active_role,
+        effective_role=active_role,
         selected_role=active_role,
+        request_id=str(getattr(g, "request_id", "") or ""),
         ip=_client_ip(),
     )
     return redirect(redirect_target)
