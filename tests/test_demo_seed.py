@@ -1,6 +1,15 @@
 from demo_data import AIRPORT_PERSONNEL_COUNT, AIRPORTS, DEMO_SEED_TAG, clear_demo_data, seed_demo_data
 from extensions import db
-from models import DemoSeedRecord, Havalimani, InventoryAsset, Kutu, Kullanici, MaintenancePlan, SparePart, WorkOrder
+from sqlalchemy import text
+from models import DemoSeedRecord, EquipmentTemplate, Havalimani, InventoryAsset, Kutu, Kullanici, MaintenancePlan, Malzeme, SparePart, WorkOrder
+from tests.factories import KullaniciFactory
+
+
+def _login(client, user_id):
+    with client.session_transaction() as session:
+        session.clear()
+        session["_user_id"] = str(user_id)
+        session["_fresh"] = True
 
 
 def test_seed_demo_data_creates_expected_records(app):
@@ -59,3 +68,115 @@ def test_clear_demo_data_only_removes_demo_records(app):
         assert DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG).count() == 0
         assert Havalimani.query.count() == 1
         assert Kullanici.query.count() == 1
+
+
+def test_clear_demo_data_handles_assets_linked_to_demo_templates(app):
+    with app.app_context():
+        db.session.execute(text("PRAGMA foreign_keys=ON"))
+
+        with app.test_request_context("/admin/demo-veri/olustur"):
+            seed_summary = seed_demo_data(reset=True)
+        assert seed_summary["ekipman_sablonu"] > 0
+
+        demo_template = EquipmentTemplate.query.first()
+        assert demo_template is not None
+
+        real_airport = Havalimani(ad="Gerçek Bağlantı Havalimanı", kodu="RBA")
+        db.session.add(real_airport)
+        db.session.flush()
+
+        real_box = Kutu(kodu="RBA-BOX-01", havalimani_id=real_airport.id)
+        db.session.add(real_box)
+        db.session.flush()
+
+        real_material = Malzeme(
+            ad="Gerçek Bağlantı Malzemesi",
+            seri_no="REAL-LINK-001",
+            kutu_id=real_box.id,
+            havalimani_id=real_airport.id,
+        )
+        db.session.add(real_material)
+        db.session.flush()
+
+        dependent_asset = InventoryAsset(
+            equipment_template_id=demo_template.id,
+            havalimani_id=real_airport.id,
+            legacy_material_id=real_material.id,
+            serial_no="REAL-ASSET-001",
+            qr_code="REAL-ASSET-QR-001",
+            status="aktif",
+        )
+        db.session.add(dependent_asset)
+        db.session.commit()
+        dependent_asset_id = dependent_asset.id
+
+        with app.test_request_context("/admin/demo-veri/temizle"):
+            result = clear_demo_data()
+        assert result["deleted"] > 0
+        assert InventoryAsset.query.filter_by(id=dependent_asset_id).first() is None
+        assert DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG).count() == 0
+
+
+def test_demo_clear_endpoint_succeeds_with_dependent_assets(client, app):
+    with app.app_context():
+        owner = KullaniciFactory(
+            rol="sahip",
+            is_deleted=False,
+            tam_ad="Demo Owner",
+            kullanici_adi="demo.owner@sarx.local",
+        )
+        db.session.add(owner)
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+
+    seed_response = client.post(
+        "/demo-veri/olustur",
+        data={"confirm_demo_seed": "DEMO", "demo_reset": "1"},
+        follow_redirects=True,
+    )
+    assert seed_response.status_code == 200
+    assert "Demo verileri hazırlandı." in seed_response.data.decode("utf-8")
+
+    with app.app_context():
+        demo_template = EquipmentTemplate.query.first()
+        assert demo_template is not None
+        airport = Havalimani(ad="Gerçek Endpoint Havalimanı", kodu="REB")
+        db.session.add(airport)
+        db.session.flush()
+        box = Kutu(kodu="REB-BOX-01", havalimani_id=airport.id)
+        db.session.add(box)
+        db.session.flush()
+        material = Malzeme(
+            ad="Gerçek Endpoint Malzeme",
+            seri_no="REAL-ENDPOINT-001",
+            kutu_id=box.id,
+            havalimani_id=airport.id,
+        )
+        db.session.add(material)
+        db.session.flush()
+        dependent_asset = InventoryAsset(
+            equipment_template_id=demo_template.id,
+            havalimani_id=airport.id,
+            legacy_material_id=material.id,
+            serial_no="REAL-ENDPOINT-ASSET-001",
+            qr_code="REAL-ENDPOINT-ASSET-QR-001",
+            status="aktif",
+        )
+        db.session.add(dependent_asset)
+        db.session.commit()
+        dependent_asset_id = dependent_asset.id
+
+    clear_response = client.post(
+        "/demo-veri/temizle",
+        data={"confirm_demo_clear": "DEMO-SIL"},
+        follow_redirects=True,
+    )
+    clear_html = clear_response.data.decode("utf-8")
+    assert clear_response.status_code == 200
+    assert "Demo verileri temizlendi." in clear_html
+    assert "Demo veri temizliği sırasında bir hata oluştu. İşlem geri alındı." not in clear_html
+
+    with app.app_context():
+        assert InventoryAsset.query.filter_by(id=dependent_asset_id).first() is None

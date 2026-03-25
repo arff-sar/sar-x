@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import timedelta
 
 from flask import current_app
-from sqlalchemy import false
+from sqlalchemy import false, or_
 
 from decorators import ROLE_ADMIN, ROLE_AIRPORT_MANAGER, ROLE_EDITOR, ROLE_MAINTENANCE, ROLE_MANAGER, ROLE_OWNER, ROLE_PERSONNEL, ROLE_READONLY, ROLE_WAREHOUSE
 from extensions import db, log_kaydet, table_exists
@@ -28,10 +28,12 @@ from models import (
     Malzeme,
     MeterDefinition,
     SiteAyarlari,
+    AssetSparePartLink,
     SparePart,
     SparePartStock,
     Supplier,
     WorkOrder,
+    WorkOrderPartUsage,
     get_tr_now,
 )
 
@@ -440,6 +442,44 @@ def clear_demo_data():
     _guard_demo_tools()
     if not table_exists("demo_seed_record"):
         return {"deleted": 0}
+
+    demo_template_ids = demo_record_ids("EquipmentTemplate")
+    demo_asset_ids = demo_record_ids("InventoryAsset")
+    demo_spare_part_ids = demo_record_ids("SparePart")
+    demo_work_order_ids = demo_record_ids("WorkOrder")
+    demo_stock_ids = demo_record_ids("SparePartStock")
+
+    # Demo şablonuna bağlı fakat seed tablosunda olmayan asset kayıtları,
+    # template silinirken equipment_template_id alanını NULL'a düşürüp
+    # NOT NULL/FK hatasına neden olabiliyor. Önce bu bağımlı kayıtları temizle.
+    if demo_template_ids:
+        dependent_assets_query = InventoryAsset.query.filter(
+            InventoryAsset.equipment_template_id.in_(sorted(demo_template_ids))
+        )
+        if demo_asset_ids:
+            dependent_assets_query = dependent_assets_query.filter(~InventoryAsset.id.in_(sorted(demo_asset_ids)))
+        for dependent_asset in dependent_assets_query.all():
+            db.session.delete(dependent_asset)
+
+    # Bridge/usage kayıtları DemoSeedRecord dışında kalabiliyor.
+    # Demo varlıklara/parçalara bağlı bağımlılıkları önce temizle.
+    if table_exists("asset_spare_part_link") and (demo_asset_ids or demo_spare_part_ids):
+        clauses = []
+        if demo_asset_ids:
+            clauses.append(AssetSparePartLink.asset_id.in_(sorted(demo_asset_ids)))
+        if demo_spare_part_ids:
+            clauses.append(AssetSparePartLink.spare_part_id.in_(sorted(demo_spare_part_ids)))
+        AssetSparePartLink.query.filter(or_(*clauses)).delete(synchronize_session=False)
+
+    if table_exists("work_order_part_usage") and (demo_work_order_ids or demo_spare_part_ids or demo_stock_ids):
+        clauses = []
+        if demo_work_order_ids:
+            clauses.append(WorkOrderPartUsage.work_order_id.in_(sorted(demo_work_order_ids)))
+        if demo_spare_part_ids:
+            clauses.append(WorkOrderPartUsage.spare_part_id.in_(sorted(demo_spare_part_ids)))
+        if demo_stock_ids:
+            clauses.append(WorkOrderPartUsage.consumed_from_stock_id.in_(sorted(demo_stock_ids)))
+        WorkOrderPartUsage.query.filter(or_(*clauses)).delete(synchronize_session=False)
 
     model_map = {
         "CalibrationRecord": CalibrationRecord,
