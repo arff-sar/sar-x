@@ -816,7 +816,7 @@ def is_emri_kapat(work_order_id):
                 "low_stock",
                 "Düşük stok uyarısı",
                 message,
-                link_url=url_for("parts.spare_parts_list"),
+                link_url=url_for("inventory.envanter"),
                 severity="warning",
             )
             flash(message, "warning")

@@ -200,8 +200,11 @@ def log_kaydet(
                 savepoint.rollback()
                 raise
     except Exception:
-        if commit:
-            db.session.rollback()
+        try:
+            if commit or db.session.is_active is False:
+                db.session.rollback()
+        except Exception:
+            pass
         if current_app:
             current_app.logger.exception("İşlem logu yazılamadı: %s", tip)
 
@@ -273,7 +276,10 @@ def create_notification_once(user_id, notification_type, title, message, link_ur
         if existing:
             return existing
     except Exception:
-        pass
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
     return create_notification(
         user_id,
         notification_type,

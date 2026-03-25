@@ -17,9 +17,13 @@
   .history-item { padding:14px; border:1px solid var(--border); border-radius:16px; background:#fff; }
   .history-item strong { color:var(--navy); }
   .history-meta { margin-top:4px; font-size:11.5px; color:var(--text3); line-height:1.45; }
+  .spare-form-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
+  .spare-form-grid .full { grid-column:1 / -1; }
+  .spare-muted { font-size:12px; color:var(--text3); line-height:1.5; }
   @media (max-width: 980px) {
     .asset-overview-grid,
-    .asset-detail-grid { grid-template-columns:1fr; }
+    .asset-detail-grid,
+    .spare-form-grid { grid-template-columns:1fr; }
   }
 </style>
 {% endblock %}
@@ -256,6 +260,141 @@
                 {% endif %}
             </div>
         </div>
+
+        {% if can_view_parts %}
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <div class="panel-title">Bağlı Yedek Parçalar</div>
+                    <div class="panel-subtitle">Bu ekipmana bağlı yedek parçaları buradan yönetebilirsiniz.</div>
+                </div>
+            </div>
+            <div class="panel-body">
+                {% if not spare_link_table_ready %}
+                <div class="history-item">
+                    <strong>Yedek parça bağlantı tablosu hazır değil</strong>
+                    <div class="history-meta">`asset_spare_part_link` migration adımı tamamlandığında bu panel aktif olur.</div>
+                </div>
+                {% else %}
+                    <div class="history-item" style="margin-bottom:14px;">
+                        <strong>Yedek Parçaları Yönet</strong>
+                        <div class="spare-muted" style="margin-top:8px;">Bağlı parça listesi üzerinden miktar, stok, not ve arşiv durumunu güncelleyebilirsiniz.</div>
+                    </div>
+                    <div class="history-list" style="margin-bottom:16px;">
+                        {% for link in spare_part_links %}
+                        {% set stock = spare_stock_map.get(link.spare_part_id) %}
+                        <div class="history-item">
+                            <strong>{{ link.spare_part.part_code }} · {{ link.spare_part.title }}</strong>
+                            <div class="history-meta">
+                                Gerekli Adet: {{ '%.2f'|format(link.quantity_required or 1) }} {{ link.spare_part.unit or 'adet' }}
+                                · Durum: {% if link.is_active %}Aktif{% else %}Pasif{% endif %}
+                            </div>
+                            <div class="history-meta">
+                                Stok: {% if stock %}{{ '%.2f'|format(stock.available_quantity or 0) }}{% else %}-{% endif %}
+                                · Rezerve: {% if stock %}{{ '%.2f'|format(stock.quantity_reserved or 0) }}{% else %}-{% endif %}
+                                · Kritik Nokta: {% if stock %}{{ '%.2f'|format(stock.reorder_point or 0) }}{% else %}-{% endif %}
+                                {% if stock and stock.shelf_location %}· Raf: {{ stock.shelf_location }}{% endif %}
+                            </div>
+                            {% if link.note %}
+                            <div class="history-meta">Not: {{ link.note }}</div>
+                            {% endif %}
+                            {% if can_manage_parts %}
+                            <form method="POST" action="{{ url_for('inventory.asset_detail', asset_id=asset.id) if detail_mode else url_for('inventory.quick_asset_view', asset_id=asset.id) }}" style="margin-top:10px;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="action" value="spare_link_update">
+                                <input type="hidden" name="link_id" value="{{ link.id }}">
+                                <div class="spare-form-grid">
+                                    <input class="form-control" type="number" step="0.1" min="0.1" name="quantity_required" value="{{ link.quantity_required or 1 }}" placeholder="Gerekli adet">
+                                    <input class="form-control" type="text" name="link_note" value="{{ link.note or '' }}" placeholder="Bağlantı notu">
+                                    <input class="form-control" type="number" step="0.1" min="0" name="quantity_on_hand" value="{{ stock.quantity_on_hand if stock else '' }}" placeholder="Stok miktarı">
+                                    <input class="form-control" type="number" step="0.1" min="0" name="quantity_reserved" value="{{ stock.quantity_reserved if stock else '' }}" placeholder="Rezerve miktar">
+                                    <input class="form-control" type="number" step="0.1" min="0" name="reorder_point" value="{{ stock.reorder_point if stock else '' }}" placeholder="Yeniden sipariş seviyesi">
+                                    <input class="form-control" type="text" name="shelf_location" value="{{ stock.shelf_location if stock else '' }}" placeholder="Raf lokasyonu">
+                                    <label class="full" style="display:flex; align-items:center; gap:8px; margin:0;">
+                                        <input type="checkbox" name="is_active" {% if link.is_active %}checked{% endif %}>
+                                        <span>Bağlantı aktif kalsın</span>
+                                    </label>
+                                    <div class="full" style="display:flex; gap:8px; flex-wrap:wrap;">
+                                        <button type="submit" class="btn btn-secondary">Güncelle</button>
+                                    </div>
+                                </div>
+                            </form>
+                            <form method="POST" action="{{ url_for('inventory.asset_detail', asset_id=asset.id) if detail_mode else url_for('inventory.quick_asset_view', asset_id=asset.id) }}" style="margin-top:8px;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="action" value="spare_link_archive">
+                                <input type="hidden" name="link_id" value="{{ link.id }}">
+                                <button type="submit" class="btn btn-danger">Arşive Al</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                        {% else %}
+                        <div class="history-item">
+                            <strong>Bağlı yedek parça bulunmuyor</strong>
+                            <div class="history-meta">Bu ekipman için henüz bir yedek parça bağlantısı oluşturulmamış.</div>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    {% if can_manage_parts %}
+                    <div class="history-item" style="margin-bottom:14px;">
+                        <strong>Yedek Parça Ekle</strong>
+                        <div class="spare-muted" style="margin-top:8px;">Mevcut parçayı bağlayabilir veya yeni parça oluşturup doğrudan bu ekipmana ekleyebilirsiniz.</div>
+                    </div>
+                    <div class="history-item" style="margin-bottom:14px;">
+                        <strong>Mevcut Yedek Parçayı Bağla</strong>
+                        {% if available_spare_parts %}
+                        <form method="POST" action="{{ url_for('inventory.asset_detail', asset_id=asset.id) if detail_mode else url_for('inventory.quick_asset_view', asset_id=asset.id) }}" style="margin-top:10px;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="action" value="spare_link_existing">
+                            <div class="spare-form-grid">
+                                <select class="form-control full" name="spare_part_id" required>
+                                    <option value="">Yedek parça seçin</option>
+                                    {% for part in available_spare_parts %}
+                                    <option value="{{ part.id }}">{{ part.part_code }} · {{ part.title }}</option>
+                                    {% endfor %}
+                                </select>
+                                <input class="form-control" type="number" step="0.1" min="0.1" name="quantity_required" value="1" placeholder="Gerekli adet">
+                                <input class="form-control" type="text" name="link_note" placeholder="Bağlantı notu">
+                                <input class="form-control" type="number" step="0.1" min="0" name="quantity_on_hand" placeholder="Stok miktarı">
+                                <input class="form-control" type="number" step="0.1" min="0" name="quantity_reserved" placeholder="Rezerve miktar">
+                                <input class="form-control" type="number" step="0.1" min="0" name="reorder_point" placeholder="Yeniden sipariş seviyesi">
+                                <input class="form-control" type="text" name="shelf_location" placeholder="Raf lokasyonu">
+                                <button type="submit" class="btn btn-secondary full">Bağla</button>
+                            </div>
+                        </form>
+                        {% else %}
+                        <div class="spare-muted" style="margin-top:8px;">Bağlanacak aktif yedek parça kalmadı. Yeni parça oluşturup bağlayabilirsiniz.</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="history-item">
+                        <strong>Yeni Yedek Parça Oluştur ve Bağla</strong>
+                        <form method="POST" action="{{ url_for('inventory.asset_detail', asset_id=asset.id) if detail_mode else url_for('inventory.quick_asset_view', asset_id=asset.id) }}" style="margin-top:10px;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="action" value="spare_create_linked">
+                            <div class="spare-form-grid">
+                                <input class="form-control" type="text" name="part_code" required placeholder="Parça kodu">
+                                <input class="form-control" type="text" name="title" required placeholder="Parça adı">
+                                <input class="form-control" type="text" name="category" placeholder="Kategori">
+                                <input class="form-control" type="text" name="unit" placeholder="Birim (adet)">
+                                <input class="form-control" type="number" step="0.1" min="0" name="min_stock_level" placeholder="Min stok">
+                                <input class="form-control" type="number" step="0.1" min="0" name="critical_level" placeholder="Kritik seviye">
+                                <input class="form-control" type="number" step="0.1" min="0.1" name="quantity_required" value="1" placeholder="Gerekli adet">
+                                <input class="form-control" type="text" name="link_note" placeholder="Bağlantı notu">
+                                <input class="form-control" type="number" step="0.1" min="0" name="quantity_on_hand" placeholder="Stok miktarı">
+                                <input class="form-control" type="number" step="0.1" min="0" name="quantity_reserved" placeholder="Rezerve miktar">
+                                <input class="form-control" type="number" step="0.1" min="0" name="reorder_point" placeholder="Yeniden sipariş seviyesi">
+                                <input class="form-control" type="text" name="shelf_location" placeholder="Raf lokasyonu">
+                                <textarea class="form-control full" name="description" placeholder="Açıklama"></textarea>
+                                <button type="submit" class="btn btn-primary full">Yedek Parçayı Oluştur ve Bağla</button>
+                            </div>
+                        </form>
+                    </div>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

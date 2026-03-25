@@ -45,9 +45,9 @@ AIRPORTS = [
 ]
 AIRPORT_PERSONNEL_COUNT = 20
 USAR_HTML_CANDIDATES = [
-    Path("/mnt/data/usar_envanter_tablo_html.html"),
     Path("/Users/mehmetcinocevi/Downloads/usar_envanter_tablo_html.html"),
 ]
+USAR_HTML_MAX_BYTES = 2 * 1024 * 1024
 USAR_FALLBACK_ROWS = [
     {
         "category": "Kentsel Arama/Kurtarma",
@@ -257,8 +257,17 @@ def _parse_quantity(raw_quantity):
 
 
 def _load_usar_rows():
+    if current_app.config.get("TESTING"):
+        return list(USAR_FALLBACK_ROWS)
     for candidate in USAR_HTML_CANDIDATES:
-        if not candidate.exists():
+        if str(candidate).startswith("/mnt/data"):
+            continue
+        if not candidate.exists() or not candidate.is_file():
+            continue
+        try:
+            if candidate.stat().st_size > USAR_HTML_MAX_BYTES:
+                continue
+        except OSError:
             continue
         try:
             html = candidate.read_text(encoding="utf-8", errors="ignore")
@@ -309,6 +318,17 @@ def _maintenance_period_from_name(name):
 
 def _normalize_text(value):
     return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def _clip_text(value, max_len, fallback=""):
+    text = _normalize_text(value)
+    if not text:
+        text = _normalize_text(fallback)
+    if max_len <= 0:
+        return ""
+    if len(text) <= max_len:
+        return text
+    return text[:max_len].rstrip()
 
 
 def _shorten_label(value, max_len):
@@ -442,7 +462,27 @@ def clear_demo_data():
         "Kullanici": Kullanici,
         "Havalimani": Havalimani,
     }
-    delete_order = list(model_map.keys())
+    delete_order = [
+        "CalibrationRecord",
+        "CalibrationSchedule",
+        "ConsumableStockMovement",
+        "ConsumableItem",
+        "MaintenanceTriggerRule",
+        "MeterDefinition",
+        "MaintenancePlan",
+        "WorkOrder",
+        "InventoryAsset",
+        "Malzeme",
+        "Kutu",
+        "SparePartStock",
+        "SparePart",
+        "Supplier",
+        "EquipmentTemplate",
+        "MaintenanceFormTemplate",
+        "MaintenanceFormField",
+        "Kullanici",
+        "Havalimani",
+    ]
     deleted = 0
     for model_name in delete_order:
         rows = DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name=model_name).order_by(DemoSeedRecord.id.desc()).all()
@@ -463,10 +503,7 @@ def seed_demo_data(reset=False):
     _guard_demo_tools()
     if reset:
         clear_demo_data()
-        # Clear akışı kendi commit/rollback zincirini çalıştırıyor. SQLite test DB'de
-        # aynı scoped session'ın yeniden kullanılması disk I/O / readonly yan etkisi
-        # üretebildiği için temiz bir session ile devam ediyoruz.
-        db.session.remove()
+        db.session.expire_all()
     elif DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG).first():
         summary = _summary()
         _set_platform_demo_state(True, "reused", summary=summary)
@@ -490,14 +527,14 @@ def seed_demo_data(reset=False):
     for row in usar_rows:
         equipment_specs.append(
             {
-                "name": row["name"],
-                "category": row["category"] or "Kentsel Arama/Kurtarma",
+                "name": _clip_text(row["name"], 120, "USAR Ekipman"),
+                "category": _clip_text(row["category"] or "Kentsel Arama/Kurtarma", 80, "Kentsel Arama/Kurtarma"),
                 "period_days": _maintenance_period_from_name(row["name"]),
                 "criticality": _criticality_from_name(row["name"]),
-                "brand": row["brand"] or "USAR",
-                "model": row["model"] or "STD",
-                "description": row["function"] or f"{row['name']} demo ekipman kaydı",
-                "manual_url": row["manual_url"] or "",
+                "brand": _clip_text(row["brand"] or "USAR", 80, "USAR"),
+                "model": _clip_text(row["model"] or "STD", 80, "STD"),
+                "description": _normalize_text(row["function"] or f"{row['name']} demo ekipman kaydı"),
+                "manual_url": _normalize_text(row["manual_url"] or ""),
                 "unit_count": max(int(row.get("quantity") or 1), 1),
             }
         )
@@ -726,12 +763,12 @@ def seed_demo_data(reset=False):
     ]
     for role, username, full_name in global_roles:
         user = Kullanici(
-            kullanici_adi=username,
-            tam_ad=full_name,
+            kullanici_adi=_clip_text(username, 50, username),
+            tam_ad=_clip_text(full_name, 100, "Demo Kullanıcı"),
             rol=role,
             havalimani_id=None,
             telefon_numarasi=f"+90 530 900 {rng.randint(10, 99)} {rng.randint(10, 99)}",
-            uzmanlik_alani=rng.choice(["Koordinasyon", "Operasyon", "Bakım", "Lojistik"]),
+            uzmanlik_alani=_clip_text(rng.choice(["Koordinasyon", "Operasyon", "Bakım", "Lojistik"]), 100),
         )
         user.sifre_set(DEMO_PASSWORD)
         db.session.add(user)
@@ -756,12 +793,15 @@ def seed_demo_data(reset=False):
             username = f"demo.{airport.kodu.lower()}.{person_index:02d}@demo.sarx.local"
             phone = f"+90 5{rng.randint(10, 99)} {rng.randint(100, 999)} {rng.randint(10, 99)} {rng.randint(10, 99)}"
             user = Kullanici(
-                kullanici_adi=username,
-                tam_ad=f"{first_name} {last_name}",
+                kullanici_adi=_clip_text(username, 50, username),
+                tam_ad=_clip_text(f"{first_name} {last_name}", 100, "Demo Personel"),
                 rol=role,
                 havalimani_id=airport.id,
                 telefon_numarasi=phone,
-                uzmanlik_alani=rng.choice(["Operasyon", "Bakım", "Lojistik", "İletişim", "Arama Kurtarma"]),
+                uzmanlik_alani=_clip_text(
+                    rng.choice(["Operasyon", "Bakım", "Lojistik", "İletişim", "Arama Kurtarma"]),
+                    100,
+                ),
             )
             user.sifre_set(DEMO_PASSWORD)
             db.session.add(user)
@@ -771,16 +811,17 @@ def seed_demo_data(reset=False):
 
     forms = []
     for name, description, field_specs in form_specs:
-        form = MaintenanceFormTemplate(name=name, description=description, is_active=True)
+        form_name = _clip_text(name, 120, "Bakım Formu")
+        form = MaintenanceFormTemplate(name=form_name, description=_normalize_text(description), is_active=True)
         db.session.add(form)
         db.session.flush()
-        _register_record(form, name)
+        _register_record(form, form_name)
         for order_index, (field_key, label, field_type) in enumerate(field_specs, start=1):
             field = MaintenanceFormField(
                 form_template_id=form.id,
-                field_key=f"{form.id}_{field_key}",
-                label=label,
-                field_type=field_type,
+                field_key=_clip_text(f"{form.id}_{field_key}", 100, f"field_{order_index}"),
+                label=_clip_text(label, 150, f"Alan {order_index}"),
+                field_type=_clip_text(field_type, 30, "text"),
                 is_required=field_key != "notes",
                 order_index=order_index,
                 options_json=None,
@@ -822,13 +863,16 @@ def seed_demo_data(reset=False):
         description = spec.get("description") or f"{name} saha operasyonlari icin demo kaydi"
         manual_url = spec.get("manual_url") or ""
         template = EquipmentTemplate(
-            name=name,
-            category=category,
-            brand=spec.get("brand") or rng.choice(["Holmatro", "Drager", "Flir", "Milwaukee", "Motorola", "Rosenbauer"]),
-            model_code=(spec.get("model") or f"MDL-{index:03d}")[:80],
-            description=description,
+            name=_clip_text(name, 120, f"Ekipman {index}"),
+            category=_clip_text(category, 80, "Genel"),
+            brand=_clip_text(
+                spec.get("brand") or rng.choice(["Holmatro", "Drager", "Flir", "Milwaukee", "Motorola", "Rosenbauer"]),
+                80,
+            ),
+            model_code=_clip_text(spec.get("model") or f"MDL-{index:03d}", 80, f"MDL-{index:03d}"),
+            description=_normalize_text(description),
             technical_specs=f"{category} segmenti icin demo teknik ozellik seti. Kilavuz: {manual_url}" if manual_url else f"{category} segmenti icin demo teknik ozellik seti",
-            manufacturer=rng.choice(["ARFFTech", "RescuePro", "Opsline"]),
+            manufacturer=_clip_text(rng.choice(["ARFFTech", "RescuePro", "Opsline"]), 120),
             maintenance_period_days=period_days,
             criticality_level=criticality,
             default_maintenance_form_id=pick_form_for_template(name).id,
@@ -843,10 +887,10 @@ def seed_demo_data(reset=False):
     suppliers = []
     for supplier_index in range(1, 6):
         supplier = Supplier(
-            name=f"Demo Tedarikci {supplier_index}",
-            contact_name=f"Tedarik Yetkilisi {supplier_index}",
-            phone=f"444 10{supplier_index:02d}",
-            email=f"tedarik{supplier_index}@demo.local",
+            name=_clip_text(f"Demo Tedarikci {supplier_index}", 150),
+            contact_name=_clip_text(f"Tedarik Yetkilisi {supplier_index}", 120),
+            phone=_clip_text(f"444 10{supplier_index:02d}", 50),
+            email=_clip_text(f"tedarik{supplier_index}@demo.local", 150),
             is_active=True,
         )
         db.session.add(supplier)
@@ -857,13 +901,13 @@ def seed_demo_data(reset=False):
     spare_parts = []
     for index, (code, title, category) in enumerate(part_specs, start=1):
         part = SparePart(
-            part_code=code,
-            title=title,
-            category=category,
-            manufacturer=rng.choice(["RescuePro", "Opsline", "TechSAR"]),
-            model_code=f"PRT-{index:03d}",
-            description=f"{title} demo yedek parca kaydi",
-            unit="adet",
+            part_code=_clip_text(code, 80, f"PART-{index:03d}"),
+            title=_clip_text(title, 180, f"Parca {index}"),
+            category=_clip_text(category, 80, "Genel"),
+            manufacturer=_clip_text(rng.choice(["RescuePro", "Opsline", "TechSAR"]), 120),
+            model_code=_clip_text(f"PRT-{index:03d}", 120),
+            description=_normalize_text(f"{title} demo yedek parca kaydi"),
+            unit=_clip_text("adet", 20, "adet"),
             min_stock_level=4,
             critical_level=2,
             supplier_id=suppliers[index % len(suppliers)].id,
@@ -896,13 +940,13 @@ def seed_demo_data(reset=False):
     consumables = []
     for code, title, category, unit in consumable_specs:
         item = ConsumableItem(
-            code=code,
-            title=title,
-            category=category,
-            unit=unit,
+            code=_clip_text(code, 80, code),
+            title=_clip_text(title, 180, title),
+            category=_clip_text(category, 80, "Genel"),
+            unit=_clip_text(unit, 20, "adet"),
             min_stock_level=5,
             critical_level=2,
-            description=f"{title} demo sarf kaydı",
+            description=_normalize_text(f"{title} demo sarf kaydı"),
             is_active=True,
         )
         db.session.add(item)
@@ -932,8 +976,11 @@ def seed_demo_data(reset=False):
             box = boxes_by_airport[airport.id][asset_index % len(boxes_by_airport[airport.id])]
             status = statuses[(asset_index + airport.id) % len(statuses)]
             default_units = template_default_units.get(template.id, 1)
-            serial = f"{airport.kodu}-{template.id:03d}-{asset_index:03d}-{rng.randint(100, 999)}"
-            asset_tag = f"USAR-{airport.kodu}-{template.id:03d}-{asset_index:03d}"
+            serial = _clip_text(
+                f"{airport.kodu}-{template.id:03d}-{asset_index:03d}-{rng.randint(100, 999)}",
+                100,
+            )
+            asset_tag = _clip_text(f"USAR-{airport.kodu}-{template.id:03d}-{asset_index:03d}", 120)
             last_maintenance = today - timedelta(days=rng.randint(5, 160))
             next_maintenance = last_maintenance + timedelta(days=template.maintenance_period_days or 90)
             if asset_index % 6 == 0:
@@ -941,7 +988,7 @@ def seed_demo_data(reset=False):
             elif asset_index % 4 == 0:
                 next_maintenance = today + timedelta(days=rng.randint(1, 12))
             material = Malzeme(
-                ad=template.name,
+                ad=_clip_text(template.name, 100, "Demo Ekipman"),
                 seri_no=serial,
                 teknik_ozellikler=template.technical_specs,
                 stok_miktari=default_units,
@@ -964,7 +1011,7 @@ def seed_demo_data(reset=False):
                 qr_code="pending",
                 asset_tag=asset_tag,
                 unit_count=default_units,
-                depot_location=box.kodu,
+                depot_location=_clip_text(box.kodu, 150, box.kodu),
                 status=status,
                 maintenance_state="gecikmis" if next_maintenance < today else "normal",
                 last_maintenance_date=last_maintenance,
@@ -983,7 +1030,7 @@ def seed_demo_data(reset=False):
             assets.append(asset)
 
             plan = MaintenancePlan(
-                name=f"{template.name} Planı",
+                name=_clip_text(f"{template.name} Planı", 120, "Demo Bakım Planı"),
                 equipment_template_id=template.id,
                 asset_id=asset.id,
                 owner_airport_id=airport.id,

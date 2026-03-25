@@ -130,6 +130,18 @@ def test_public_dropdown_pages_open_and_render_section_content(client, app):
     assert 'data-module-system="modules"' in drills_page
 
 
+def test_public_header_dropdown_accessibility_and_single_state_script_rendered(client, app):
+    response = client.get("/")
+    page = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert page.count('data-public-dropdown') >= 2
+    assert page.count('class="public-dropdown-summary" aria-expanded="false"') >= 2
+    assert "closeAllDropdowns" in page
+    assert "isDesktopHoverMode" in page
+    assert "mobileNavQuery" in page
+
+
 def test_training_and_drills_pages_render_shared_empty_safe_layout(client, app):
     training_response = client.get("/faaliyetlerimiz/egitimler")
     drills_response = client.get("/faaliyetlerimiz/tatbikatlar")

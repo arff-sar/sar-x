@@ -497,6 +497,7 @@ class InventoryAsset(db.Model, TimestampMixin, SoftDeleteMixin):
     )
     calibration_schedules = db.relationship('CalibrationSchedule', backref='asset', lazy=True, cascade='all, delete-orphan')
     calibration_records = db.relationship('CalibrationRecord', backref='asset', lazy=True, cascade='all, delete-orphan')
+    spare_part_links = db.relationship('AssetSparePartLink', backref='asset', lazy=True, cascade='all, delete-orphan')
 
     @property
     def qr_serial(self):
@@ -721,6 +722,22 @@ class SparePart(db.Model, TimestampMixin, SoftDeleteMixin):
 
     stocks = db.relationship('SparePartStock', backref='spare_part', lazy=True, cascade='all, delete-orphan')
     usages = db.relationship('WorkOrderPartUsage', backref='spare_part', lazy=True, cascade='all, delete-orphan')
+    asset_links = db.relationship('AssetSparePartLink', backref='spare_part', lazy=True, cascade='all, delete-orphan')
+
+
+class AssetSparePartLink(db.Model, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = 'asset_spare_part_link'
+
+    id = db.Column(db.Integer, primary_key=True)
+    asset_id = db.Column(db.Integer, db.ForeignKey('inventory_asset.id'), nullable=False, index=True)
+    spare_part_id = db.Column(db.Integer, db.ForeignKey('spare_part.id'), nullable=False, index=True)
+    quantity_required = db.Column(db.Float, default=1, nullable=False)
+    note = db.Column(db.Text)
+    is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
+
+    __table_args__ = (
+        db.UniqueConstraint('asset_id', 'spare_part_id', name='uq_asset_spare_part_link'),
+    )
 
 
 class SparePartStock(db.Model, TimestampMixin, SoftDeleteMixin):

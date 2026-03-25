@@ -56,6 +56,7 @@ def test_fresh_database_can_upgrade_with_migrations(app, monkeypatch):
     assert "site_ayarlari" in tables
     assert "auth_lockout" in tables
     assert "login_visual_challenge" in tables
+    assert "asset_spare_part_link" in tables
 
     with sqlite3.connect(db_path) as connection:
         islem_log_columns = {
@@ -135,4 +136,4 @@ def test_drifted_database_recovers_missing_havalimani_drive_folder_column(app):
 
     assert "drive_folder_id" in havalimani_columns
     assert "ix_havalimani_drive_folder_id" in havalimani_indexes
-    assert current_revision == "c9e1a4f2b6d3"
+    assert current_revision == "e8c4a1f7d2b0"

@@ -271,7 +271,18 @@ def demo_veri_olustur():
 
     from demo_data import format_demo_summary, seed_demo_data
 
-    summary = seed_demo_data(reset=request.form.get("demo_reset") == "1")
+    try:
+        summary = seed_demo_data(reset=request.form.get("demo_reset") == "1")
+    except RuntimeError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+        return redirect(url_for('admin.site_yonetimi', tab='genel'))
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Demo veri üretim akışı hata verdi.")
+        flash("Demo veri üretimi sırasında bir hata oluştu. İşlem geri alındı.", "danger")
+        return redirect(url_for('admin.site_yonetimi', tab='genel'))
+
     log_kaydet("Demo Veri", f"Demo verisi üretildi.\n{format_demo_summary(summary)}", event_key="demo.seed.create")
     flash("Demo verileri hazırlandı.", "success")
     return redirect(url_for('admin.site_yonetimi', tab='genel'))
@@ -291,7 +302,18 @@ def demo_veri_temizle():
 
     from demo_data import clear_demo_data
 
-    result = clear_demo_data()
+    try:
+        result = clear_demo_data()
+    except RuntimeError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+        return redirect(url_for('admin.site_yonetimi', tab='genel'))
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Demo veri temizleme akışı hata verdi.")
+        flash("Demo veri temizliği sırasında bir hata oluştu. İşlem geri alındı.", "danger")
+        return redirect(url_for('admin.site_yonetimi', tab='genel'))
+
     log_kaydet("Demo Veri", f"Demo verileri temizlendi. Silinen kayıt: {result['deleted']}", event_key="demo.seed.clear")
     flash("Demo verileri temizlendi.", "info")
     return redirect(url_for('admin.site_yonetimi', tab='genel'))
@@ -309,7 +331,13 @@ def anasayfa_demo_olustur():
     try:
         result = seed_homepage_demo_data()
     except RuntimeError as exc:
+        db.session.rollback()
         flash(str(exc), "danger")
+        return redirect(url_for('admin.site_yonetimi', tab='genel'))
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Anasayfa demo üretim akışı hata verdi.")
+        flash("Anasayfa demo üretimi sırasında bir hata oluştu. İşlem geri alındı.", "danger")
         return redirect(url_for('admin.site_yonetimi', tab='genel'))
 
     summary = result["summary"]
@@ -337,7 +365,13 @@ def anasayfa_demo_temizle():
     try:
         result = clear_homepage_demo_data()
     except RuntimeError as exc:
+        db.session.rollback()
         flash(str(exc), "danger")
+        return redirect(url_for('admin.site_yonetimi', tab='genel'))
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Anasayfa demo temizleme akışı hata verdi.")
+        flash("Anasayfa demo temizliği sırasında bir hata oluştu. İşlem geri alındı.", "danger")
         return redirect(url_for('admin.site_yonetimi', tab='genel'))
 
     event_key = "demo.homepage.seed.clear"

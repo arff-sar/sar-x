@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from datetime import datetime
@@ -8,7 +9,7 @@ from types import SimpleNamespace
 from urllib.parse import urlsplit, urlunsplit
 
 from dotenv import load_dotenv
-from flask import Flask, g, jsonify, make_response, redirect, render_template, request, send_file, url_for
+from flask import Flask, g, jsonify, make_response, redirect, render_template, request, send_file, send_from_directory, url_for
 from flask_wtf.csrf import CSRFError
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -241,6 +242,44 @@ def _error_response(status_code, message):
     if _wants_json_response():
         return jsonify({"status": "error", "message": message, "code": status_code}), status_code
     return render_template("hata.html", kod=status_code, mesaj=message), status_code
+
+
+NOISE_404_EXACT_PATHS = {
+    "/.env",
+    "/.env.local",
+    "/.env.production",
+    "/.git",
+    "/.git/config",
+    "/.git/heads/master",
+    "/wp-login.php",
+    "/xmlrpc.php",
+}
+NOISE_404_PREFIXES = (
+    "/.well-known/",
+    "/wp-",
+    "/wordpress",
+    "/phpmyadmin",
+    "/cgi-bin/",
+    "/vendor/",
+    "/boaform/",
+)
+NOISE_404_PATTERNS = (
+    re.compile(r"/\.git(?:/|$)", re.IGNORECASE),
+    re.compile(r"/\.env(?:\.|$)", re.IGNORECASE),
+    re.compile(r"/(?:composer|package)\.(json|lock)$", re.IGNORECASE),
+    re.compile(r"\.(php|asp|aspx|jsp)$", re.IGNORECASE),
+)
+
+
+def _is_noise_404_request():
+    path = str(request.path or "").strip().lower()
+    if not path:
+        return False
+    if path in NOISE_404_EXACT_PATHS:
+        return True
+    if any(path.startswith(prefix) for prefix in NOISE_404_PREFIXES):
+        return True
+    return any(pattern.search(path) for pattern in NOISE_404_PATTERNS)
 
 
 def _sqlite_column_names(table_name):
@@ -498,6 +537,7 @@ def create_app(config_name=None):
                         is_read=False,
                     ).count()
                 except Exception:
+                    db.session.rollback()
                     unread_notifications = []
                     unread_notification_count = 0
             permissions = sorted(get_effective_permissions(current_user))
@@ -549,6 +589,15 @@ def create_app(config_name=None):
     app.register_blueprint(content_bp)
     app.register_blueprint(parts_bp)
     app.register_blueprint(reports_bp)
+
+    @app.before_request
+    def ensure_request_session_hygiene():
+        try:
+            if db.session.is_active is False:
+                db.session.rollback()
+        except Exception:
+            pass
+        return None
 
     @app.before_request
     def assign_request_id():
@@ -667,6 +716,11 @@ def create_app(config_name=None):
 
     @app.errorhandler(404)
     def not_found(error):
+        if _is_noise_404_request():
+            app.logger.info("Probe/static 404 isteği sessiz işlendi: %s", request.path)
+            if _wants_json_response():
+                return jsonify({"status": "error", "message": "Not Found"}), 404
+            return "", 404
         return _render_safe_error("SAR-X-PUBLIC-3201", status_code=404, exception=error)
 
     @app.errorhandler(413)
@@ -1047,6 +1101,7 @@ def create_app(config_name=None):
             db_status = "ok" if (not missing_tables and site_settings_seed_ready) else "schema_incomplete"
             http_status = 200 if db_status == "ok" else 503
         except Exception:
+            db.session.rollback()
             db_status = "error"
             http_status = 503
             app.logger.exception("Ready check sırasında veritabanı doğrulaması başarısız.")
@@ -1064,9 +1119,37 @@ def create_app(config_name=None):
     def serve_manifest():
         return send_file("static/manifest.json")
 
+    @app.route("/site.webmanifest")
+    def serve_site_manifest():
+        return send_file("static/manifest.json", mimetype="application/manifest+json")
+
     @app.route("/sw.js")
     def serve_sw():
         return send_file("static/sw.js", mimetype="application/javascript")
+
+    @app.route("/robots.txt")
+    def serve_robots():
+        return send_from_directory("static", "robots.txt", mimetype="text/plain")
+
+    @app.route("/favicon.ico")
+    def serve_favicon_ico():
+        return send_from_directory("static", "favicon.png", mimetype="image/png")
+
+    @app.route("/favicon.png")
+    def serve_favicon_png():
+        return send_from_directory("static", "favicon.png", mimetype="image/png")
+
+    @app.route("/apple-touch-icon.png")
+    def serve_apple_touch_icon():
+        return send_from_directory("static", "favicon.png", mimetype="image/png")
+
+    @app.route("/apple-touch-icon-precomposed.png")
+    def serve_apple_touch_icon_precomposed():
+        return send_from_directory("static", "favicon.png", mimetype="image/png")
+
+    @app.route("/.well-known/assetlinks.json")
+    def serve_assetlinks():
+        return jsonify([])
 
     if app.config.get("AUTO_CREATE_TABLES", False):
         with app.app_context():

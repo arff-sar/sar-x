@@ -3,7 +3,9 @@ from functools import wraps
 
 from flask import abort, current_app, has_app_context, has_request_context, request, session, url_for
 from flask_login import current_user
-from extensions import column_exists, table_exists
+from sqlalchemy import text
+
+from extensions import column_exists, db, table_exists
 
 ROLE_OWNER = "sahip"
 ROLE_SYSTEM_OWNER = "sistem_sahibi"
@@ -101,6 +103,13 @@ PERMISSION_MODULE_LABELS = {
     "admin": "Yönetim",
     "reports": "Raporlama",
 }
+
+
+def _rollback_session_safely():
+    try:
+        db.session.rollback()
+    except Exception:
+        pass
 
 
 def _permission(key, label, module, summary, description=None):
@@ -585,7 +594,6 @@ MENU_GROUPS = [
             {"label": "Bakım Talimatları", "endpoint": "maintenance.ekipman_sablonlari", "prefixes": ["maintenance.ekipman_sablonlari", "maintenance.ekipman_talimat"], "permission": "maintenance.instructions.manage"},
             {"label": "İş Emirleri", "endpoint": "maintenance.is_emirleri", "prefixes": ["maintenance.is_emir", "maintenance.quick_close_work_order"], "permission": "workorder.view"},
             {"label": "KKD Takibi", "endpoint": "inventory.kkd_listesi", "prefixes": ["inventory.kkd"], "permission": "ppe.view"},
-            {"label": "Yedek Parçalar", "endpoint": "parts.spare_parts_list", "prefixes": ["parts."], "permission": "parts.view"},
             {"label": "Kutu Yönetimi", "endpoint": "inventory.kutular", "endpoints": ["inventory.kutular", "inventory.kutu_detay"], "permission": "inventory.view"},
         ],
     },
@@ -635,15 +643,18 @@ def _role_exists_in_db(role_key):
     if not role_key or not table_exists("role"):
         return False
     try:
-        from models import Role
-
-        return Role.query.filter_by(key=role_key).first() is not None
+        row = db.session.execute(
+            text("SELECT 1 FROM role WHERE key = :role_key LIMIT 1"),
+            {"role_key": role_key},
+        ).first()
+        return row is not None
     except Exception:
+        _rollback_session_safely()
         return False
 
 
 def _normalize_role_key(role):
-    role_key = str(role or "").strip()
+    role_key = str(role or "").strip().lower()
     if not role_key:
         return ""
     if role_key in ROLE_ALIASES:
@@ -742,9 +753,9 @@ def set_role_override(role, user=None):
     if role_key not in ROLE_SWITCH_KEYS:
         return False, ""
     base_role = _normalize_role_key(getattr(user, "rol", ""))
-    if role_key == base_role:
+    if _canonical_role(role_key) == _canonical_role(base_role):
         clear_role_override(user)
-        return True, base_role
+        return True, _canonical_role(base_role)
     session[ROLE_SWITCH_SESSION_KEY] = role_key
     session.modified = True
     return True, role_key
@@ -775,7 +786,11 @@ def _load_authorization_meta():
 
     if not table_exists("site_ayarlari"):
         return {}
-    ayarlar = SiteAyarlari.query.first()
+    try:
+        ayarlar = SiteAyarlari.query.first()
+    except Exception:
+        _rollback_session_safely()
+        return {}
     if not ayarlar or not ayarlar.iletisim_notu:
         return {}
     try:
@@ -800,13 +815,16 @@ def get_role_labels():
     labels = DEFAULT_ROLE_LABELS.copy()
     if table_exists("role"):
         try:
-            from models import Role
-
-            for role in Role.query.all():
-                if role.key and role.label:
-                    labels[role.key] = role.label
+            rows = db.session.execute(
+                text("SELECT key, label FROM role ORDER BY label ASC, key ASC")
+            ).mappings().all()
+            for role in rows:
+                role_key = str(role.get("key") or "").strip()
+                role_label = str(role.get("label") or "").strip()
+                if role_key and role_label:
+                    labels[role_key] = role_label
         except Exception:
-            pass
+            _rollback_session_safely()
     meta = _load_authorization_meta()
     custom = meta.get("role_labels", {})
     if isinstance(custom, dict):
@@ -823,13 +841,16 @@ def get_role_descriptions():
     descriptions = DEFAULT_ROLE_DESCRIPTIONS.copy()
     if table_exists("role") and column_exists("role", "description"):
         try:
-            from models import Role
-
-            for role in Role.query.all():
-                if role.key and role.description:
-                    descriptions[role.key] = role.description
+            rows = db.session.execute(
+                text("SELECT key, description FROM role ORDER BY label ASC, key ASC")
+            ).mappings().all()
+            for role in rows:
+                role_key = str(role.get("key") or "").strip()
+                role_description = str(role.get("description") or "").strip()
+                if role_key and role_description:
+                    descriptions[role_key] = role_description
         except Exception:
-            pass
+            _rollback_session_safely()
     meta = _load_authorization_meta()
     custom = meta.get("role_descriptions", {})
     if isinstance(custom, dict):
@@ -881,27 +902,42 @@ def get_manageable_role_options(include_inactive=False):
     descriptions = get_role_descriptions()
     if not table_exists("role"):
         return options
+    if not (column_exists("role", "key") and column_exists("role", "label") and column_exists("role", "is_system")):
+        return options
     try:
-        from models import Role
+        selected_columns = ["key", "label", "scope", "is_system"]
+        has_is_active = column_exists("role", "is_active")
+        has_description = column_exists("role", "description")
+        if has_is_active:
+            selected_columns.append("is_active")
+        if has_description:
+            selected_columns.append("description")
 
-        query = Role.query.filter_by(is_system=False)
-        if not include_inactive and column_exists("role", "is_active"):
-            query = query.filter_by(is_active=True)
-        for role in query.order_by(Role.label.asc(), Role.key.asc()).all():
+        sql = f"SELECT {', '.join(selected_columns)} FROM role WHERE is_system = :is_system"
+        params = {"is_system": False}
+        if has_is_active and not include_inactive:
+            sql += " AND is_active = :is_active"
+            params["is_active"] = True
+        sql += " ORDER BY label ASC, key ASC"
+
+        for role in db.session.execute(text(sql), params).mappings().all():
+            role_key = str(role.get("key") or "").strip()
+            if not role_key:
+                continue
             options.append(
                 {
-                    "key": role.key,
-                    "label": labels.get(role.key, role.label),
-                    "scope": role.scope,
+                    "key": role_key,
+                    "label": labels.get(role_key, str(role.get("label") or role_key)),
+                    "scope": str(role.get("scope") or "global"),
                     "critical": False,
-                    "description": descriptions.get(role.key, getattr(role, "description", "") or ""),
+                    "description": descriptions.get(role_key, str(role.get("description") or "").strip()),
                     "is_core": False,
                     "is_system": False,
-                    "is_active": getattr(role, "is_active", True),
+                    "is_active": bool(role.get("is_active", True)),
                 }
             )
     except Exception:
-        pass
+        _rollback_session_safely()
     return options
 
 
@@ -947,15 +983,21 @@ def get_role_permissions(role):
         granted = set(DEFAULT_ROLE_PERMISSIONS.get(canonical, set()))
     if table_exists("role") and table_exists("permission") and table_exists("role_permission"):
         try:
-            from models import Permission, Role, RolePermission
+            from models import Permission, RolePermission
 
             sync_authorization_registry()
-            db_role = Role.query.filter_by(key=role_key).first()
-            if db_role is None and canonical != role_key:
-                db_role = Role.query.filter_by(key=canonical).first()
-            if db_role:
+            db_role_id = db.session.execute(
+                text("SELECT id FROM role WHERE key = :role_key LIMIT 1"),
+                {"role_key": role_key},
+            ).scalar()
+            if db_role_id is None and canonical != role_key:
+                db_role_id = db.session.execute(
+                    text("SELECT id FROM role WHERE key = :role_key LIMIT 1"),
+                    {"role_key": canonical},
+                ).scalar()
+            if db_role_id:
                 assignments = (
-                    RolePermission.query.filter_by(role_id=db_role.id)
+                    RolePermission.query.filter_by(role_id=db_role_id)
                     .join(Permission, Permission.id == RolePermission.permission_id)
                     .all()
                 )
@@ -965,6 +1007,7 @@ def get_role_permissions(role):
                     elif assignment.permission and assignment.permission.key in granted:
                         granted.discard(assignment.permission.key)
         except Exception:
+            _rollback_session_safely()
             if role_key in LEGACY_ROLE_DEFAULT_PERMISSIONS:
                 granted = set(LEGACY_ROLE_DEFAULT_PERMISSIONS.get(role_key, set()))
             else:
@@ -996,7 +1039,7 @@ def get_user_permission_overrides(user):
                     "deny": {row.permission_key for row in rows if not row.is_allowed},
                 }
         except Exception:
-            pass
+            _rollback_session_safely()
     meta = _load_authorization_meta()
     overrides = meta.get("user_permission_overrides", {})
     raw = overrides.get(user_id, {})
@@ -1210,20 +1253,23 @@ def update_permission_matrix(role_key, allow_permissions, deny_permissions):
     if table_exists("role") and table_exists("permission") and table_exists("role_permission"):
         try:
             from extensions import db
-            from models import Permission, Role, RolePermission
+            from models import Permission, RolePermission
 
             sync_authorization_registry()
-            role = Role.query.filter_by(key=role_key).first()
-            if role:
-                RolePermission.query.filter_by(role_id=role.id).delete(synchronize_session=False)
+            role_id = db.session.execute(
+                text("SELECT id FROM role WHERE key = :role_key LIMIT 1"),
+                {"role_key": role_key},
+            ).scalar()
+            if role_id:
+                RolePermission.query.filter_by(role_id=role_id).delete(synchronize_session=False)
                 for permission_key in sorted({item for item in allow_permissions if item}):
                     permission = Permission.query.filter_by(key=permission_key).first()
                     if permission:
-                        db.session.add(RolePermission(role_id=role.id, permission_id=permission.id, is_allowed=True))
+                        db.session.add(RolePermission(role_id=role_id, permission_id=permission.id, is_allowed=True))
                 for permission_key in sorted({item for item in deny_permissions if item}):
                     permission = Permission.query.filter_by(key=permission_key).first()
                     if permission:
-                        db.session.add(RolePermission(role_id=role.id, permission_id=permission.id, is_allowed=False))
+                        db.session.add(RolePermission(role_id=role_id, permission_id=permission.id, is_allowed=False))
                 db.session.flush()
         except Exception:
             db.session.rollback()
@@ -1256,6 +1302,9 @@ def update_user_permission_overrides(user_id, allow_permissions, deny_permission
 
 def sync_authorization_registry():
     if not (table_exists("role") and table_exists("permission")):
+        return None
+    required_role_columns = {"key", "label", "scope", "is_system", "is_active", "description"}
+    if any(not column_exists("role", column_name) for column_name in required_role_columns):
         return None
     try:
         from extensions import db
@@ -1356,4 +1405,5 @@ def sync_authorization_registry():
             db.session.flush()
         return changed
     except Exception:
+        _rollback_session_safely()
         return None

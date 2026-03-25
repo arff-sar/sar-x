@@ -33,6 +33,7 @@ from models import (
     AssignmentItem,
     AssignmentRecipient,
     AssignmentRecord,
+    AssetSparePartLink,
     AssetOperationalState,
     AssetMeterReading,
     BakimKaydi,
@@ -54,6 +55,7 @@ from models import (
     MaintenanceTriggerRule,
     PPERecord,
     PPERecordEvent,
+    SparePart,
     SparePartStock,
     TatbikatBelgesi,
     TR_TZ,
@@ -1101,7 +1103,7 @@ def envanter():
         h_ad = "Genel Envanter (Tüm Birimler)"
         havalimanlari = _visible_operational_airports()
     else:
-        h_ad = current_user.havalimani.ad
+        h_ad = current_user.havalimani.ad if current_user.havalimani else "Atanmamış Birim"
         havalimanlari = [current_user.havalimani] if current_user.havalimani else []
 
     categories = (
@@ -2249,10 +2251,274 @@ def _asset_maintenance_summary(asset):
     return "Planlı"
 
 
+def _asset_detail_endpoint(detail_mode):
+    return "inventory.asset_detail" if detail_mode else "inventory.quick_asset_view"
+
+
+def _parse_optional_float(raw_value):
+    if raw_value in (None, ""):
+        return None
+    try:
+        return float(raw_value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _upsert_spare_part_stock(
+    asset,
+    spare_part,
+    *,
+    quantity_on_hand=None,
+    quantity_reserved=None,
+    reorder_point=None,
+    shelf_location=None,
+    create_if_missing=False,
+):
+    if not asset.havalimani_id:
+        return None
+
+    stock = SparePartStock.query.filter_by(
+        spare_part_id=spare_part.id,
+        airport_id=asset.havalimani_id,
+        is_deleted=False,
+    ).first()
+    should_create = create_if_missing or any(
+        value is not None for value in (quantity_on_hand, quantity_reserved, reorder_point)
+    ) or bool(str(shelf_location or "").strip())
+    if stock is None and should_create:
+        stock = SparePartStock(
+            spare_part_id=spare_part.id,
+            airport_id=asset.havalimani_id,
+            quantity_on_hand=0,
+            quantity_reserved=0,
+            reorder_point=spare_part.min_stock_level or 0,
+            is_active=True,
+        )
+        db.session.add(stock)
+
+    if stock is None:
+        return None
+
+    if quantity_on_hand is not None:
+        stock.quantity_on_hand = max(quantity_on_hand, 0)
+    if quantity_reserved is not None:
+        stock.quantity_reserved = max(quantity_reserved, 0)
+    if reorder_point is not None:
+        stock.reorder_point = max(reorder_point, 0)
+    if shelf_location is not None:
+        stock.shelf_location = guvenli_metin(shelf_location).strip()
+    stock.is_active = True
+    return stock
+
+
+def _asset_spare_parts_payload(asset, include_available=True):
+    if not table_exists("asset_spare_part_link"):
+        return [], [], {}
+
+    linked_parts = (
+        AssetSparePartLink.query.join(SparePart, SparePart.id == AssetSparePartLink.spare_part_id)
+        .filter(
+            AssetSparePartLink.asset_id == asset.id,
+            AssetSparePartLink.is_deleted.is_(False),
+            AssetSparePartLink.is_active.is_(True),
+            SparePart.is_deleted.is_(False),
+        )
+        .order_by(SparePart.title.asc(), SparePart.part_code.asc())
+        .all()
+    )
+    linked_part_ids = {link.spare_part_id for link in linked_parts}
+
+    available_parts = []
+    if include_available:
+        available_query = SparePart.query.filter(
+            SparePart.is_deleted.is_(False),
+            SparePart.is_active.is_(True),
+        )
+        if linked_part_ids:
+            available_query = available_query.filter(~SparePart.id.in_(linked_part_ids))
+        available_parts = available_query.order_by(SparePart.title.asc(), SparePart.part_code.asc()).limit(250).all()
+
+    spare_stock_map = {}
+    if asset.havalimani_id:
+        stock_rows = SparePartStock.query.filter_by(
+            airport_id=asset.havalimani_id,
+            is_deleted=False,
+        ).all()
+        spare_stock_map = {row.spare_part_id: row for row in stock_rows}
+
+    return linked_parts, available_parts, spare_stock_map
+
+
+def _handle_asset_spare_part_action(asset, action):
+    if action == "spare_link_existing":
+        part_id = request.form.get("spare_part_id", type=int)
+        part = SparePart.query.filter_by(id=part_id, is_deleted=False).first()
+        if not part:
+            raise ValueError("Seçilen yedek parça bulunamadı.")
+
+        quantity_required = _parse_optional_float(request.form.get("quantity_required"))
+        quantity_required = max(quantity_required if quantity_required is not None else 1.0, 0.1)
+        link_note = guvenli_metin(request.form.get("link_note") or "").strip()
+
+        link = AssetSparePartLink.query.filter_by(asset_id=asset.id, spare_part_id=part.id).first()
+        if link is None:
+            link = AssetSparePartLink(
+                asset_id=asset.id,
+                spare_part_id=part.id,
+                quantity_required=quantity_required,
+                note=link_note,
+                is_active=True,
+            )
+            db.session.add(link)
+            action_label = "bağlandı"
+        else:
+            if link.is_deleted:
+                link.is_deleted = False
+                link.deleted_at = None
+            link.is_active = True
+            link.quantity_required = quantity_required
+            link.note = link_note
+            action_label = "güncellendi"
+
+        _upsert_spare_part_stock(
+            asset,
+            part,
+            quantity_on_hand=_parse_optional_float(request.form.get("quantity_on_hand")),
+            quantity_reserved=_parse_optional_float(request.form.get("quantity_reserved")),
+            reorder_point=_parse_optional_float(request.form.get("reorder_point")),
+            shelf_location=request.form.get("shelf_location"),
+            create_if_missing=False,
+        )
+        return {
+            "message": f"Yedek parça bağlantısı {action_label}: {part.part_code}",
+            "log": f"Asset {asset.id} yedek parça bağlantısı {action_label}: {part.part_code}",
+        }
+
+    if action == "spare_create_linked":
+        part_code = guvenli_metin(request.form.get("part_code") or "").strip().upper()
+        title = guvenli_metin(request.form.get("title") or "").strip()
+        if not part_code or not title:
+            raise ValueError("Parça kodu ve parça adı zorunludur.")
+        if SparePart.query.filter_by(part_code=part_code).first():
+            raise ValueError("Bu parça kodu zaten kayıtlı.")
+
+        part = SparePart(
+            part_code=part_code,
+            title=title,
+            category=guvenli_metin(request.form.get("category") or "").strip(),
+            compatible_asset_type=guvenli_metin(request.form.get("compatible_asset_type") or "").strip(),
+            manufacturer=guvenli_metin(request.form.get("manufacturer") or "").strip(),
+            model_code=guvenli_metin(request.form.get("model_code") or "").strip(),
+            description=guvenli_metin(request.form.get("description") or "").strip(),
+            unit=guvenli_metin(request.form.get("unit") or "").strip() or "adet",
+            min_stock_level=max(_parse_optional_float(request.form.get("min_stock_level")) or 0, 0),
+            critical_level=max(_parse_optional_float(request.form.get("critical_level")) or 0, 0),
+            is_active=True,
+        )
+        db.session.add(part)
+        db.session.flush()
+
+        link = AssetSparePartLink(
+            asset_id=asset.id,
+            spare_part_id=part.id,
+            quantity_required=max(_parse_optional_float(request.form.get("quantity_required")) or 1, 0.1),
+            note=guvenli_metin(request.form.get("link_note") or "").strip(),
+            is_active=True,
+        )
+        db.session.add(link)
+
+        _upsert_spare_part_stock(
+            asset,
+            part,
+            quantity_on_hand=_parse_optional_float(request.form.get("quantity_on_hand")) or 0,
+            quantity_reserved=_parse_optional_float(request.form.get("quantity_reserved")) or 0,
+            reorder_point=_parse_optional_float(request.form.get("reorder_point")),
+            shelf_location=request.form.get("shelf_location"),
+            create_if_missing=True,
+        )
+        return {
+            "message": f"Yeni yedek parça oluşturuldu ve envantere bağlandı: {part.part_code}",
+            "log": f"Asset {asset.id} için yeni yedek parça oluşturuldu: {part.part_code}",
+        }
+
+    if action == "spare_link_update":
+        link_id = request.form.get("link_id", type=int)
+        link = AssetSparePartLink.query.filter_by(
+            id=link_id,
+            asset_id=asset.id,
+            is_deleted=False,
+        ).first()
+        if not link or not link.spare_part or link.spare_part.is_deleted:
+            raise ValueError("Güncellenecek yedek parça bağlantısı bulunamadı.")
+
+        link.quantity_required = max(_parse_optional_float(request.form.get("quantity_required")) or link.quantity_required or 1, 0.1)
+        link.note = guvenli_metin(request.form.get("link_note") or "").strip()
+        link.is_active = request.form.get("is_active") == "on" or request.form.get("is_active") is None
+
+        _upsert_spare_part_stock(
+            asset,
+            link.spare_part,
+            quantity_on_hand=_parse_optional_float(request.form.get("quantity_on_hand")),
+            quantity_reserved=_parse_optional_float(request.form.get("quantity_reserved")),
+            reorder_point=_parse_optional_float(request.form.get("reorder_point")),
+            shelf_location=request.form.get("shelf_location"),
+            create_if_missing=False,
+        )
+        return {
+            "message": f"Bağlı yedek parça güncellendi: {link.spare_part.part_code}",
+            "log": f"Asset {asset.id} yedek parça bağlantısı güncellendi: {link.spare_part.part_code}",
+        }
+
+    if action == "spare_link_archive":
+        link_id = request.form.get("link_id", type=int)
+        link = AssetSparePartLink.query.filter_by(
+            id=link_id,
+            asset_id=asset.id,
+            is_deleted=False,
+        ).first()
+        if not link or not link.spare_part:
+            raise ValueError("Arşivlenecek bağlantı bulunamadı.")
+
+        link.is_active = False
+        link.soft_delete()
+        return {
+            "message": f"Yedek parça bağlantısı arşive alındı: {link.spare_part.part_code}",
+            "log": f"Asset {asset.id} yedek parça bağlantısı arşive alındı: {link.spare_part.part_code}",
+        }
+
+    raise ValueError("Geçersiz yedek parça işlemi gönderildi.")
+
+
 def _asset_detail_view(asset_id, detail_mode=False):
     asset = _asset_scope().filter(InventoryAsset.id == asset_id).first_or_404()
+    target_endpoint = _asset_detail_endpoint(detail_mode)
 
     if request.method == "POST":
+        action = (request.form.get("action") or "asset_quick_update").strip()
+        if action.startswith("spare_"):
+            if not has_permission("parts.edit"):
+                abort(403)
+            if not table_exists("asset_spare_part_link"):
+                flash("Yedek parça bağlantı şeması hazır değil. Lütfen migration adımını tamamlayın.", "danger")
+                return redirect(url_for(target_endpoint, asset_id=asset.id))
+
+            try:
+                result = _handle_asset_spare_part_action(asset, action)
+                db.session.commit()
+                log_kaydet("Yedek Parça", result["log"], event_key=f"asset.spare.{action}", target_model="InventoryAsset", target_id=asset.id)
+                flash(result["message"], "success")
+            except ValueError as exc:
+                db.session.rollback()
+                flash(str(exc), "danger")
+            except IntegrityError:
+                db.session.rollback()
+                flash("Yedek parça bağlantısı kaydedilemedi. Gönderilen verileri kontrol edin.", "danger")
+            except Exception:
+                db.session.rollback()
+                current_app.logger.exception("Asset yedek parça işlemi başarısız oldu. asset_id=%s action=%s", asset.id, action)
+                flash("Yedek parça işlemi sırasında beklenmeyen bir hata oluştu.", "danger")
+            return redirect(url_for(target_endpoint, asset_id=asset.id))
+
         if not has_permission("inventory.edit"):
             abort(403)
 
@@ -2278,7 +2544,6 @@ def _asset_detail_view(asset_id, detail_mode=False):
         db.session.commit()
         log_kaydet("Saha Hızlı Güncelleme", f"Asset hızlı güncellendi: ID {asset.id} / durum={asset.status}")
         flash("Hızlı ekipman güncellemesi kaydedildi.", "success")
-        target_endpoint = "inventory.asset_detail" if detail_mode else "inventory.quick_asset_view"
         return redirect(url_for(target_endpoint, asset_id=asset.id))
 
     related_work_orders = (
@@ -2299,6 +2564,12 @@ def _asset_detail_view(asset_id, detail_mode=False):
     )
     open_work_order = next((order for order in related_work_orders if order.status in {"acik", "atandi", "islemde", "beklemede_parca", "beklemede_onay"}), None)
     linked_box = asset.legacy_material.kutu if asset.legacy_material else None
+    can_view_parts = has_permission("parts.view")
+    can_manage_parts = has_permission("parts.edit")
+    spare_part_links, available_spare_parts, spare_stock_map = _asset_spare_parts_payload(
+        asset,
+        include_available=can_manage_parts,
+    ) if can_view_parts else ([], [], {})
     return render_template(
         "quick_asset_view.html",
         asset=asset,
@@ -2311,6 +2582,12 @@ def _asset_detail_view(asset_id, detail_mode=False):
         detail_mode=detail_mode,
         linked_box=linked_box,
         maintenance_summary=_asset_maintenance_summary(asset),
+        spare_part_links=spare_part_links,
+        available_spare_parts=available_spare_parts,
+        spare_stock_map=spare_stock_map,
+        spare_link_table_ready=table_exists("asset_spare_part_link"),
+        can_view_parts=can_view_parts,
+        can_manage_parts=can_manage_parts,
     )
 
 

@@ -530,8 +530,8 @@
       <div class="public-nav-shell" id="publicNavShell">
         <nav class="public-nav" aria-label="Ana menü">
           <a class="public-link" href="{{ home_url }}">Anasayfa</a>
-          <details class="public-dropdown">
-            <summary class="public-dropdown-summary">Hakkımızda</summary>
+          <details class="public-dropdown" data-public-dropdown>
+            <summary class="public-dropdown-summary" aria-expanded="false">Hakkımızda</summary>
             <div class="public-dropdown-menu">
               <a class="public-dropdown-item" href="{{ url_for('content.public_about_who_we_are') }}">
                 <strong>Biz Kimiz?</strong>
@@ -547,8 +547,8 @@
               </a>
             </div>
           </details>
-          <details class="public-dropdown">
-            <summary class="public-dropdown-summary">Faaliyetlerimiz</summary>
+          <details class="public-dropdown" data-public-dropdown>
+            <summary class="public-dropdown-summary" aria-expanded="false">Faaliyetlerimiz</summary>
             <div class="public-dropdown-menu">
               <a class="public-dropdown-item" href="{{ url_for('content.public_training_page') }}">
                 <strong>Eğitimler</strong>
@@ -604,32 +604,141 @@
       const shell = document.getElementById("publicNavShell");
       if (!header || !toggle || !shell) return;
 
+      const mobileNavQuery = window.matchMedia("(max-width: 980px)");
+      const desktopHoverQuery = window.matchMedia("(hover: hover) and (pointer: fine)");
+      const dropdowns = Array.from(shell.querySelectorAll("[data-public-dropdown]"));
+
+      const isMobileLayout = function () {
+        return mobileNavQuery.matches;
+      };
+
+      const isDesktopHoverMode = function () {
+        return !isMobileLayout() && desktopHoverQuery.matches;
+      };
+
+      const setDropdownOpen = function (dropdown, isOpen) {
+        if (!dropdown) return;
+        const summary = dropdown.querySelector(".public-dropdown-summary");
+        if (!summary) return;
+        if (isOpen) {
+          dropdown.setAttribute("open", "open");
+        } else {
+          dropdown.removeAttribute("open");
+        }
+        summary.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      };
+
+      const closeAllDropdowns = function (exceptDropdown) {
+        dropdowns.forEach(function (dropdown) {
+          if (dropdown !== exceptDropdown) {
+            setDropdownOpen(dropdown, false);
+          }
+        });
+      };
+
+      const closeMobileShell = function () {
+        header.classList.remove("is-open");
+        toggle.setAttribute("aria-expanded", "false");
+      };
+
+      const closeNavigation = function () {
+        closeAllDropdowns();
+        closeMobileShell();
+      };
+
       toggle.addEventListener("click", function () {
         const nextState = !header.classList.contains("is-open");
         header.classList.toggle("is-open", nextState);
         toggle.setAttribute("aria-expanded", String(nextState));
+        if (!nextState) {
+          closeAllDropdowns();
+        }
+      });
+
+      dropdowns.forEach(function (dropdown) {
+        const summary = dropdown.querySelector(".public-dropdown-summary");
+        if (!summary) return;
+
+        summary.setAttribute("role", "button");
+        summary.setAttribute("aria-haspopup", "menu");
+        summary.setAttribute("aria-expanded", dropdown.hasAttribute("open") ? "true" : "false");
+
+        summary.addEventListener("click", function (event) {
+          event.preventDefault();
+          const willOpen = !dropdown.hasAttribute("open");
+          closeAllDropdowns(dropdown);
+          setDropdownOpen(dropdown, willOpen);
+        });
+
+        summary.addEventListener("keydown", function (event) {
+          if (event.key === " " || event.key === "Enter") {
+            event.preventDefault();
+            const willOpen = !dropdown.hasAttribute("open");
+            closeAllDropdowns(dropdown);
+            setDropdownOpen(dropdown, willOpen);
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            setDropdownOpen(dropdown, false);
+            summary.blur();
+          }
+        });
+
+        dropdown.addEventListener("mouseenter", function () {
+          if (!isDesktopHoverMode()) return;
+          closeAllDropdowns(dropdown);
+          setDropdownOpen(dropdown, true);
+        });
+
+        dropdown.addEventListener("mouseleave", function () {
+          if (!isDesktopHoverMode()) return;
+          setDropdownOpen(dropdown, false);
+        });
+
+        summary.addEventListener("focus", function () {
+          if (!isDesktopHoverMode()) return;
+          closeAllDropdowns(dropdown);
+          setDropdownOpen(dropdown, true);
+        });
       });
 
       shell.querySelectorAll("a").forEach(function (link) {
         link.addEventListener("click", function () {
-          header.classList.remove("is-open");
-          toggle.setAttribute("aria-expanded", "false");
+          closeNavigation();
         });
       });
 
       document.addEventListener("click", function (event) {
         if (!header.contains(event.target)) {
-          header.classList.remove("is-open");
-          toggle.setAttribute("aria-expanded", "false");
+          closeNavigation();
         }
       });
 
       document.addEventListener("keydown", function (event) {
         if (event.key === "Escape") {
-          header.classList.remove("is-open");
-          toggle.setAttribute("aria-expanded", "false");
+          closeNavigation();
         }
       });
+
+      const handleViewportChange = function () {
+        closeAllDropdowns();
+        if (!isMobileLayout()) {
+          closeMobileShell();
+        }
+      };
+
+      if (typeof mobileNavQuery.addEventListener === "function") {
+        mobileNavQuery.addEventListener("change", handleViewportChange);
+      } else if (typeof mobileNavQuery.addListener === "function") {
+        mobileNavQuery.addListener(handleViewportChange);
+      }
+      if (typeof desktopHoverQuery.addEventListener === "function") {
+        desktopHoverQuery.addEventListener("change", handleViewportChange);
+      } else if (typeof desktopHoverQuery.addListener === "function") {
+        desktopHoverQuery.addListener(handleViewportChange);
+      }
+
+      window.addEventListener("orientationchange", handleViewportChange);
+      window.addEventListener("resize", handleViewportChange);
     })();
   </script>
 </body>
