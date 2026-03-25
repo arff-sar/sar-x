@@ -7,7 +7,7 @@
         <div class="page-title">Bakım İş Emirleri</div>
         <div class="page-meta">Açık, atanan, işlemde ve tamamlanan tüm iş emirleri</div>
     </div>
-    {% if rol in ['sahip', 'yetkili'] %}
+    {% if has_permission('workorder.create') %}
     <a href="{{ url_for('maintenance.is_emri_olustur') }}" class="btn btn-primary">➕ İş Emri Oluştur</a>
     {% endif %}
 </div>

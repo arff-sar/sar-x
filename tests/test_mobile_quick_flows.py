@@ -5,6 +5,7 @@ from tests.factories import EquipmentTemplateFactory, HavalimaniFactory, Invento
 
 def _login(client, user):
     with client.session_transaction() as sess:
+        sess.clear()
         sess["_user_id"] = str(user.id)
         sess["_fresh"] = True
 

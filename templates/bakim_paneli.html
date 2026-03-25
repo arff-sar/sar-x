@@ -7,7 +7,7 @@
         <div class="page-title">Bakım Operasyon Paneli</div>
         <div class="page-meta">Periyodik bakım, iş emri ve kritik ekipman görünümü</div>
     </div>
-    {% if rol in ['sahip', 'yetkili'] %}
+    {% if has_permission('workorder.create') %}
     <a href="{{ url_for('maintenance.is_emri_olustur') }}" class="btn btn-primary">🧰 Yeni İş Emri</a>
     {% endif %}
 </div>

@@ -1,12 +1,13 @@
 from datetime import timedelta
 
 from extensions import db
-from models import MaintenanceHistory, MaintenancePlan, WorkOrder, get_tr_now
+from models import MaintenanceHistory, MaintenancePlan, UserPermissionOverride, WorkOrder, get_tr_now
 from tests.factories import EquipmentTemplateFactory, HavalimaniFactory, InventoryAssetFactory, KullaniciFactory
 
 
 def _login(client, user):
     with client.session_transaction() as sess:
+        sess.clear()
         sess["_user_id"] = str(user.id)
         sess["_fresh"] = True
 
@@ -102,3 +103,169 @@ def test_next_maintenance_date_is_calculated_after_closure(client, app):
     db.session.refresh(asset)
     expected_date = today + timedelta(days=20)
     assert asset.next_maintenance_date == expected_date
+
+
+def test_owner_can_create_work_order_across_airports(client, app):
+    airport_a = HavalimaniFactory(kodu="ERZ")
+    airport_b = HavalimaniFactory(kodu="KCO")
+    owner = KullaniciFactory(rol="sahip")
+    assignee_other_airport = KullaniciFactory(rol="personel", havalimani=airport_b)
+    template = EquipmentTemplateFactory(name="Kurtarma Ekipmanı", maintenance_period_days=15)
+    asset_airport_a = InventoryAssetFactory(
+        equipment_template=template,
+        airport=airport_a,
+        serial_no="OWN-SN-1",
+        qr_code="OWN-QR-1",
+    )
+    db.session.add_all([airport_a, airport_b, owner, assignee_other_airport, template, asset_airport_a])
+    db.session.commit()
+    _login(client, owner)
+
+    response = client.post(
+        "/bakim/is-emri/yeni",
+        data={
+            "asset_id": asset_airport_a.id,
+            "assigned_user_id": assignee_other_airport.id,
+            "maintenance_type": "bakim",
+            "description": "Global owner cross-airport create",
+            "priority": "orta",
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+
+    created = WorkOrder.query.order_by(WorkOrder.id.desc()).first()
+    assert created is not None
+    assert created.asset_id == asset_airport_a.id
+    assert created.assigned_user_id == assignee_other_airport.id
+
+
+def test_airport_manager_sees_only_own_scope_on_create_form(client, app):
+    airport_a = HavalimaniFactory(kodu="TZX")
+    airport_b = HavalimaniFactory(kodu="ADA")
+    manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport_a)
+    own_user = KullaniciFactory(rol="personel", havalimani=airport_a, tam_ad="Kendi Personel")
+    other_user = KullaniciFactory(rol="personel", havalimani=airport_b, tam_ad="Diger Personel")
+    template = EquipmentTemplateFactory(name="Scope Test Cihazı")
+    own_asset = InventoryAssetFactory(equipment_template=template, airport=airport_a, serial_no="SC-A-1", qr_code="SC-A-QR")
+    other_asset = InventoryAssetFactory(equipment_template=template, airport=airport_b, serial_no="SC-B-1", qr_code="SC-B-QR")
+    db.session.add_all([airport_a, airport_b, manager, own_user, other_user, template, own_asset, other_asset])
+    db.session.commit()
+    _login(client, manager)
+
+    response = client.get("/bakim/is-emri/yeni")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Kendi Personel" in html
+    assert "Diger Personel" not in html
+    assert "SC-A-1" in html
+    assert "SC-B-1" not in html
+
+
+def test_airport_manager_cannot_create_with_out_of_scope_asset_or_user(client, app):
+    airport_a = HavalimaniFactory(kodu="BJV")
+    airport_b = HavalimaniFactory(kodu="GZT")
+    manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport_a)
+    own_user = KullaniciFactory(rol="personel", havalimani=airport_a)
+    other_user = KullaniciFactory(rol="personel", havalimani=airport_b)
+    template = EquipmentTemplateFactory(name="Scope Guard Cihazı")
+    own_asset = InventoryAssetFactory(equipment_template=template, airport=airport_a, serial_no="GUARD-A", qr_code="GUARD-A-QR")
+    other_asset = InventoryAssetFactory(equipment_template=template, airport=airport_b, serial_no="GUARD-B", qr_code="GUARD-B-QR")
+    db.session.add_all([airport_a, airport_b, manager, own_user, other_user, template, own_asset, other_asset])
+    db.session.commit()
+    _login(client, manager)
+
+    success = client.post(
+        "/bakim/is-emri/yeni",
+        data={
+            "asset_id": own_asset.id,
+            "assigned_user_id": own_user.id,
+            "maintenance_type": "bakim",
+            "description": "Own scope create",
+            "priority": "orta",
+        },
+        follow_redirects=True,
+    )
+    assert success.status_code == 200
+
+    invalid_asset = client.post(
+        "/bakim/is-emri/yeni",
+        data={
+            "asset_id": other_asset.id,
+            "assigned_user_id": own_user.id,
+            "maintenance_type": "bakim",
+            "description": "Out of scope asset",
+            "priority": "orta",
+        },
+        follow_redirects=False,
+    )
+    assert invalid_asset.status_code in {302, 403}
+
+    invalid_user = client.post(
+        "/bakim/is-emri/yeni",
+        data={
+            "asset_id": own_asset.id,
+            "assigned_user_id": other_user.id,
+            "maintenance_type": "bakim",
+            "description": "Out of scope user",
+            "priority": "orta",
+        },
+        follow_redirects=False,
+    )
+    assert invalid_user.status_code == 403
+
+
+def test_create_button_and_form_are_visible_with_create_permission_even_without_edit(client, app):
+    airport = HavalimaniFactory(kodu="SAW")
+    manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport)
+    template = EquipmentTemplateFactory(name="Create Permission Cihazı")
+    asset = InventoryAssetFactory(equipment_template=template, airport=airport, serial_no="CRT-01", qr_code="CRT-QR-01")
+    db.session.add_all(
+        [
+            airport,
+            manager,
+            template,
+            asset,
+            UserPermissionOverride(user=manager, permission_key="workorder.edit", is_allowed=False),
+        ]
+    )
+    db.session.commit()
+
+    _login(client, manager)
+    manager_list = client.get("/bakim/is-emirleri")
+    manager_html = manager_list.data.decode("utf-8")
+    assert manager_list.status_code == 200
+    assert "İş Emri Oluştur" in manager_html
+    assert client.get("/bakim/is-emri/yeni").status_code == 200
+    create_response = client.post(
+        "/bakim/is-emri/yeni",
+        data={
+            "asset_id": asset.id,
+            "assigned_user_id": manager.id,
+            "maintenance_type": "bakim",
+            "description": "Create var, edit yok",
+            "priority": "orta",
+        },
+        follow_redirects=True,
+    )
+    assert create_response.status_code == 200
+
+
+def test_create_button_hidden_and_form_forbidden_without_create_permission(client, app):
+    viewer = KullaniciFactory(rol="ekip_sorumlusu")
+    db.session.add_all(
+        [
+            viewer,
+            UserPermissionOverride(user=viewer, permission_key="workorder.create", is_allowed=False),
+        ]
+    )
+    db.session.commit()
+
+    _login(client, viewer)
+    viewer_list = client.get("/bakim/is-emirleri")
+    viewer_html = viewer_list.data.decode("utf-8")
+    assert viewer_list.status_code == 200
+    assert "İş Emri Oluştur" not in viewer_html
+    assert client.get("/bakim/is-emri/yeni").status_code == 403
+    assert client.post("/bakim/is-emri/yeni", data={"asset_id": 1, "description": "x"}, follow_redirects=False).status_code == 403

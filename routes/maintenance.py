@@ -49,11 +49,19 @@ CHECKLIST_FIELD_TYPES = {
 
 
 def _can_view_all():
-    return current_user.rol in ["sahip", "genel_mudurluk"]
+    return bool(getattr(current_user, "is_sahip", False))
 
 
-def _is_manager():
-    return current_user.rol in ["sahip", "yetkili"]
+def _can_create_work_order():
+    return has_permission("workorder.create")
+
+
+def _can_edit_work_order():
+    return has_permission("workorder.edit")
+
+
+def _can_assign_work_order():
+    return has_permission("workorder.assign")
 
 
 def _can_manage_form_catalog():
@@ -61,7 +69,7 @@ def _can_manage_form_catalog():
 
 
 def _can_manage_instruction_catalog():
-    return has_permission("maintenance.instructions.manage") or has_permission("maintenance.plan.change")
+    return bool(getattr(current_user, "is_sahip", False))
 
 
 def _asset_scope():
@@ -152,6 +160,17 @@ def _ensure_asset_work_order(asset):
 
 def _asset_allowed(asset):
     return _can_view_all() or asset.havalimani_id == current_user.havalimani_id
+
+
+def _user_scope():
+    query = Kullanici.query.filter_by(is_deleted=False)
+    if _can_view_all():
+        return query
+    return query.filter(Kullanici.havalimani_id == current_user.havalimani_id)
+
+
+def _user_allowed(user):
+    return _can_view_all() or getattr(user, "havalimani_id", None) == current_user.havalimani_id
 
 
 def _parse_part_usage_input(raw_text):
@@ -568,13 +587,13 @@ def is_emirleri():
 @maintenance_bp.route("/bakim/is-emri/yeni", methods=["GET", "POST"])
 @login_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
-@permission_required("workorder.edit")
+@permission_required("workorder.create")
 def is_emri_olustur():
-    if not _is_manager():
+    if not _can_create_work_order():
         abort(403)
 
     visible_assets = _asset_scope().order_by(InventoryAsset.created_at.desc()).all()
-    visible_users = Kullanici.query.filter_by(is_deleted=False).all()
+    visible_users = _user_scope().order_by(Kullanici.tam_ad.asc(), Kullanici.kullanici_adi.asc()).all()
     form_templates = MaintenanceFormTemplate.query.filter_by(is_deleted=False, is_active=True).all()
 
     if request.method == "POST":
@@ -585,6 +604,14 @@ def is_emri_olustur():
             return redirect(url_for("maintenance.is_emri_olustur"))
 
         assigned_user_id = request.form.get("assigned_user_id", type=int)
+        assigned_user = None
+        if assigned_user_id:
+            assigned_user = db.session.get(Kullanici, assigned_user_id)
+            if not assigned_user or assigned_user.is_deleted:
+                flash("Atanacak personel bulunamadı.", "danger")
+                return redirect(url_for("maintenance.is_emri_olustur"))
+            if not _user_allowed(assigned_user):
+                abort(403)
         checklist_template_id = request.form.get("checklist_template_id", type=int)
         selected_work_order_type = (request.form.get("work_order_type") or "preventive").strip()
         selected_source_type = (request.form.get("source_type") or "manual").strip()
@@ -602,7 +629,7 @@ def is_emri_olustur():
             description=guvenli_metin(request.form.get("description") or ""),
             target_date=_parse_date(request.form.get("target_date")),
             sla_target_at=_parse_datetime(request.form.get("sla_target_at")),
-            assigned_user_id=assigned_user_id or None,
+            assigned_user_id=assigned_user.id if assigned_user else None,
             created_user_id=current_user.id,
             status="acik",
             priority=(request.form.get("priority") or "orta").strip(),
@@ -651,7 +678,7 @@ def is_emri_detay(work_order_id):
         response.field_key: response.response_value for response in order.checklist_responses
     }
 
-    users = Kullanici.query.filter_by(is_deleted=False).all()
+    users = _user_scope().order_by(Kullanici.tam_ad.asc(), Kullanici.kullanici_adi.asc()).all()
     return render_template(
         "is_emri_detay.html",
         mode="detail",
@@ -705,7 +732,7 @@ def asset_hizli_bakim(asset_id):
 def is_emri_durum_guncelle(work_order_id):
     order = _work_order_scope().filter(WorkOrder.id == work_order_id).first_or_404()
 
-    if not (_is_manager() or order.assigned_user_id == current_user.id):
+    if not (_can_edit_work_order() or order.assigned_user_id == current_user.id):
         abort(403)
 
     yeni_durum = (request.form.get("status") or "").strip()
@@ -718,9 +745,15 @@ def is_emri_durum_guncelle(work_order_id):
 
     order.status = yeni_durum
     assigned_user_id = request.form.get("assigned_user_id", type=int)
-    if assigned_user_id and _is_manager():
-        order.assigned_user_id = assigned_user_id
-    if yeni_durum == "beklemede_onay" and _is_manager():
+    if assigned_user_id and _can_assign_work_order():
+        assigned_user = db.session.get(Kullanici, assigned_user_id)
+        if not assigned_user or assigned_user.is_deleted:
+            flash("Atanacak personel bulunamadı.", "danger")
+            return redirect(url_for("maintenance.is_emri_detay", work_order_id=order.id))
+        if not _user_allowed(assigned_user):
+            abort(403)
+        order.assigned_user_id = assigned_user.id
+    if yeni_durum == "beklemede_onay" and _can_edit_work_order():
         order.approved_by_id = request.form.get("approved_by_id", type=int) or current_user.id
     if yeni_durum == "tamamlandi":
         order.completed_by_id = current_user.id
@@ -738,7 +771,7 @@ def is_emri_durum_guncelle(work_order_id):
 def is_emri_kapat(work_order_id):
     order = _work_order_scope().filter(WorkOrder.id == work_order_id).first_or_404()
 
-    if not (_is_manager() or order.assigned_user_id == current_user.id):
+    if not (_can_edit_work_order() or order.assigned_user_id == current_user.id):
         abort(403)
 
     if order.status == "tamamlandi":
@@ -832,7 +865,7 @@ def is_emri_kapat(work_order_id):
 @permission_required("workorder.close")
 def work_order_quick_close(work_order_id):
     order = _work_order_scope().filter(WorkOrder.id == work_order_id).first_or_404()
-    if not (_is_manager() or order.assigned_user_id == current_user.id):
+    if not (_can_edit_work_order() or order.assigned_user_id == current_user.id):
         abort(403)
 
     if request.method == "POST":
@@ -914,7 +947,7 @@ def work_order_quick_close(work_order_id):
 @permission_required("maintenance.edit")
 def inspection_mobile(work_order_id):
     order = _work_order_scope().filter(WorkOrder.id == work_order_id).first_or_404()
-    if not (_is_manager() or order.assigned_user_id == current_user.id):
+    if not (_can_edit_work_order() or order.assigned_user_id == current_user.id):
         abort(403)
 
     checklist_fields = []
@@ -1195,7 +1228,6 @@ def ekipman_sablonlari():
             model_code=guvenli_metin(request.form.get("model_code") or "").strip(),
             description=guvenli_metin(request.form.get("description") or "").strip(),
             technical_specs=guvenli_metin(request.form.get("technical_specs") or "").strip(),
-            manufacturer=guvenli_metin(request.form.get("manufacturer") or "").strip(),
             maintenance_period_days=request.form.get("maintenance_period_days", type=int) or 180,
             criticality_level=(request.form.get("criticality_level") or "normal").strip(),
             default_maintenance_form_id=request.form.get("default_maintenance_form_id", type=int) or None,
@@ -1254,7 +1286,6 @@ def ekipman_talimat(template_id):
 
         template.default_maintenance_form_id = request.form.get("default_maintenance_form_id", type=int) or None
         template.maintenance_period_days = request.form.get("maintenance_period_days", type=int) or template.maintenance_period_days or 180
-        template.manufacturer = guvenli_metin(request.form.get("manufacturer") or template.manufacturer).strip()
         template.model_code = guvenli_metin(request.form.get("model_code") or template.model_code).strip()
 
         instruction.title = guvenli_metin(request.form.get("title") or template.name).strip() or template.name
