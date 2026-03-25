@@ -1,7 +1,7 @@
 from demo_data import AIRPORT_PERSONNEL_COUNT, AIRPORTS, DEMO_SEED_TAG, clear_demo_data, seed_demo_data
 from extensions import db
 from sqlalchemy import text
-from models import DemoSeedRecord, EquipmentTemplate, Havalimani, InventoryAsset, Kutu, Kullanici, MaintenancePlan, Malzeme, SparePart, WorkOrder
+from models import AssignmentRecipient, AssignmentRecord, DemoSeedRecord, EquipmentTemplate, Havalimani, InventoryAsset, Kutu, Kullanici, MaintenancePlan, Malzeme, SparePart, WorkOrder
 from tests.factories import KullaniciFactory
 
 
@@ -180,3 +180,30 @@ def test_demo_clear_endpoint_succeeds_with_dependent_assets(client, app):
 
     with app.app_context():
         assert InventoryAsset.query.filter_by(id=dependent_asset_id).first() is None
+
+
+def test_clear_demo_data_handles_assignment_recipients_for_demo_users(app):
+    with app.app_context():
+        seed_demo_data(reset=True)
+
+        demo_user = DemoSeedRecord.query.filter_by(
+            seed_tag=DEMO_SEED_TAG,
+            model_name="Kullanici",
+        ).first()
+        assert demo_user is not None
+
+        demo_kullanici = db.session.get(Kullanici, demo_user.record_id)
+        assert demo_kullanici is not None
+
+        assignment = AssignmentRecord(assignment_no="DM-ASSIGN-001", status="active")
+        db.session.add(assignment)
+        db.session.flush()
+
+        recipient = AssignmentRecipient(assignment_id=assignment.id, user_id=demo_kullanici.id)
+        db.session.add(recipient)
+        db.session.commit()
+        recipient_id = recipient.id
+
+        result = clear_demo_data()
+        assert result["deleted"] > 0
+        assert AssignmentRecipient.query.filter_by(id=recipient_id).first() is None
