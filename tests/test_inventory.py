@@ -90,6 +90,57 @@ def test_malzeme_ekle_success(client, app):
     # Veritabanına gerçekten yazılmış mı kontrol et
     assert Malzeme.query.filter_by(ad="Test Malzemesi").first() is not None
 
+
+def test_single_create_assigns_asset_code_and_qr(client, app):
+    app.config['WTF_CSRF_ENABLED'] = False
+    user = KullaniciFactory(rol="sahip")
+    airport = HavalimaniFactory(kodu="ESB")
+    box = KutuFactory(kodu="ESB-KUTU-11", havalimani=airport)
+    template = EquipmentTemplateFactory(name="Kod QR Test", category="Elektronik")
+    db.session.add_all([user, airport, box, template])
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess['_user_id'] = str(user.id)
+        sess['_fresh'] = True
+
+    response = client.post(
+        '/malzeme-ekle',
+        data={
+            'havalimani_id': airport.id,
+            'template_id': template.id,
+            'kategori': 'Elektronik',
+            'ad': 'Kod QR Test',
+            'seri_no': 'SINGLE-CODE-001',
+            'kutu_id': box.id,
+            'stok': 1,
+            'durum': 'aktif',
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    asset = InventoryAsset.query.filter_by(serial_no="SINGLE-CODE-001").first()
+    assert asset is not None
+    assert (asset.asset_code or "").startswith("ARFF-SAR-")
+    assert (asset.qr_code or "").startswith("http")
+
+
+def test_asset_qr_image_endpoint_returns_png(client, app):
+    user = KullaniciFactory(rol="sahip")
+    airport = HavalimaniFactory(kodu="GZT")
+    template = EquipmentTemplateFactory(name="QR Endpoint Template")
+    asset = InventoryAssetFactory(equipment_template=template, airport=airport, status="aktif")
+    db.session.add_all([user, airport, template, asset])
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess['_user_id'] = str(user.id)
+        sess['_fresh'] = True
+
+    response = client.get(f"/api/qr-img/asset/{asset.id}")
+    assert response.status_code == 200
+    assert response.mimetype == "image/png"
+
 # 5. YETKİ KONTROLÜ: Düz personel malzeme ekleyemez
 def test_personel_cannot_add_material(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
@@ -415,3 +466,132 @@ def test_malzeme_ekle_accepts_legacy_kutu_id_resolution(client, app):
     assert created is not None
     assert created.legacy_material is not None
     assert created.legacy_material.kutu_id == box.id
+
+
+def test_envanter_renders_accordion_and_no_work_order_filter(client, app):
+    user = KullaniciFactory(rol="sahip")
+    airport = HavalimaniFactory(kodu="KCO", ad="Kocaeli Cengiz Topel")
+    box = KutuFactory(kodu="KCO-SAR-01", havalimani=airport)
+    material = MalzemeFactory(ad="Akordiyon Test", kutu=box, havalimani=airport, is_deleted=False)
+    template = EquipmentTemplateFactory(name="Akordiyon Test")
+    asset = InventoryAssetFactory(equipment_template=template, airport=airport, status="aktif")
+    db.session.add_all([user, airport, box, material, template, asset])
+    db.session.flush()
+    asset.legacy_material_id = material.id
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(user.id)
+        sess["_fresh"] = True
+
+    response = client.get("/envanter")
+    html = response.data.decode("utf-8")
+    assert response.status_code == 200
+    assert 'name="is_emri_durumu"' not in html
+    assert "Sıra No" in html
+    assert "MİKTAR" not in html
+    assert 'data-accordion-target="inventory-row-' in html
+    assert "openBakimModal(" not in html
+    assert "🔍 Envanter Detayı" not in html
+    assert "📱 Hızlı" not in html
+    assert "Hızlı Zimmet" in html
+    assert "🛠️ Bakım" in html
+    assert "🗑️ Sil" in html
+    assert "kritik ekipman" not in html.lower()
+    assert "is_critical" not in html
+    assert "kritik_mi" not in html
+    assert "function closeAll(exceptId)" in html
+    assert "panel.setAttribute('aria-hidden'" in html
+    assert "toggle.setAttribute('aria-expanded'" in html
+    assert "inventory-table-compact" in html
+    assert 'col-no' in html and 'col-material' in html and 'col-airport' in html and 'col-code' in html and 'col-status' in html and 'col-maintenance' in html and 'col-action' in html
+
+    response_with_legacy_work_order = client.get("/envanter?is_emri_durumu=acik")
+    html_with_legacy_work_order = response_with_legacy_work_order.data.decode("utf-8")
+    assert response_with_legacy_work_order.status_code == 200
+    assert "Akordiyon Test" in html_with_legacy_work_order
+
+
+def test_envanter_airport_abbreviation_has_title_tooltip(client, app):
+    user = KullaniciFactory(rol="sahip")
+    airport = HavalimaniFactory(kodu="KCO", ad="Kocaeli Cengiz Topel")
+    box = KutuFactory(kodu="KCO-SAR-22", havalimani=airport)
+    material = MalzemeFactory(ad="Tooltip Test", kutu=box, havalimani=airport, is_deleted=False)
+    db.session.add_all([user, airport, box, material])
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(user.id)
+        sess["_fresh"] = True
+
+    response = client.get("/envanter")
+    html = response.data.decode("utf-8")
+    assert response.status_code == 200
+    assert 'title="Kocaeli Cengiz Topel"' in html
+
+
+def test_status_options_hide_hurda_in_create_and_detail(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    airport = HavalimaniFactory(kodu="ERZ")
+    manager = KullaniciFactory(rol="yetkili", havalimani=airport)
+    box = KutuFactory(kodu="ERZ-SAR-41", havalimani=airport)
+    template = EquipmentTemplateFactory(name="Durum Test")
+    asset = InventoryAssetFactory(equipment_template=template, airport=airport, status="aktif")
+    db.session.add_all([airport, manager, box, template, asset])
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(manager.id)
+        sess["_fresh"] = True
+
+    create_page = client.get("/malzeme-ekle")
+    create_html = create_page.data.decode("utf-8")
+    assert create_page.status_code == 200
+    assert 'value="hurda"' not in create_html
+
+    detail_page = client.get(f"/asset/{asset.id}/detay")
+    detail_html = detail_page.data.decode("utf-8")
+    assert detail_page.status_code == 200
+    assert 'name="status"' in detail_html
+    assert 'value="hurda"' not in detail_html
+
+
+def test_envanter_status_labels_render_only_aktif_pasif(client, app):
+    user = KullaniciFactory(rol="sahip")
+    airport = HavalimaniFactory(kodu="AYT", ad="Antalya Havalimanı")
+    box = KutuFactory(kodu="AYT-SAR-11", havalimani=airport)
+    material = MalzemeFactory(ad="Legacy Durum", kutu=box, havalimani=airport, durum="Arızalı", is_deleted=False)
+    db.session.add_all([user, airport, box, material])
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(user.id)
+        sess["_fresh"] = True
+
+    response = client.get("/envanter")
+    html = response.data.decode("utf-8")
+    assert response.status_code == 200
+    assert "Arızalı" not in html
+    assert "Bakımda" not in html
+    assert "Pasif" in html
+
+
+def test_malzeme_ekle_page_renders_bulk_excel_panel_and_ordered_labels(client, app):
+    airport = HavalimaniFactory(kodu="ESB")
+    manager = KullaniciFactory(rol="yetkili", havalimani=airport)
+    box = KutuFactory(kodu="ESB-KUTU-9", havalimani=airport)
+    template = EquipmentTemplateFactory(name="Label Test", category="Elektronik")
+    db.session.add_all([airport, manager, box, template])
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(manager.id)
+        sess["_fresh"] = True
+
+    response = client.get("/malzeme-ekle")
+    html = response.data.decode("utf-8")
+    assert response.status_code == 200
+    assert "Toplu Malzeme Ekle (Excel)" in html
+    assert "1) Kayıt Tipi" in html
+    assert "2) Merkezi Şablon" in html
+    assert "3) Kategori" in html

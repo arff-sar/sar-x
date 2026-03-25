@@ -422,6 +422,55 @@ class EquipmentTemplate(db.Model, TimestampMixin, SoftDeleteMixin):
     maintenance_plans = db.relationship('MaintenancePlan', backref='equipment_template', lazy=True)
 
 
+class InventoryCategory(db.Model, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "inventory_category"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False, unique=True, index=True)
+    description = db.Column(db.Text)
+    is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("kullanici.id"), nullable=True, index=True)
+
+    created_by = db.relationship("Kullanici", foreign_keys=[created_by_user_id])
+
+
+class InventoryBulkImportJob(db.Model, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "inventory_bulk_import_job"
+
+    id = db.Column(db.Integer, primary_key=True)
+    requested_by_user_id = db.Column(db.Integer, db.ForeignKey("kullanici.id"), nullable=False, index=True)
+    havalimani_id = db.Column(db.Integer, db.ForeignKey("havalimani.id"), nullable=True, index=True)
+    source_filename = db.Column(db.String(255), nullable=False)
+    status = db.Column(db.String(30), nullable=False, default="completed", index=True)
+    total_rows = db.Column(db.Integer, nullable=False, default=0)
+    success_rows = db.Column(db.Integer, nullable=False, default=0)
+    failed_rows = db.Column(db.Integer, nullable=False, default=0)
+    summary_note = db.Column(db.Text)
+
+    requested_by = db.relationship("Kullanici", foreign_keys=[requested_by_user_id])
+    airport = db.relationship("Havalimani", foreign_keys=[havalimani_id])
+    row_results = db.relationship(
+        "InventoryBulkImportRowResult",
+        backref="job",
+        lazy=True,
+        cascade="all, delete-orphan",
+    )
+
+
+class InventoryBulkImportRowResult(db.Model, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "inventory_bulk_import_row_result"
+
+    id = db.Column(db.Integer, primary_key=True)
+    job_id = db.Column(db.Integer, db.ForeignKey("inventory_bulk_import_job.id"), nullable=False, index=True)
+    row_no = db.Column(db.Integer, nullable=False, index=True)
+    status = db.Column(db.String(20), nullable=False, index=True)
+    message = db.Column(db.Text)
+    serial_no = db.Column(db.String(120), index=True)
+    asset_id = db.Column(db.Integer, db.ForeignKey("inventory_asset.id"), nullable=True, index=True)
+
+    asset = db.relationship("InventoryAsset", foreign_keys=[asset_id])
+
+
 class InventoryAsset(db.Model, TimestampMixin, SoftDeleteMixin):
     __tablename__ = 'inventory_asset'
 

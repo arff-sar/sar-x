@@ -45,6 +45,9 @@ from models import (
     EquipmentTemplate,
     Havalimani,
     InventoryAsset,
+    InventoryBulkImportJob,
+    InventoryBulkImportRowResult,
+    InventoryCategory,
     IslemLog,
     Kutu,
     Kullanici,
@@ -78,6 +81,21 @@ from google_drive_service import GoogleDriveError, get_drill_drive_service
 from reporting import build_dashboard_kpis
 from storage import get_storage_adapter
 from demo_data import apply_platform_demo_scope
+from services.inventory_bulk_import_service import (
+    normalize_lookup,
+    normalize_person_name,
+    parse_flexible_bool,
+    parse_flexible_date,
+    to_int,
+)
+from services.inventory_code_service import generate_inventory_code
+from services.inventory_excel_service import (
+    ExcelTemplateError,
+    build_inventory_template_workbook,
+    parse_inventory_workbook,
+)
+from services.inventory_template_service import form_label_map
+from services.qr_service import assign_asset_qr
 
 
 inventory_bp = Blueprint("inventory", __name__)
@@ -466,7 +484,7 @@ def _asset_qr_payload(asset):
 def _asset_qr_context(asset):
     return {
         "qr_payload": _asset_qr_payload(asset),
-        "asset_code": asset.asset_code,
+        "asset_code": generate_inventory_code(asset),
         "airport_name": asset.qr_label_airport_name,
     }
 
@@ -603,11 +621,11 @@ def _lifecycle_to_status(lifecycle_status):
         "planned": "pasif",
         "received": "pasif",
         "active": "aktif",
-        "in_maintenance": "bakimda",
-        "calibration_due": "bakimda",
+        "in_maintenance": "pasif",
+        "calibration_due": "pasif",
         "out_of_service": "pasif",
         "decommissioned": "pasif",
-        "disposed": "hurda",
+        "disposed": "pasif",
         "transferred": "aktif",
     }
     return mapping.get(lifecycle_status, "aktif")
@@ -666,17 +684,6 @@ def _create_operational_alerts():
                 link_url=url_for("inventory.asset_lifecycle"),
                 severity="warning",
             )
-        if asset.is_critical and asset.lifecycle_status == "out_of_service":
-            create_notification_once(
-                current_user.id,
-                "critical_out_of_service",
-                "Kritik ekipman servis dışı",
-                f"{asset.asset_code} kritik ekipman servis dışı durumunda.",
-                link_url=url_for("inventory.asset_lifecycle"),
-                severity="danger",
-            )
-
-
 def _parse_date(raw_value):
     if not raw_value:
         return None
@@ -711,7 +718,10 @@ def _parse_month_period(raw_value, default=6):
 
 
 def _to_bool(raw_value):
-    return str(raw_value or "").strip().lower() in {"1", "true", "on", "evet", "yes"}
+    try:
+        return parse_flexible_bool(raw_value)
+    except ValueError:
+        return False
 
 
 def _field_present(form_data, key):
@@ -818,6 +828,13 @@ def _can_manage_asset_registry():
 
 
 def _resolve_allowed_categories():
+    managed_rows = (
+        InventoryCategory.query.filter_by(is_deleted=False, is_active=True)
+        .order_by(InventoryCategory.name.asc())
+        .all()
+    )
+    seen = [guvenli_metin(item.name or "").strip() for item in managed_rows if guvenli_metin(item.name or "").strip()]
+
     rows = (
         db.session.query(EquipmentTemplate.category)
         .filter(
@@ -829,7 +846,6 @@ def _resolve_allowed_categories():
         .order_by(EquipmentTemplate.category.asc())
         .all()
     )
-    seen = []
     for row in rows:
         value = guvenli_metin(row[0] or "").strip()
         if value and value not in seen:
@@ -857,6 +873,22 @@ def _display_status(status_value):
         ASSET_STATUS_PASSIVE: "Pasif",
     }
     return mapping.get(status_value, "Aktif")
+
+
+def _status_label_tr(status_value):
+    normalized = _normalize_status(status_value)
+    return _display_status(normalized)
+
+
+def _maintenance_label_tr(next_maintenance_date, *, today=None):
+    if not next_maintenance_date:
+        return "Planlanmadı"
+    today = today or get_tr_now().date()
+    if next_maintenance_date < today:
+        return "Gecikmiş"
+    if next_maintenance_date <= (today + timedelta(days=15)):
+        return "Yaklaşan"
+    return "Planlı"
 
 
 def _sync_maintenance_plan_for_asset(asset, template=None):
@@ -1193,7 +1225,6 @@ def _create_asset_and_legacy_material(template, kutu, havalimani_id, form_data):
         teknik_ozellikler=values["technical_specs"] or guvenli_metin(form_data.get("teknik") or template.technical_specs),
         stok_miktari=stock_count,
         durum=status_display,
-        kritik_mi=False,
         son_bakim_tarihi=values["last_maintenance_date"],
         gelecek_bakim_tarihi=_parse_date(form_data.get("gelecek_bakim")),
         kalibrasyon_tarihi=values["last_calibration_date"] if calibration_required else None,
@@ -1238,14 +1269,190 @@ def _create_asset_and_legacy_material(template, kutu, havalimani_id, form_data):
         notes=values["notes"],
         maintenance_period_days=maintenance_period_days,
         maintenance_period_months=maintenance_period_months,
-        is_critical=False,
     )
     db.session.add(asset)
     db.session.flush()
-    asset.qr_code = _asset_qr_url(asset)
+    assign_asset_qr(asset)
     _sync_maintenance_plan_for_asset(asset, template=template)
 
     return asset, legacy_material
+
+
+def _is_system_owner():
+    raw_role = str(getattr(current_user, "rol", "") or "").strip().lower()
+    if raw_role in {"sahip", "sistem_sahibi", "sistem_sorumlusu"}:
+        return True
+    return bool(getattr(current_user, "is_sahip", False))
+
+
+def _import_allowed_airports():
+    return _visible_operational_airports() if _is_system_owner() else ([current_user.havalimani] if current_user.havalimani else [])
+
+
+def _build_excel_lookup_context():
+    templates = EquipmentTemplate.query.filter_by(is_deleted=False, is_active=True).all()
+    forms = MaintenanceFormTemplate.query.filter_by(is_deleted=False, is_active=True).all()
+    airports = [item for item in _import_allowed_airports() if item]
+    airport_ids = [item.id for item in airports]
+
+    box_query = Kutu.query.filter(Kutu.is_deleted.is_(False))
+    if airport_ids:
+        box_query = box_query.filter(Kutu.havalimani_id.in_(airport_ids))
+    else:
+        box_query = box_query.filter(sa.text("1=0"))
+    boxes = box_query.all()
+
+    def _key(value):
+        return normalize_lookup(value)
+
+    airport_map = {}
+    for airport in airports:
+        airport_map[_key(airport.kodu)] = airport
+        airport_map[_key(airport.ad)] = airport
+        airport_map[_key(f"{airport.kodu}-{airport.ad}")] = airport
+        airport_map[_key(f"{airport.kodu} - {airport.ad}")] = airport
+
+    template_map = {_key(item.name): item for item in templates}
+    form_map = {_key(item.name): item for item in forms}
+    box_map = {_key(item.kodu): item for item in boxes}
+
+    category_values = _resolve_allowed_categories()
+    category_map = {_key(item): item for item in category_values}
+
+    return {
+        "templates": templates,
+        "template_map": template_map,
+        "forms": forms,
+        "form_map": form_map,
+        "airports": airports,
+        "airport_map": airport_map,
+        "boxes": boxes,
+        "box_map": box_map,
+        "categories": category_values,
+        "category_map": category_map,
+    }
+
+
+def _resolve_row_airport(raw_airport_value, lookup_ctx):
+    if not _is_system_owner():
+        if not current_user.havalimani_id:
+            raise ValueError("Kullanıcıya havalimanı atanmadığı için import yapılamaz.")
+        text = guvenli_metin(raw_airport_value or "").strip()
+        if text:
+            requested = lookup_ctx["airport_map"].get(normalize_lookup(text))
+            if not requested or requested.id != current_user.havalimani_id:
+                raise ValueError("Satır havalimanı için yetkiniz yok.")
+        return current_user.havalimani_id
+    text = guvenli_metin(raw_airport_value or "").strip()
+    if not text:
+        raise ValueError("havalimani alanı zorunludur.")
+    airport = lookup_ctx["airport_map"].get(normalize_lookup(text))
+    if not airport:
+        raise ValueError(f"Yetkili havalimanı bulunamadı: {text}")
+    return airport.id
+
+
+def _resolve_row_template(row_values, lookup_ctx, *, category_value, maintenance_form_id, allow_create):
+    template_name = guvenli_metin(row_values.get("merkezi_sablon") or "").strip()
+    create_from_template = _to_bool(row_values.get("merkezi_sablondan_olustur"))
+    template = lookup_ctx["template_map"].get(normalize_lookup(template_name)) if template_name else None
+    if create_from_template and not template:
+        raise ValueError("Merkezi şablondan oluşturma seçili ama şablon bulunamadı.")
+    if template:
+        return template
+    if not allow_create:
+        raise ValueError("Bu rol için merkezi şablon seçimi zorunludur.")
+
+    template_seed = guvenli_metin(row_values.get("malzeme_adi") or "").strip()
+    if not template_seed:
+        raise ValueError("malzeme_adi zorunludur.")
+    period_months = _parse_month_period(row_values.get("bakim_periyodu"), default=6)
+    template = EquipmentTemplate(
+        name=template_seed,
+        category=category_value or "Diğer",
+        brand=guvenli_metin(row_values.get("marka") or "").strip(),
+        model_code=guvenli_metin(row_values.get("model") or "").strip(),
+        technical_specs=guvenli_metin(row_values.get("teknik_ozellikler") or "").strip(),
+        maintenance_period_months=period_months,
+        maintenance_period_days=_months_to_days(period_months),
+        default_maintenance_form_id=maintenance_form_id,
+        criticality_level="normal",
+        is_active=True,
+    )
+    db.session.add(template)
+    db.session.flush()
+    return template
+
+
+def _build_form_payload_from_excel_row(row_values, lookup_ctx):
+    airport_id = _resolve_row_airport(row_values.get("havalimani"), lookup_ctx)
+
+    category_raw = guvenli_metin(row_values.get("kategori") or "").strip()
+    category_value = lookup_ctx["category_map"].get(normalize_lookup(category_raw))
+    if not category_value:
+        raise ValueError(f"Kategori listede yok: {category_raw or '-'}")
+
+    form_name = guvenli_metin(row_values.get("bakim_formu") or "").strip()
+    maintenance_form = lookup_ctx["form_map"].get(normalize_lookup(form_name)) if form_name else None
+    maintenance_form_id = maintenance_form.id if maintenance_form else None
+
+    template = _resolve_row_template(
+        row_values,
+        lookup_ctx,
+        category_value=category_value,
+        maintenance_form_id=maintenance_form_id,
+        allow_create=_is_system_owner(),
+    )
+
+    box_text = guvenli_metin(row_values.get("kutu_kodu") or "").strip()
+    box = lookup_ctx["box_map"].get(normalize_lookup(box_text))
+    if not box:
+        box = _ensure_box(box_text, airport_id)
+        lookup_ctx["box_map"][normalize_lookup(box.kodu)] = box
+    if box.havalimani_id != airport_id:
+        raise ValueError("Seçilen kutu satırdaki havalimanına ait değil.")
+
+    person_name = normalize_person_name(row_values.get("ad_soyad"))
+    note_lines = [guvenli_metin(row_values.get("aciklama_notlar") or "").strip()]
+    if person_name:
+        note_lines.append(f"SORUMLU: {person_name}")
+
+    payload = {
+        "havalimani_id": airport_id,
+        "template_id": template.id,
+        "kategori": category_value,
+        "ad": guvenli_metin(row_values.get("malzeme_adi") or "").strip() or template.name,
+        "marka": guvenli_metin(row_values.get("marka") or "").strip(),
+        "model": guvenli_metin(row_values.get("model") or "").strip(),
+        "is_demirbas": _to_bool(row_values.get("demirbas_mi")),
+        "demirbas_no": guvenli_metin(row_values.get("demirbas_no") or "").strip(),
+        "seri_no": guvenli_metin(row_values.get("seri_no") or "").strip(),
+        "stok": to_int(row_values.get("stok_birim_sayisi"), default=1, min_value=1),
+        "durum": guvenli_metin(row_values.get("kullanim_durumu") or "aktif").strip() or "aktif",
+        "calibration_required": parse_flexible_bool(row_values.get("kalibrasyon_gerekli_mi")),
+        "calibration_periyodu_ay": to_int(row_values.get("kalibrasyon_periyodu_ay"), default=6, min_value=1),
+        "last_calibration_date": parse_flexible_date(row_values.get("son_kalibrasyon_tarihi")),
+        "next_calibration_date": parse_flexible_date(row_values.get("sonraki_kalibrasyon_tarihi")),
+        "bakim_formu_id": maintenance_form_id,
+        "bakim_periyodu_ay": to_int(row_values.get("bakim_periyodu"), default=6, min_value=1),
+        "edinim_tarihi": parse_flexible_date(row_values.get("edinim_tarihi")),
+        "garanti_bitis_tarihi": parse_flexible_date(row_values.get("garanti_bitis_tarihi")),
+        "kutu_id": box.id,
+        "manual_url": guvenli_metin(row_values.get("kullanim_kilavuzu_linki") or "").strip(),
+        "teknik": guvenli_metin(row_values.get("teknik_ozellikler") or "").strip(),
+        "notlar": "\n".join([line for line in note_lines if line]),
+    }
+    yedek_link = guvenli_metin(row_values.get("yedek_parca_baglantisi") or "").strip()
+    if yedek_link:
+        parent_asset = _asset_scope().filter(
+            sa.or_(
+                InventoryAsset.serial_no == yedek_link,
+                InventoryAsset.qr_code == yedek_link,
+            )
+        ).first()
+        if parent_asset:
+            payload["parent_asset_id"] = parent_asset.id
+    return payload, template, box, airport_id
 
 
 @inventory_bp.route("/dashboard")
@@ -1265,9 +1472,9 @@ def dashboard():
 
     bakim_sorgu = havalimani_filtreli_sorgu(Malzeme).filter(
         Malzeme.gelecek_bakim_tarihi <= on_bes_gun_sonra,
-        Malzeme.durum != "Hurda",
+        Malzeme.durum != "Pasif",
     )
-    ariza_sorgu = havalimani_filtreli_sorgu(Malzeme).filter_by(durum="Arızalı")
+    ariza_sorgu = havalimani_filtreli_sorgu(Malzeme).filter_by(durum="Pasif")
 
     asset_query = _asset_scope()
     due_today_count = asset_query.filter(
@@ -1279,10 +1486,6 @@ def dashboard():
         InventoryAsset.next_maintenance_date.isnot(None),
         InventoryAsset.next_maintenance_date < bugun,
         InventoryAsset.status != "pasif",
-    ).count()
-    critical_fault_count = asset_query.filter(
-        InventoryAsset.is_critical.is_(True),
-        InventoryAsset.status.in_(["arizali", "bakimda"]),
     ).count()
 
     open_work_order_query = WorkOrder.query.filter_by(is_deleted=False).join(InventoryAsset).filter(
@@ -1344,7 +1547,7 @@ def dashboard():
 
     child_fault_query = _asset_scope().filter(
         InventoryAsset.parent_asset_id.isnot(None),
-        InventoryAsset.status.in_(["arizali", "bakimda"]),
+        InventoryAsset.status == "pasif",
     )
     child_fault_count = child_fault_query.count()
 
@@ -1363,7 +1566,6 @@ def dashboard():
         InventoryAsset.warranty_end_date >= bugun,
         InventoryAsset.warranty_end_date <= (bugun + timedelta(days=30)),
     ).count()
-    out_of_service_critical_count = sum(1 for asset in _asset_scope().all() if asset.is_critical and asset.lifecycle_status == "out_of_service")
     low_consumable_count = 0
     critical_consumable_count = 0
     if table_exists("consumable_item") and table_exists("consumable_stock_movement") and current_user.havalimani_id:
@@ -1434,7 +1636,6 @@ def dashboard():
         bugun_bakim_yaklasan_sayi=due_today_count,
         geciken_bakim_sayi=overdue_count,
         acik_is_emri_sayi=open_work_order_count,
-        kritik_arizali_sayi=critical_fault_count,
         dusuk_stok_parca_sayi=low_stock_count,
         sayac_yaklasan_bakim_sayi=meter_warning_count,
         otomatik_is_emri_sayi=auto_work_order_count,
@@ -1444,7 +1645,6 @@ def dashboard():
         garanti_yaklasan_sayi=warranty_expiring_count,
         dusuk_sarf_sayi=low_consumable_count,
         kritik_sarf_sayi=critical_consumable_count,
-        kritik_servis_disi_sayi=out_of_service_critical_count,
         approval_bekleyen_sayi=pending_approval_count,
         okunmamis_bildirim_sayi=unread_notification_count,
         kritik_rol_degisim_sayi=critical_role_change_count,
@@ -1471,7 +1671,6 @@ def dashboard_alert_sync():
 def envanter():
     selected_airport = request.args.get("havalimani_id", type=int)
     selected_category = request.args.get("kategori", "").strip()
-    selected_work_order = request.args.get("is_emri_durumu", "").strip()
 
     query = havalimani_filtreli_sorgu(Malzeme)
     if _can_view_all_operational_scope() and selected_airport:
@@ -1491,17 +1690,6 @@ def envanter():
             and item.linked_asset.equipment_template
             and (item.linked_asset.equipment_template.category or "").lower() == selected_category.lower()
         ]
-
-    if selected_work_order:
-        filtered = []
-        for malzeme in malzemeler:
-            asset = malzeme.linked_asset
-            if not asset:
-                continue
-            has_match = any(order.status == selected_work_order for order in asset.work_orders if not order.is_deleted)
-            if has_match:
-                filtered.append(malzeme)
-        malzemeler = filtered
 
     if _can_view_all_operational_scope():
         h_ad = "Genel Envanter (Tüm Birimler)"
@@ -1529,18 +1717,13 @@ def envanter():
         categories=[row[0] for row in categories],
         selected_airport=selected_airport,
         selected_category=selected_category,
-        selected_work_order=selected_work_order,
+        status_label_tr=_status_label_tr,
+        maintenance_label_tr=_maintenance_label_tr,
+        today=get_tr_now().date(),
     )
 
 
-@inventory_bp.route("/malzeme-ekle", methods=["GET", "POST"])
-@login_required
-@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
-@permission_required("inventory.create")
-def malzeme_ekle():
-    if not _can_manage_asset_registry():
-        abort(403)
-
+def _malzeme_create_page_context():
     templates = EquipmentTemplate.query.filter_by(is_deleted=False, is_active=True).order_by(
         EquipmentTemplate.name.asc()
     ).all()
@@ -1556,6 +1739,37 @@ def malzeme_ekle():
     else:
         box_query = box_query.filter(sa.text("1=0"))
     box_options = box_query.order_by(Kutu.kodu.asc()).all()
+    parent_candidates = _asset_scope().order_by(InventoryAsset.created_at.desc()).limit(200).all()
+    default_parent_id = request.args.get("parent_asset_id", type=int)
+    preselected_asset_type = (request.args.get("asset_type") or "equipment").strip()
+    preselected_airport_id = current_user.havalimani_id if not current_user.is_sahip else (airport_options[0].id if airport_options else None)
+
+    return {
+        "templates": templates,
+        "form_templates": form_templates,
+        "havalimanlari": airport_options,
+        "categories": category_options,
+        "boxes": box_options,
+        "parent_candidates": parent_candidates,
+        "default_parent_id": default_parent_id,
+        "preselected_asset_type": preselected_asset_type,
+        "preselected_airport_id": preselected_airport_id,
+        "can_manage_template_catalog": bool(current_user.is_sahip),
+        "maintenance_month_values": MAINTENANCE_MONTH_VALUES,
+        "field_labels": form_label_map(),
+    }
+
+
+@inventory_bp.route("/malzeme-ekle", methods=["GET", "POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+@permission_required("inventory.create")
+def malzeme_ekle():
+    if not _can_manage_asset_registry():
+        abort(403)
+
+    page_ctx = _malzeme_create_page_context()
+    category_options = page_ctx["categories"]
 
     if request.method == "POST":
         canonical_payload = _canonical_asset_payload(request.form, mode="create")
@@ -1671,25 +1885,136 @@ def malzeme_ekle():
         flash("Malzeme başarıyla eklendi ve bakım varlığı oluşturuldu.", "success")
         return redirect(url_for("inventory.envanter"))
 
-    parent_candidates = _asset_scope().order_by(InventoryAsset.created_at.desc()).limit(200).all()
-    default_parent_id = request.args.get("parent_asset_id", type=int)
-    preselected_asset_type = (request.args.get("asset_type") or "equipment").strip()
-    preselected_airport_id = current_user.havalimani_id if not current_user.is_sahip else (airport_options[0].id if airport_options else None)
+    return render_template("malzeme_ekle.html", **page_ctx)
 
-    return render_template(
-        "malzeme_ekle.html",
-        templates=templates,
-        form_templates=form_templates,
-        havalimanlari=airport_options,
-        categories=category_options,
-        boxes=box_options,
-        parent_candidates=parent_candidates,
-        default_parent_id=default_parent_id,
-        preselected_asset_type=preselected_asset_type,
-        preselected_airport_id=preselected_airport_id,
-        can_manage_template_catalog=bool(current_user.is_sahip),
-        maintenance_month_values=MAINTENANCE_MONTH_VALUES,
+
+@inventory_bp.route("/malzeme-ekle/excel-sablon")
+@login_required
+@permission_required("inventory.create")
+def malzeme_excel_sablon_indir():
+    if not _can_manage_asset_registry():
+        abort(403)
+    lookup_ctx = _build_excel_lookup_context()
+    workbook = build_inventory_template_workbook(
+        lists_context={
+            "templates": [item.name for item in lookup_ctx["templates"]],
+            "airports": [f"{item.kodu} - {item.ad}" for item in lookup_ctx["airports"]],
+            "categories": lookup_ctx["categories"],
+            "statuses": ["aktif", "pasif"],
+            "maintenance_forms": [item.name for item in lookup_ctx["forms"]],
+            "month_values": MAINTENANCE_MONTH_VALUES,
+            "boxes": [item.kodu for item in lookup_ctx["boxes"]],
+        }
     )
+    return send_file(
+        workbook,
+        as_attachment=True,
+        download_name=f"malzeme_toplu_import_sablonu_{get_tr_now().strftime('%Y%m%d')}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@inventory_bp.route("/malzeme-ekle/excel-yukle", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required("inventory.create")
+def malzeme_excel_yukle():
+    if not _can_manage_asset_registry():
+        abort(403)
+
+    upload = request.files.get("excel_file")
+    if not upload or not upload.filename:
+        flash("Excel dosyası seçilmedi.", "danger")
+        return redirect(url_for("inventory.malzeme_ekle"))
+    safe_name = secure_upload_filename(upload.filename or "")
+    if not safe_name.lower().endswith(".xlsx"):
+        flash("Sadece .xlsx formatı desteklenir.", "danger")
+        return redirect(url_for("inventory.malzeme_ekle"))
+
+    try:
+        rows = parse_inventory_workbook(upload)
+    except ExcelTemplateError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("inventory.malzeme_ekle"))
+
+    lookup_ctx = _build_excel_lookup_context()
+    job = InventoryBulkImportJob(
+        requested_by_user_id=current_user.id,
+        havalimani_id=current_user.havalimani_id,
+        source_filename=safe_name,
+        status="processing",
+        total_rows=len(rows),
+    )
+    db.session.add(job)
+    db.session.flush()
+
+    success_count = 0
+    fail_count = 0
+    row_feedback = []
+
+    for row in rows:
+        row_no = row["row_no"]
+        values = row["values"]
+        savepoint = db.session.begin_nested()
+        try:
+            payload, template, kutu, airport_id = _build_form_payload_from_excel_row(values, lookup_ctx)
+            asset, _legacy = _create_asset_and_legacy_material(
+                template=template,
+                kutu=kutu,
+                havalimani_id=airport_id,
+                form_data=payload,
+            )
+            _sync_calibration_schedule_for_asset(asset)
+            assign_asset_qr(asset)
+            db.session.add(
+                InventoryBulkImportRowResult(
+                    job_id=job.id,
+                    row_no=row_no,
+                    status="success",
+                    message="Satır başarıyla işlendi.",
+                    serial_no=asset.serial_no,
+                    asset_id=asset.id,
+                )
+            )
+            savepoint.commit()
+            success_count += 1
+        except Exception as exc:
+            savepoint.rollback()
+            fail_count += 1
+            err_text = guvenli_metin(str(exc) or "Bilinmeyen hata").strip() or "Bilinmeyen hata"
+            db.session.add(
+                InventoryBulkImportRowResult(
+                    job_id=job.id,
+                    row_no=row_no,
+                    status="failed",
+                    message=err_text,
+                    serial_no=guvenli_metin(values.get("seri_no") or "").strip() or None,
+                )
+            )
+            row_feedback.append({"row_no": row_no, "error": err_text})
+
+    job.status = "completed"
+    job.success_rows = success_count
+    job.failed_rows = fail_count
+    job.summary_note = f"Toplam {len(rows)} satır işlendi. Başarılı: {success_count}, Hatalı: {fail_count}"
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        flash("Toplu import sırasında kritik hata oluştu.", "danger")
+        return redirect(url_for("inventory.malzeme_ekle"))
+
+    flash(f"Toplu import tamamlandı. Başarılı: {success_count} / Hatalı: {fail_count}", "success" if fail_count == 0 else "warning")
+    page_ctx = _malzeme_create_page_context()
+    page_ctx["import_summary"] = {
+        "job_id": job.id,
+        "total": len(rows),
+        "success": success_count,
+        "failed": fail_count,
+        "errors": row_feedback[:50],
+    }
+    return render_template("malzeme_ekle.html", **page_ctx)
 
 
 @inventory_bp.route("/merkezi-katalog")
@@ -1709,6 +2034,77 @@ def merkezi_katalog():
         form_templates=form_templates,
         airports=airports,
     )
+
+
+@inventory_bp.route("/envanter/kategori-ekle", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required("inventory.create")
+def envanter_kategori_ekle():
+    if not _is_system_owner():
+        abort(403)
+    name = guvenli_metin(request.form.get("name") or "").strip()
+    if not name:
+        flash("Kategori adı zorunludur.", "danger")
+        return redirect(url_for("inventory.malzeme_ekle"))
+
+    exists = InventoryCategory.query.filter(
+        InventoryCategory.is_deleted.is_(False),
+        sa.func.lower(InventoryCategory.name) == sa.func.lower(name),
+    ).first()
+    if exists:
+        flash("Bu kategori zaten mevcut.", "warning")
+        return redirect(url_for("inventory.malzeme_ekle"))
+
+    db.session.add(
+        InventoryCategory(
+            name=name,
+            description=guvenli_metin(request.form.get("description") or "").strip(),
+            created_by_user_id=current_user.id,
+            is_active=True,
+        )
+    )
+    db.session.commit()
+    flash("Kategori eklendi.", "success")
+    return redirect(url_for("inventory.malzeme_ekle"))
+
+
+@inventory_bp.route("/envanter/merkezi-sablon-ekle", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required("inventory.create")
+def merkezi_sablon_ekle():
+    if not _is_system_owner():
+        abort(403)
+
+    name = guvenli_metin(request.form.get("name") or "").strip()
+    if not name:
+        flash("Şablon adı zorunludur.", "danger")
+        return redirect(url_for("inventory.malzeme_ekle"))
+
+    category = guvenli_metin(request.form.get("category") or "").strip()
+    if not category:
+        category = "Diğer"
+    period_months = _parse_month_period(request.form.get("maintenance_period_months"), default=6)
+    maintenance_form_id = request.form.get("default_maintenance_form_id", type=int) or None
+
+    template = EquipmentTemplate(
+        name=name,
+        category=category,
+        brand=guvenli_metin(request.form.get("brand") or "").strip(),
+        model_code=guvenli_metin(request.form.get("model_code") or "").strip(),
+        description=guvenli_metin(request.form.get("description") or "").strip(),
+        technical_specs=guvenli_metin(request.form.get("technical_specs") or "").strip(),
+        maintenance_period_months=period_months,
+        maintenance_period_days=_months_to_days(period_months),
+        default_maintenance_form_id=maintenance_form_id,
+        criticality_level="normal",
+        is_active=True,
+    )
+    db.session.add(template)
+    db.session.commit()
+    flash("Merkezi şablon eklendi.", "success")
+    return redirect(url_for("inventory.malzeme_ekle"))
 
 
 @inventory_bp.route("/merkezi-sablondan-envantere-ekle/<int:template_id>", methods=["POST"])
@@ -3128,6 +3524,7 @@ def _asset_detail_view(asset_id, detail_mode=False):
         spare_link_table_ready=table_exists("asset_spare_part_link"),
         can_view_parts=can_view_parts,
         can_manage_parts=can_manage_parts,
+        status_label_tr=_status_label_tr,
     )
 
 

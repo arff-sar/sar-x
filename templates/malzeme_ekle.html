@@ -26,12 +26,77 @@
 
 <div class="panel">
     <div class="panel-body">
+        <div class="inline-box" style="margin-bottom:16px;">
+            <div style="font-weight:800; margin-bottom:10px;">Toplu Malzeme Ekle (Excel)</div>
+            <div class="input-row">
+                <a href="{{ url_for('inventory.malzeme_excel_sablon_indir') }}" class="btn btn-primary" style="justify-content:center;">Excel Şablonu İndir</a>
+                <form method="POST" action="{{ url_for('inventory.malzeme_excel_yukle') }}" enctype="multipart/form-data" style="display:grid; grid-template-columns:1fr auto; gap:10px;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="file" name="excel_file" accept=".xlsx" class="form-control" required>
+                    <button type="submit" class="btn btn-primary">Yükle ve İşle</button>
+                </form>
+            </div>
+            <div class="muted-help">Şablon sheet yapısı: VERI_GIRISI, LISTELER, ACIKLAMA</div>
+            {% if import_summary %}
+            <div class="muted-help" style="margin-top:8px;">
+                Job #{{ import_summary.job_id }} · Toplam {{ import_summary.total }} · Başarılı {{ import_summary.success }} · Hatalı {{ import_summary.failed }}
+            </div>
+            {% if import_summary.errors %}
+            <div style="margin-top:10px; max-height:150px; overflow:auto; border:1px solid var(--border); border-radius:10px; padding:10px;">
+                {% for item in import_summary.errors %}
+                <div style="font-size:12px; margin-bottom:6px;">Satır {{ item.row_no }}: {{ item.error }}</div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% endif %}
+        </div>
+
+        {% if can_manage_template_catalog %}
+        <div class="inline-box" style="margin-bottom:16px;">
+            <div style="font-weight:800; margin-bottom:10px;">Merkezi Şablon Oluştur (Sistem Sorumlusu)</div>
+            <form method="POST" action="{{ url_for('inventory.merkezi_sablon_ekle') }}" style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="text" name="name" class="form-control" placeholder="Şablon adı" required>
+                <select name="category" class="form-control" required>
+                    {% for c in categories %}
+                    <option value="{{ c }}">{{ c }}</option>
+                    {% endfor %}
+                </select>
+                <input type="text" name="brand" class="form-control" placeholder="Marka">
+                <input type="text" name="model_code" class="form-control" placeholder="Model">
+                <select name="maintenance_period_months" class="form-control">
+                    {% for m in maintenance_month_values %}
+                    <option value="{{ m }}" {% if m == 6 %}selected{% endif %}>{{ m }} Ay</option>
+                    {% endfor %}
+                </select>
+                <select name="default_maintenance_form_id" class="form-control">
+                    <option value="">Bakım formu atanmadı</option>
+                    {% for form in form_templates %}
+                    <option value="{{ form.id }}">{{ form.name }}</option>
+                    {% endfor %}
+                </select>
+                <textarea name="technical_specs" class="form-control" style="grid-column:1 / -1; height:70px;" placeholder="Teknik özellikler"></textarea>
+                <button class="btn btn-primary" type="submit" style="grid-column:1 / -1;">Şablonu Kaydet</button>
+            </form>
+        </div>
+
+        <div class="inline-box" style="margin-bottom:16px;">
+            <div style="font-weight:800; margin-bottom:10px;">Kategori Yönetimi (Sistem Sorumlusu)</div>
+            <form method="POST" action="{{ url_for('inventory.envanter_kategori_ekle') }}" style="display:grid; grid-template-columns:1fr 1fr auto; gap:10px;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="text" name="name" class="form-control" placeholder="Yeni kategori adı" required>
+                <input type="text" name="description" class="form-control" placeholder="Açıklama (opsiyonel)">
+                <button class="btn btn-primary" type="submit">Kategori Ekle</button>
+            </form>
+        </div>
+        {% endif %}
+
         <form method="POST" action="{{ url_for('inventory.malzeme_ekle') }}" enctype="multipart/form-data" id="assetCreateForm">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
             <div class="asset-form-grid">
                 <div class="form-group full inline-box">
-                    <label style="margin-bottom:10px;">1) Kayıt Tipi</label>
+                    <label style="margin-bottom:10px;">{{ field_labels['kayit_tipi'] }}</label>
                     <div class="input-row">
                         <div>
                             <label style="text-transform:none; font-size:13px;">
@@ -49,7 +114,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label>2) Merkezi Şablon</label>
+                    <label>{{ field_labels['merkezi_sablon'] }}</label>
                     <select name="template_id" id="template_id" class="form-control" {% if not can_manage_template_catalog %}required{% endif %}>
                         <option value="">Şablon seçin</option>
                         {% for t in templates %}
@@ -70,7 +135,7 @@
 
                 {% if giren_user.is_sahip %}
                 <div class="form-group">
-                    <label>Havalimanı</label>
+                    <label>{{ field_labels['havalimani'] }}</label>
                     <select name="havalimani_id" id="havalimani_id" class="form-control" required>
                         {% for h in havalimanlari %}
                         <option value="{{ h.id }}" {% if preselected_airport_id == h.id %}selected{% endif %}>{{ h.kodu }} - {{ h.ad }}</option>
@@ -80,7 +145,7 @@
                 {% endif %}
 
                 <div class="form-group">
-                    <label>3) Kategori</label>
+                    <label>{{ field_labels['kategori'] }}</label>
                     <select name="kategori" id="kategori" class="form-control" required>
                         <option value="">Kategori seçin</option>
                         {% for c in categories %}
@@ -90,22 +155,22 @@
                 </div>
 
                 <div class="form-group">
-                    <label>4) Malzeme Adı</label>
+                    <label>{{ field_labels['malzeme_adi'] }}</label>
                     <input type="text" name="ad" id="ad" class="form-control" required placeholder="Örn: Termal Kamera">
                 </div>
 
                 <div class="form-group">
-                    <label>5) Marka</label>
+                    <label>{{ field_labels['marka'] }}</label>
                     <input type="text" name="marka" id="marka" class="form-control" placeholder="Örn: FLIR">
                 </div>
 
                 <div class="form-group">
-                    <label>6) Model</label>
+                    <label>{{ field_labels['model'] }}</label>
                     <input type="text" name="model" id="model" class="form-control" placeholder="Örn: K65">
                 </div>
 
                 <div class="form-group full inline-box">
-                    <label style="margin-bottom:10px;">8) Demirbaş mı?</label>
+                    <label style="margin-bottom:10px;">{{ field_labels['demirbas_mi'] }}</label>
                     <label style="text-transform:none; font-size:13px;">
                         <input type="checkbox" name="is_demirbas" id="is_demirbas" style="margin-right:8px;">
                         Demirbaş olarak işaretle
@@ -117,17 +182,17 @@
                 </div>
 
                 <div class="form-group">
-                    <label>9) Seri No</label>
+                    <label>{{ field_labels['seri_no'] }}</label>
                     <input type="text" name="seri_no" class="form-control" placeholder="Örn: SN-2026-0001">
                 </div>
 
                 <div class="form-group">
-                    <label>10) Stok Birim Sayısı</label>
+                    <label>{{ field_labels['stok_birim_sayisi'] }}</label>
                     <input type="number" name="stok" value="1" min="1" step="1" class="form-control" required>
                 </div>
 
                 <div class="form-group">
-                    <label>11) Kullanım Durumu</label>
+                    <label>{{ field_labels['kullanim_durumu'] }}</label>
                     <select name="durum" class="form-control">
                         <option value="aktif">Aktif</option>
                         <option value="pasif">Pasif</option>
@@ -135,7 +200,7 @@
                 </div>
 
                 <div class="form-group full inline-box">
-                    <label style="margin-bottom:10px;">12) Kalibrasyon Gerekli mi?</label>
+                    <label style="margin-bottom:10px;">{{ field_labels['kalibrasyon_gerekli_mi'] }}</label>
                     <label style="text-transform:none; font-size:13px;">
                         <input type="checkbox" name="calibration_required" id="calibration_required" style="margin-right:8px;">
                         Bu ekipman kalibrasyon gerektirir
@@ -147,7 +212,7 @@
                                 <input type="date" name="last_calibration_date" id="last_calibration_date" class="form-control">
                             </div>
                             <div class="form-group">
-                                <label>13) Kalibrasyon Periyodu (Ay)</label>
+                                <label>{{ field_labels['kalibrasyon_periyodu_ay'] }}</label>
                                 <select name="calibration_periyodu_ay" id="calibration_periyodu_ay" class="form-control">
                                     {% for m in maintenance_month_values %}
                                     <option value="{{ m }}" {% if m == 6 %}selected{% endif %}>{{ m }} Ay</option>
@@ -167,7 +232,7 @@
                                 <input type="text" name="certificate_no" class="form-control">
                             </div>
                             <div class="form-group full">
-                                <label>14) Kalibrasyon Sertifikası (PDF)</label>
+                                <label>Kalibrasyon Sertifikası (PDF)</label>
                                 <input type="file" name="calibration_certificate" accept="application/pdf,.pdf" class="form-control">
                                 <div class="muted-help">Sadece PDF yüklenebilir. Dosya Drive’da Kalibrasyonlar/&lt;Havalimanı&gt;/&lt;Malzeme&gt; yapısına aktarılır.</div>
                             </div>
@@ -176,7 +241,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label>15) Bakım Formu Ata</label>
+                    <label>{{ field_labels['bakim_formu'] }}</label>
                     <select name="bakim_formu_id" class="form-control">
                         <option value="">Form atanmadı</option>
                         {% for form in form_templates %}
@@ -186,7 +251,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label>16) Bakım Periyodu (Ay)</label>
+                    <label>{{ field_labels['bakim_periyodu'] }}</label>
                     <select name="bakim_periyodu_ay" id="bakim_periyodu_ay" class="form-control">
                         {% for m in maintenance_month_values %}
                         <option value="{{ m }}" {% if m == 6 %}selected{% endif %}>{{ m }} Ay</option>
@@ -195,17 +260,17 @@
                 </div>
 
                 <div class="form-group">
-                    <label>17) Edinim Tarihi</label>
+                    <label>{{ field_labels['edinim_tarihi'] }}</label>
                     <input type="date" name="edinim_tarihi" class="form-control">
                 </div>
 
                 <div class="form-group">
-                    <label>18) Garanti Bitiş Tarihi</label>
+                    <label>{{ field_labels['garanti_bitis_tarihi'] }}</label>
                     <input type="date" name="garanti_bitis_tarihi" class="form-control">
                 </div>
 
                 <div class="form-group">
-                    <label>19) Kutu Kodu</label>
+                    <label>{{ field_labels['kutu_kodu'] }}</label>
                     <select name="kutu_id" id="kutu_id" class="form-control" required>
                         <option value="">Kutu seçin</option>
                         {% for box in boxes %}
@@ -229,7 +294,7 @@
                 </div>
 
                 <div class="form-group full">
-                    <label>20) Kullanım Kılavuzu Linki</label>
+                    <label>{{ field_labels['kullanim_kilavuzu_linki'] }}</label>
                     <input type="url" name="manual_url" class="form-control" placeholder="https://...">
                 </div>
 
@@ -239,7 +304,7 @@
                 </div>
 
                 <div class="form-group full">
-                    <label>21) Açıklama / Notlar</label>
+                    <label>{{ field_labels['aciklama_notlar'] }}</label>
                     <textarea name="notlar" class="form-control" style="height:90px;" placeholder="Saha notları"></textarea>
                 </div>
 

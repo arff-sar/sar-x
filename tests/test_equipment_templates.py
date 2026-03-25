@@ -56,6 +56,8 @@ def test_airport_manager_can_add_asset_from_central_template(client, app):
     assert asset is not None
     assert asset.havalimani_id == airport.id
     assert asset.equipment_template_id == template.id
+    assert (asset.asset_code or "").startswith("ARFF-SAR-")
+    assert (asset.qr_code or "").startswith("http")
 
 
 def test_same_template_can_be_used_by_two_airports_with_different_serial(client, app):
@@ -92,3 +94,16 @@ def test_same_template_can_be_used_by_two_airports_with_different_serial(client,
     assert len(assets) == 2
     assert {asset.havalimani_id for asset in assets} == {h1.id, h2.id}
     assert {asset.serial_no for asset in assets} == {"ESB-SN-1", "SAW-SN-1"}
+
+
+def test_non_owner_cannot_create_central_template_in_maintenance_panel(client, app):
+    manager = KullaniciFactory(rol="yetkili")
+    db.session.add(manager)
+    db.session.commit()
+    _login(client, manager)
+
+    response = client.post(
+        "/bakim/ekipman-sablonlari",
+        data={"name": "Yetkisiz Şablon", "category": "Elektronik", "maintenance_period_days": 120},
+    )
+    assert response.status_code == 403
