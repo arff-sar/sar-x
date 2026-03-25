@@ -185,6 +185,40 @@ def test_clear_demo_data_detaches_non_seed_templates_from_demo_forms(app):
         assert DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG).count() == 0
 
 
+def test_clear_demo_data_deletes_demo_airport_boxes_without_nulling_fk(app):
+    with app.app_context():
+        seed_demo_data(reset=True)
+
+        demo_airport_row = DemoSeedRecord.query.filter_by(
+            seed_tag=DEMO_SEED_TAG,
+            model_name="Havalimani",
+        ).first()
+        assert demo_airport_row is not None
+
+        real_airport = Havalimani(ad="Kalıcı Havalimanı", kodu="RCL")
+        db.session.add(real_airport)
+        db.session.flush()
+
+        real_box = Kutu(kodu="RCL-SAR-01", marka="Pelican", havalimani_id=real_airport.id)
+        db.session.add(real_box)
+
+        dependent_box = Kutu(
+            kodu="DMO-EXT-01",
+            marka="Zarges",
+            havalimani_id=demo_airport_row.record_id,
+        )
+        db.session.add(dependent_box)
+        db.session.commit()
+        dependent_box_id = dependent_box.id
+        real_box_id = real_box.id
+
+        result = clear_demo_data()
+        assert result["deleted"] > 0
+        assert Kutu.query.filter_by(id=dependent_box_id).first() is None
+        assert Kutu.query.filter_by(id=real_box_id).first() is not None
+        assert Havalimani.query.filter_by(id=real_airport.id).first() is not None
+
+
 def test_demo_clear_endpoint_succeeds_with_dependent_assets(client, app):
     with app.app_context():
         owner = KullaniciFactory(

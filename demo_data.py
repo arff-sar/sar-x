@@ -449,13 +449,50 @@ def clear_demo_data():
 
     demo_template_ids = demo_record_ids("EquipmentTemplate")
     demo_form_ids = demo_record_ids("MaintenanceFormTemplate")
+    demo_airport_ids = demo_record_ids("Havalimani")
     demo_asset_ids = demo_record_ids("InventoryAsset")
+    demo_material_ids = demo_record_ids("Malzeme")
+    demo_box_ids = demo_record_ids("Kutu")
     demo_user_ids = demo_record_ids("Kullanici")
     demo_spare_part_ids = demo_record_ids("SparePart")
     demo_work_order_ids = demo_record_ids("WorkOrder")
     demo_stock_ids = demo_record_ids("SparePartStock")
 
     with db.session.no_autoflush:
+        dependent_asset_ids = set()
+        dependent_work_order_ids = set()
+
+        # Demo havalimanlarına bağlı seed dışı kayıtları parent siliminden önce temizle.
+        # Böylece ORM'nin kutu.havalimani_id alanını NULL'a çekmeye çalıştığı yol kapanır.
+        if demo_airport_ids:
+            dependent_assets_query = InventoryAsset.query.filter(
+                InventoryAsset.havalimani_id.in_(sorted(demo_airport_ids))
+            )
+            if demo_asset_ids:
+                dependent_assets_query = dependent_assets_query.filter(~InventoryAsset.id.in_(sorted(demo_asset_ids)))
+            dependent_asset_ids = {row.id for row in dependent_assets_query.with_entities(InventoryAsset.id).all()}
+
+            dependent_materials_query = Malzeme.query.filter(
+                Malzeme.havalimani_id.in_(sorted(demo_airport_ids))
+            )
+            if demo_material_ids:
+                dependent_materials_query = dependent_materials_query.filter(~Malzeme.id.in_(sorted(demo_material_ids)))
+
+            dependent_boxes_query = Kutu.query.filter(
+                Kutu.havalimani_id.in_(sorted(demo_airport_ids))
+            )
+            if demo_box_ids:
+                dependent_boxes_query = dependent_boxes_query.filter(~Kutu.id.in_(sorted(demo_box_ids)))
+
+            dependent_work_orders_query = WorkOrder.query.join(
+                InventoryAsset, WorkOrder.asset_id == InventoryAsset.id
+            ).filter(
+                InventoryAsset.havalimani_id.in_(sorted(demo_airport_ids))
+            )
+            if demo_work_order_ids:
+                dependent_work_orders_query = dependent_work_orders_query.filter(~WorkOrder.id.in_(sorted(demo_work_order_ids)))
+            dependent_work_order_ids = {row.id for row in dependent_work_orders_query.with_entities(WorkOrder.id).all()}
+
         # Demo bakım formuna referans veren, fakat seed kaydı olmayan şablonlar
         # maintenance_form_template silinirken FK hatasına neden olabiliyor.
         # Demo dışı şablonları silmeyiz; sadece form referansını kaldırırız.
@@ -497,19 +534,33 @@ def clear_demo_data():
             clauses = []
             if demo_asset_ids:
                 clauses.append(AssetSparePartLink.asset_id.in_(sorted(demo_asset_ids)))
+            if dependent_asset_ids:
+                clauses.append(AssetSparePartLink.asset_id.in_(sorted(dependent_asset_ids)))
             if demo_spare_part_ids:
                 clauses.append(AssetSparePartLink.spare_part_id.in_(sorted(demo_spare_part_ids)))
             AssetSparePartLink.query.filter(or_(*clauses)).delete(synchronize_session=False)
 
-        if table_exists("work_order_part_usage") and (demo_work_order_ids or demo_spare_part_ids or demo_stock_ids):
+        if table_exists("work_order_part_usage") and (demo_work_order_ids or dependent_work_order_ids or demo_spare_part_ids or demo_stock_ids):
             clauses = []
             if demo_work_order_ids:
                 clauses.append(WorkOrderPartUsage.work_order_id.in_(sorted(demo_work_order_ids)))
+            if dependent_work_order_ids:
+                clauses.append(WorkOrderPartUsage.work_order_id.in_(sorted(dependent_work_order_ids)))
             if demo_spare_part_ids:
                 clauses.append(WorkOrderPartUsage.spare_part_id.in_(sorted(demo_spare_part_ids)))
             if demo_stock_ids:
                 clauses.append(WorkOrderPartUsage.consumed_from_stock_id.in_(sorted(demo_stock_ids)))
             WorkOrderPartUsage.query.filter(or_(*clauses)).delete(synchronize_session=False)
+
+        if dependent_work_order_ids:
+            WorkOrder.query.filter(WorkOrder.id.in_(sorted(dependent_work_order_ids))).delete(synchronize_session=False)
+
+        if dependent_asset_ids:
+            InventoryAsset.query.filter(InventoryAsset.id.in_(sorted(dependent_asset_ids))).delete(synchronize_session=False)
+
+        if demo_airport_ids:
+            dependent_materials_query.delete(synchronize_session=False)
+            dependent_boxes_query.delete(synchronize_session=False)
 
     model_map = {
         "AssignmentHistoryEntry": AssignmentHistoryEntry,
