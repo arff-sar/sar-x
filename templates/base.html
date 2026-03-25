@@ -61,17 +61,20 @@ body.sidebar-open { overflow: hidden; }
 
 /* User Identification */
 .user-menu { position: relative; }
+.user-menu-actions { display: flex; align-items: center; gap: 8px; }
 .user-chip { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 5px 12px; cursor: pointer; transition: background .15s; text-decoration: none; }
 .user-chip:hover { background: rgba(255,255,255,.14); }
 .user-chip-button { font-family: var(--sans); color: inherit; }
 .user-chip-button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(249,115,22,.22); }
+.role-switch-launch { min-height: 38px; padding: 8px 12px; font-size: 12px; border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: #e2e8f0; }
+.role-switch-launch:hover { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.3); }
 .user-avatar { width: 26px; height: 26px; border-radius: 6px; background: var(--orange); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; color: #fff; text-transform: uppercase; }
 .user-name { font-size: 12px; font-weight: 600; color: #e2e8f0; line-height: 1; text-transform: capitalize; }
 .user-role { font-size: 10px; color: #64748b; margin-top: 1px; text-transform: uppercase; }
 .user-role-note { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: rgba(249,115,22,.16); color: #fdba74; font-size: 9px; font-weight: 800; letter-spacing: .03em; vertical-align: middle; }
 .user-menu-chevron { color: #cbd5e1; font-size: 11px; margin-left: 2px; transition: transform .16s ease; }
 .user-menu[data-open="true"] .user-menu-chevron { transform: rotate(180deg); }
-.user-menu-panel { display: none; position: absolute; right: 0; top: calc(100% + 8px); width: min(320px, calc(100vw - 24px)); background: #fff; border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 20px 40px rgba(15,23,42,.16); padding: 12px; z-index: 120; }
+.user-menu-panel { display: none; position: fixed; right: 14px; top: 64px; width: min(340px, calc(100vw - 24px)); max-height: calc(100vh - 90px); overflow: auto; background: #fff; border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 20px 40px rgba(15,23,42,.16); padding: 12px; z-index: 260; }
 .user-menu[data-open="true"] .user-menu-panel { display: block; }
 .user-menu-head { padding: 4px 4px 10px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
 .user-menu-kicker { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text4); }
@@ -234,6 +237,7 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
   .topbar-end { margin-left: 0; width: 100%; justify-content: space-between; }
   .logo-text-sub { display: none; }
   .user-chip { padding: 4px 8px; }
+  .role-switch-launch { min-height: 36px; padding: 7px 10px; }
   .user-role { display: none; }
   .logout-btn { margin-left: 0; }
   .main-inner { padding: 14px; }
@@ -262,6 +266,9 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
   .topbar-end { gap: 8px; }
   .notification-panel { width: min(300px, calc(100vw - 24px)); right: 0; }
   .user-chip { min-width: 0; flex: 1 1 auto; }
+  .user-menu-actions { width: 100%; justify-content: space-between; }
+  .role-switch-launch { flex: 0 0 auto; }
+  .user-menu-panel { top: 112px; right: 12px; width: min(320px, calc(100vw - 24px)); max-height: calc(100vh - 128px); }
   .user-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .info-popover { left: auto; right: 0; transform: translateY(-4px); max-width: min(260px, calc(100vw - 32px)); }
   .info-popover::before { left: auto; right: 18px; transform: rotate(45deg); }
@@ -327,19 +334,22 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
       </div>
       {% if role_switch_enabled %}
       <div class="user-menu" id="userMenu" data-open="false">
-        <button type="button" class="user-chip user-chip-button" id="userMenuToggle" aria-haspopup="true" aria-expanded="false" aria-controls="userMenuPanel">
-          <div class="user-avatar">{{ kullanici_ad[0] if kullanici_ad else 'U' }}</div>
-          <div>
-            <div class="user-name">{{ kullanici_ad }}</div>
-            <div class="user-role">
-              {{ rol_etiketi or rol }}
-              {% if role_switch_active %}
-              <span class="user-role-note">Geçici Rol</span>
-              {% endif %}
+        <div class="user-menu-actions">
+          <button type="button" class="user-chip user-chip-button" id="userMenuToggle" aria-haspopup="true" aria-expanded="false" aria-controls="userMenuPanel">
+            <div class="user-avatar">{{ kullanici_ad[0] if kullanici_ad else 'U' }}</div>
+            <div>
+              <div class="user-name">{{ kullanici_ad }}</div>
+              <div class="user-role">
+                {{ rol_etiketi or rol }}
+                {% if role_switch_active %}
+                <span class="user-role-note">Geçici Rol</span>
+                {% endif %}
+              </div>
             </div>
-          </div>
-          <span class="user-menu-chevron">⌄</span>
-        </button>
+            <span class="user-menu-chevron">⌄</span>
+          </button>
+          <button type="button" class="btn btn-secondary role-switch-launch" id="roleSwitchLaunch" aria-haspopup="true" aria-expanded="false" aria-controls="userMenuPanel">Rol Değiştir</button>
+        </div>
         <div class="user-menu-panel" id="userMenuPanel">
           <div class="user-menu-head">
             <div class="user-menu-kicker">Rol Değiştir</div>
@@ -767,14 +777,23 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
 
         const userMenu = document.getElementById('userMenu');
         const userMenuToggle = document.getElementById('userMenuToggle');
+        const roleSwitchLaunch = document.getElementById('roleSwitchLaunch');
         const userMenuPanel = document.getElementById('userMenuPanel');
-        const closeUserMenu = function () {
-            if (!userMenu || !userMenuToggle) return;
-            userMenu.dataset.open = 'false';
-            userMenuToggle.setAttribute('aria-expanded', 'false');
+        const setUserMenuExpanded = function (isOpen) {
+            if (userMenuToggle) {
+                userMenuToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            }
+            if (roleSwitchLaunch) {
+                roleSwitchLaunch.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            }
         };
-        if (userMenu && userMenuToggle && userMenuPanel) {
-            userMenuToggle.addEventListener('click', function (event) {
+        const closeUserMenu = function () {
+            if (!userMenu) return;
+            userMenu.dataset.open = 'false';
+            setUserMenuExpanded(false);
+        };
+        const toggleUserMenu = function (event) {
+                if (!userMenu || !userMenuPanel) return;
                 event.preventDefault();
                 event.stopPropagation();
                 const willOpen = userMenu.dataset.open !== 'true';
@@ -783,8 +802,15 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
                 }
                 closeTooltips();
                 userMenu.dataset.open = willOpen ? 'true' : 'false';
-                userMenuToggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
-            });
+                setUserMenuExpanded(willOpen);
+        };
+        if (userMenu && userMenuPanel && (userMenuToggle || roleSwitchLaunch)) {
+            if (userMenuToggle) {
+                userMenuToggle.addEventListener('click', toggleUserMenu);
+            }
+            if (roleSwitchLaunch) {
+                roleSwitchLaunch.addEventListener('click', toggleUserMenu);
+            }
             userMenuPanel.addEventListener('click', function (event) {
                 event.stopPropagation();
             });
