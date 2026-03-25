@@ -430,13 +430,27 @@ def logout():
     return redirect(url_for('auth.login'))
 
 
-@auth_bp.route('/role-switch', methods=['POST'])
+@auth_bp.route('/role-switch', methods=['GET', 'POST'])
 @login_required
 def role_switch():
     if not can_use_role_switch(current_user):
         abort(403)
 
-    redirect_target = request.referrer or url_for(role_home_endpoint(current_user))
+    if request.method == "GET":
+        selected_options = get_role_switch_options(current_user)
+        option_labels = {item["key"]: item.get("label") or item["key"] for item in selected_options}
+        active_role = get_effective_role_label(current_user)
+        base_role_key = (current_user.rol or "").strip()
+        base_role_label = option_labels.get(base_role_key, active_role or base_role_key)
+        return render_template(
+            "role_switch.html",
+            role_switch_options=selected_options,
+            active_role_label=active_role,
+            base_role_label=base_role_label,
+            active_override=(session.get("temporary_role_override") or "").strip(),
+        )
+
+    redirect_target = request.form.get("next") or request.referrer or url_for(role_home_endpoint(current_user))
     selected_role = (request.form.get('role') or "").strip()
     selected_option_map = {item["key"]: item for item in get_role_switch_options(current_user)}
 

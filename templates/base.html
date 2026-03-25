@@ -61,7 +61,6 @@ body.sidebar-open { overflow: hidden; }
 .notification-item:hover { background: var(--surface2); border-color: var(--border); }
 
 /* User Identification */
-.user-menu { position: relative; min-width: 0; }
 .user-menu-actions { display: flex; align-items: center; gap: 8px; position: relative; z-index: 185; }
 .user-chip { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 5px 12px; cursor: pointer; transition: background .15s; text-decoration: none; min-height: var(--topbar-action-height); position: relative; z-index: 1; }
 .user-chip:hover { background: rgba(255,255,255,.14); }
@@ -75,26 +74,6 @@ body.sidebar-open { overflow: hidden; }
 .user-name { font-size: 12px; font-weight: 600; color: #e2e8f0; line-height: 1; text-transform: capitalize; }
 .user-role { font-size: 10px; color: #64748b; margin-top: 1px; text-transform: uppercase; }
 .user-role-note { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: rgba(249,115,22,.16); color: #fdba74; font-size: 9px; font-weight: 800; letter-spacing: .03em; vertical-align: middle; }
-.user-menu-chevron { color: #cbd5e1; font-size: 11px; margin-left: 2px; transition: transform .16s ease; }
-.user-menu[data-open="true"] .user-menu-chevron { transform: rotate(180deg); }
-.user-menu-panel { display: none; position: fixed; right: 14px; top: 64px; width: min(340px, calc(100vw - 24px)); max-height: calc(100vh - 90px); overflow: auto; background: #fff; border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 20px 40px rgba(15,23,42,.16); padding: 12px; z-index: 260; }
-.user-menu[data-open="true"] .user-menu-panel { display: block; }
-.user-menu-head { padding: 4px 4px 10px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
-.user-menu-kicker { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text4); }
-.user-menu-title { margin-top: 4px; font-size: 13px; font-weight: 800; color: var(--navy); }
-.user-menu-note { margin-top: 4px; font-size: 11px; color: var(--text3); line-height: 1.45; }
-.role-switch-list { display: grid; gap: 6px; }
-.role-switch-form { margin: 0; }
-.role-switch-item { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-family: var(--sans); font-size: 12px; font-weight: 700; cursor: pointer; text-align: left; transition: border-color .16s ease, background .16s ease, transform .16s ease; }
-.role-switch-item:hover { border-color: rgba(249,115,22,.34); background: #fff; transform: translateY(-1px); }
-.role-switch-item.is-active { border-color: rgba(249,115,22,.36); background: var(--orange-light); color: var(--navy); }
-.role-switch-label { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.role-switch-tag { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 6px; border-radius: 999px; background: rgba(15,45,74,.08); color: var(--navy); font-size: 10px; font-weight: 800; }
-.role-switch-item.is-active .role-switch-tag { background: rgba(249,115,22,.18); color: var(--orange); }
-.role-switch-state { font-size: 10px; font-weight: 800; color: var(--text3); text-transform: uppercase; letter-spacing: .04em; }
-.role-switch-item.is-active .role-switch-state { color: var(--orange); }
-.role-switch-divider { margin: 10px 0; border-top: 1px solid var(--border); }
-.role-switch-reset { width: 100%; justify-content: center; }
 .impersonation-banner { margin: 10px 24px 0; padding: 10px 14px; border-radius: 12px; border: 1px solid rgba(249,115,22,.35); background: rgba(255,237,213,.75); color: var(--navy); font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
 .impersonation-banner strong { color: var(--orange); }
 .logout-btn { color: #fca5a5; font-size: 12px; font-weight: 700; text-decoration: none; margin-left: 10px; padding: 0 12px; min-height: var(--topbar-action-height); border-radius: 8px; border: 1px solid rgba(248, 113, 113, 0.2); transition: 0.2s; background: transparent; cursor: pointer; font-family: var(--sans); display: inline-flex; align-items: center; justify-content: center;}
@@ -336,55 +315,22 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
         </div>
       </div>
       {% if role_switch_enabled %}
-      <div class="user-menu" id="userMenu" data-open="false">
-        <div class="user-menu-actions">
-          <button type="button" class="user-chip user-chip-button" id="userMenuToggle" aria-haspopup="true" aria-expanded="false" aria-controls="userMenuPanel">
-            <div class="user-avatar">{{ kullanici_ad[0] if kullanici_ad else 'U' }}</div>
-            <div>
-              <div class="user-name">{{ kullanici_ad }}</div>
-              <div class="user-role">
-                {{ rol_etiketi or rol }}
-                {% if role_switch_active %}
-                <span class="user-role-note">Geçici Rol</span>
-                {% endif %}
-              </div>
+      <div class="user-menu-actions">
+        <div class="user-chip">
+          <div class="user-avatar">{{ kullanici_ad[0] if kullanici_ad else 'U' }}</div>
+          <div>
+            <div class="user-name">{{ kullanici_ad }}</div>
+            <div class="user-role">
+              {{ rol_etiketi or rol }}
+              {% if role_switch_active %}
+              <span class="user-role-note">Geçici Rol</span>
+              {% endif %}
             </div>
-            <span class="user-menu-chevron">⌄</span>
-          </button>
-          <button type="button" class="role-switch-launch" id="roleSwitchLaunch" aria-label="Rol değiştir menüsünü aç" aria-haspopup="true" aria-expanded="false" aria-controls="userMenuPanel" title="Rol değiştir">
-            <span aria-hidden="true">↻</span>
-          </button>
-        </div>
-        <div class="user-menu-panel" id="userMenuPanel">
-          <div class="user-menu-head">
-            <div class="user-menu-kicker">Rol Değiştir</div>
-            <div class="user-menu-title">Geçici aktif rolünüzü seçin</div>
-            <div class="user-menu-note">Bu değişiklik yalnız bu oturum için geçerlidir. Çıkış yaptığınızda gerçek rolünüze dönersiniz.</div>
           </div>
-          <div class="role-switch-list">
-            {% for option in role_switch_options %}
-            <form method="POST" action="{{ url_for('auth.role_switch') }}" class="role-switch-form">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <input type="hidden" name="role" value="{{ option.key }}">
-              <button type="submit" class="role-switch-item {% if option.active %}is-active{% endif %}">
-                <span class="role-switch-label">
-                  <span class="role-switch-tag">{{ loop.index }}</span>
-                  <span>{{ option.label }}</span>
-                </span>
-                <span class="role-switch-state">
-                  {% if option.active %}Aktif{% elif option.base %}Varsayılan{% else %}Geç{% endif %}
-                </span>
-              </button>
-            </form>
-            {% endfor %}
-          </div>
-          <div class="role-switch-divider"></div>
-          <form method="POST" action="{{ url_for('auth.role_switch') }}" class="role-switch-form">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="role" value="__default__">
-            <button type="submit" class="btn btn-secondary role-switch-reset">Kendi yetkimle görüntüle{% if base_role_label %}: {{ base_role_label }}{% endif %}</button>
-          </form>
         </div>
+        <a href="{{ url_for('auth.role_switch') }}" class="role-switch-launch" id="roleSwitchLaunch" aria-label="Rol değiştir sayfasını aç" title="Rol değiştir">
+          <span aria-hidden="true">↻</span>
+        </a>
       </div>
       {% else %}
       <div class="user-chip">
@@ -780,61 +726,6 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
             });
         }
 
-        const userMenu = document.getElementById('userMenu');
-        const userMenuToggle = document.getElementById('userMenuToggle');
-        const roleSwitchLaunch = document.getElementById('roleSwitchLaunch');
-        const userMenuPanel = document.getElementById('userMenuPanel');
-        const setUserMenuExpanded = function (isOpen) {
-            if (userMenuToggle) {
-                userMenuToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-            }
-            if (roleSwitchLaunch) {
-                roleSwitchLaunch.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-            }
-        };
-        const closeUserMenu = function () {
-            if (!userMenu) return;
-            userMenu.dataset.open = 'false';
-            setUserMenuExpanded(false);
-        };
-        const toggleUserMenu = function (event) {
-                if (!userMenu || !userMenuPanel) return;
-                event.preventDefault();
-                event.stopPropagation();
-                const willOpen = userMenu.dataset.open !== 'true';
-                if (notificationPanel) {
-                    notificationPanel.classList.remove('is-open');
-                }
-                closeTooltips();
-                userMenu.dataset.open = willOpen ? 'true' : 'false';
-                setUserMenuExpanded(willOpen);
-        };
-        const bindMenuToggle = function (element) {
-            if (!element) return;
-            element.addEventListener('click', toggleUserMenu);
-            element.addEventListener('keydown', function (event) {
-                if (event.key === 'Enter' || event.key === ' ') {
-                    toggleUserMenu(event);
-                }
-            });
-        };
-        if (userMenu && userMenuPanel && (userMenuToggle || roleSwitchLaunch)) {
-            bindMenuToggle(userMenuToggle);
-            bindMenuToggle(roleSwitchLaunch);
-            userMenuPanel.addEventListener('click', function (event) {
-                event.stopPropagation();
-            });
-            document.addEventListener('click', function (event) {
-                if (!userMenu.contains(event.target)) {
-                    closeUserMenu();
-                }
-            });
-            document.addEventListener('keydown', function (event) {
-                if (event.key === 'Escape') {
-                    closeUserMenu();
-                }
-            });
-        }
     })();
 </script>
 

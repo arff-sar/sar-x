@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Rol Olarak Görüntüle{% endblock %}
+
+{% block body %}
+<section class="card" style="max-width: 720px; margin: 0 auto;">
+  <h1 style="margin:0 0 8px; color:var(--navy); font-size:22px;">Rol Olarak Görüntüle</h1>
+  <p style="margin:0 0 16px; color:var(--text3);">
+    Bu seçim yalnızca geçici görüntüleme içindir. Gerçek kullanıcı rolünüz değiştirilmez.
+  </p>
+  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-bottom:16px;">
+    <div style="padding:12px; border:1px solid var(--line); border-radius:12px; background:#fff;">
+      <div style="font-size:12px; color:var(--text4); margin-bottom:4px;">Gerçek Rol</div>
+      <strong style="font-size:15px; color:var(--navy);">{{ base_role_label or '-' }}</strong>
+    </div>
+    <div style="padding:12px; border:1px solid var(--line); border-radius:12px; background:#fff;">
+      <div style="font-size:12px; color:var(--text4); margin-bottom:4px;">Aktif Görüntülenen Rol</div>
+      <strong style="font-size:15px; color:var(--navy);">{{ active_role_label or '-' }}</strong>
+    </div>
+  </div>
+
+  <div style="display:grid; gap:10px;">
+    <form method="post" action="{{ url_for('auth.role_switch') }}" style="margin:0;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="role" value="__default__">
+      <input type="hidden" name="next" value="{{ url_for('auth.role_switch') }}">
+      <button type="submit" class="btn btn-secondary" style="width:100%; justify-content:space-between;">
+        <span>Kendi yetkimle görüntüle</span>
+        {% if not active_override %}<span class="badge badge-success">Aktif</span>{% endif %}
+      </button>
+    </form>
+
+    {% for option in role_switch_options %}
+    <form method="post" action="{{ url_for('auth.role_switch') }}" style="margin:0;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="role" value="{{ option.key }}">
+      <input type="hidden" name="next" value="{{ url_for('auth.role_switch') }}">
+      <button type="submit" class="btn btn-secondary" style="width:100%; justify-content:space-between;">
+        <span>{{ option.label }}</span>
+        {% if option.active %}<span class="badge badge-warning">Aktif</span>{% endif %}
+      </button>
+    </form>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

@@ -10,7 +10,7 @@ def _login(client, user_id):
         session["_fresh"] = True
 
 
-def test_mehmet_user_sees_role_switch_dropdown(client, app):
+def test_mehmet_user_sees_role_switch_entrypoint(client, app):
     with app.app_context():
         user = KullaniciFactory(
             rol="sahip",
@@ -27,19 +27,12 @@ def test_mehmet_user_sees_role_switch_dropdown(client, app):
     html = response.data.decode("utf-8")
 
     assert response.status_code == 200
-    assert 'id="userMenuToggle"' in html
     assert 'id="roleSwitchLaunch"' in html
-    assert 'aria-label="Rol değiştir menüsünü aç"' in html
-    assert "Geçici aktif rolünüzü seçin" in html
-    assert "Sistem Sorumlusu" in html
-    assert "Ekip Sorumlusu" in html
-    assert "Ekip Üyesi" in html
-    assert "Admin" in html
-    assert "Bakım Sorumlusu" not in html
-    assert "Salt Okunur" not in html
+    assert 'aria-label="Rol değiştir sayfasını aç"' in html
+    assert 'href="/role-switch"' in html
 
 
-def test_non_allow_list_owner_does_not_see_role_switch_dropdown(client, app):
+def test_non_allow_list_owner_does_not_see_role_switch_entrypoint(client, app):
     with app.app_context():
         user = KullaniciFactory(
             rol="sahip",
@@ -56,9 +49,8 @@ def test_non_allow_list_owner_does_not_see_role_switch_dropdown(client, app):
     html = response.data.decode("utf-8")
 
     assert response.status_code == 200
-    assert 'id="userMenuToggle"' not in html
     assert 'id="roleSwitchLaunch"' not in html
-    assert "Geçici aktif rolünüzü seçin" not in html
+    assert 'href="/role-switch"' not in html
 
 
 def test_non_allow_list_owner_cannot_switch_role(client, app):
@@ -158,7 +150,7 @@ def test_role_switch_rejects_unsupported_roles(client, app):
         assert "temporary_role_override" not in session
 
 
-def test_role_switch_dropdown_lists_active_custom_roles_from_db(client, app):
+def test_role_switch_page_lists_active_custom_roles_from_db(client, app):
     with app.app_context():
         user = KullaniciFactory(
             rol="sahip",
@@ -185,7 +177,7 @@ def test_role_switch_dropdown_lists_active_custom_roles_from_db(client, app):
         user_id = user.id
 
     _login(client, user_id)
-    response = client.get("/dashboard")
+    response = client.get("/role-switch")
     html = response.data.decode("utf-8")
 
     assert response.status_code == 200
@@ -211,7 +203,7 @@ def test_role_switch_endpoint_is_forbidden_for_other_users(client, app):
     assert response.status_code == 403
 
 
-def test_non_privileged_user_does_not_see_role_switch_dropdown(client, app):
+def test_non_privileged_user_does_not_see_role_switch_entrypoint(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Rize-Artvin Havalimanı", kodu="RZV")
         user = KullaniciFactory(
@@ -230,8 +222,7 @@ def test_non_privileged_user_does_not_see_role_switch_dropdown(client, app):
     html = response.data.decode("utf-8")
 
     assert response.status_code == 200
-    assert 'id="userMenuToggle"' not in html
-    assert "Geçici aktif rolünüzü seçin" not in html
+    assert 'id="roleSwitchLaunch"' not in html
 
 
 def test_role_switch_override_is_cleared_on_logout(client, app):
@@ -349,3 +340,41 @@ def test_role_switch_audit_payload_tracks_real_and_effective_roles(client, app, 
     assert payload["real_user_email"] == "mehmetcinocevi@gmail.com"
     assert payload["base_role"] == "sahip"
     assert payload["acting_role"] == "admin"
+
+
+def test_allow_list_user_can_open_role_switch_page(client, app):
+    with app.app_context():
+        user = KullaniciFactory(
+            rol="sahip",
+            is_deleted=False,
+            tam_ad="Mehmet",
+            kullanici_adi="mehmetcinocevi@gmail.com",
+        )
+        db.session.add(user)
+        db.session.commit()
+        user_id = user.id
+
+    _login(client, user_id)
+    response = client.get("/role-switch")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Rol Olarak Görüntüle" in html
+    assert "Kendi yetkimle görüntüle" in html
+
+
+def test_non_allow_list_user_cannot_open_role_switch_page(client, app):
+    with app.app_context():
+        user = KullaniciFactory(
+            rol="sahip",
+            is_deleted=False,
+            tam_ad="Yetkisiz",
+            kullanici_adi="owner@sarx.com",
+        )
+        db.session.add(user)
+        db.session.commit()
+        user_id = user.id
+
+    _login(client, user_id)
+    response = client.get("/role-switch")
+    assert response.status_code == 403
