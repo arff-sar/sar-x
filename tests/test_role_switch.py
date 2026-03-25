@@ -29,7 +29,7 @@ def test_mehmet_user_sees_role_switch_dropdown(client, app):
     assert response.status_code == 200
     assert 'id="userMenuToggle"' in html
     assert 'id="roleSwitchLaunch"' in html
-    assert "Rol Değiştir" in html
+    assert 'aria-label="Rol değiştir menüsünü aç"' in html
     assert "Geçici aktif rolünüzü seçin" in html
     assert "Sistem Sorumlusu" in html
     assert "Ekip Sorumlusu" in html

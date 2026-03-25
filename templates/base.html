@@ -33,6 +33,7 @@
   --text: #0f172a; --text2: #334155; --text3: #64748b; --text4: #94a3b8;
   --sans: 'Plus Jakarta Sans', sans-serif; --mono: 'JetBrains Mono', monospace;
   --r: 10px; --r-lg: 14px; --r-xl: 18px;
+  --topbar-action-height: 40px;
 }
 html, body { height: 100%; font-family: var(--sans); background: var(--bg); color: var(--text); overflow: hidden; }
 body.sidebar-open { overflow: hidden; }
@@ -51,7 +52,7 @@ body.sidebar-open { overflow: hidden; }
 .logo-text-sub { font-size: 11px; font-weight: 500; color: #94a3b8; margin-top: 2px; }
 .topbar-end { margin-left: auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
 .notification-wrap { position: relative; }
-.notification-btn { width: 40px; height: 40px; border-radius: 10px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.08); color: #fff; cursor: pointer; position: relative; }
+.notification-btn { width: var(--topbar-action-height); height: var(--topbar-action-height); border-radius: 10px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.08); color: #fff; cursor: pointer; position: relative; display: inline-flex; align-items: center; justify-content: center; }
 .notification-count { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; border-radius: 999px; background: var(--orange); color: #fff; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
 .notification-panel { display: none; position: absolute; right: 0; top: calc(100% + 8px); width: 320px; background: #fff; border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 20px 40px rgba(15,23,42,.16); padding: 10px; z-index: 120; }
 .notification-panel.is-open { display: block; }
@@ -60,14 +61,16 @@ body.sidebar-open { overflow: hidden; }
 .notification-item:hover { background: var(--surface2); border-color: var(--border); }
 
 /* User Identification */
-.user-menu { position: relative; }
+.user-menu { position: relative; min-width: 0; }
 .user-menu-actions { display: flex; align-items: center; gap: 8px; }
-.user-chip { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 5px 12px; cursor: pointer; transition: background .15s; text-decoration: none; }
+.user-chip { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 5px 12px; cursor: pointer; transition: background .15s; text-decoration: none; min-height: var(--topbar-action-height); }
 .user-chip:hover { background: rgba(255,255,255,.14); }
 .user-chip-button { font-family: var(--sans); color: inherit; }
 .user-chip-button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(249,115,22,.22); }
-.role-switch-launch { min-height: 38px; padding: 8px 12px; font-size: 12px; border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: #e2e8f0; }
-.role-switch-launch:hover { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.3); }
+.role-switch-launch { width: var(--topbar-action-height); min-width: var(--topbar-action-height); height: var(--topbar-action-height); border-radius: 10px; border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: #e2e8f0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 800; line-height: 1; transition: background .16s ease, border-color .16s ease, color .16s ease, transform .16s ease; }
+.role-switch-launch:hover { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.34); }
+.role-switch-launch:active { transform: scale(0.98); }
+.role-switch-launch:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(249,115,22,.22); }
 .user-avatar { width: 26px; height: 26px; border-radius: 6px; background: var(--orange); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; color: #fff; text-transform: uppercase; }
 .user-name { font-size: 12px; font-weight: 600; color: #e2e8f0; line-height: 1; text-transform: capitalize; }
 .user-role { font-size: 10px; color: #64748b; margin-top: 1px; text-transform: uppercase; }
@@ -94,7 +97,7 @@ body.sidebar-open { overflow: hidden; }
 .role-switch-reset { width: 100%; justify-content: center; }
 .impersonation-banner { margin: 10px 24px 0; padding: 10px 14px; border-radius: 12px; border: 1px solid rgba(249,115,22,.35); background: rgba(255,237,213,.75); color: var(--navy); font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
 .impersonation-banner strong { color: var(--orange); }
-.logout-btn { color: #fca5a5; font-size: 12px; font-weight: 700; text-decoration: none; margin-left: 10px; padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(248, 113, 113, 0.2); transition: 0.2s; background: transparent; cursor: pointer; font-family: var(--sans);}
+.logout-btn { color: #fca5a5; font-size: 12px; font-weight: 700; text-decoration: none; margin-left: 10px; padding: 0 12px; min-height: var(--topbar-action-height); border-radius: 8px; border: 1px solid rgba(248, 113, 113, 0.2); transition: 0.2s; background: transparent; cursor: pointer; font-family: var(--sans); display: inline-flex; align-items: center; justify-content: center;}
 .logout-btn:hover { background: rgba(248, 113, 113, 0.1); color: #f87171;}
 
 /* Sidebar Navigation */
@@ -237,7 +240,7 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
   .topbar-end { margin-left: 0; width: 100%; justify-content: space-between; }
   .logo-text-sub { display: none; }
   .user-chip { padding: 4px 8px; }
-  .role-switch-launch { min-height: 36px; padding: 7px 10px; }
+  .role-switch-launch { width: 38px; min-width: 38px; height: 38px; }
   .user-role { display: none; }
   .logout-btn { margin-left: 0; }
   .main-inner { padding: 14px; }
@@ -266,8 +269,8 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
   .topbar-end { gap: 8px; }
   .notification-panel { width: min(300px, calc(100vw - 24px)); right: 0; }
   .user-chip { min-width: 0; flex: 1 1 auto; }
-  .user-menu-actions { width: 100%; justify-content: space-between; }
-  .role-switch-launch { flex: 0 0 auto; }
+  .user-menu-actions { width: auto; justify-content: flex-start; }
+  .role-switch-launch { flex: 0 0 38px; }
   .user-menu-panel { top: 112px; right: 12px; width: min(320px, calc(100vw - 24px)); max-height: calc(100vh - 128px); }
   .user-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .info-popover { left: auto; right: 0; transform: translateY(-4px); max-width: min(260px, calc(100vw - 32px)); }
@@ -348,7 +351,9 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
             </div>
             <span class="user-menu-chevron">⌄</span>
           </button>
-          <button type="button" class="btn btn-secondary role-switch-launch" id="roleSwitchLaunch" aria-haspopup="true" aria-expanded="false" aria-controls="userMenuPanel">Rol Değiştir</button>
+          <button type="button" class="role-switch-launch" id="roleSwitchLaunch" aria-label="Rol değiştir menüsünü aç" aria-haspopup="true" aria-expanded="false" aria-controls="userMenuPanel" title="Rol değiştir">
+            <span aria-hidden="true">↻</span>
+          </button>
         </div>
         <div class="user-menu-panel" id="userMenuPanel">
           <div class="user-menu-head">
