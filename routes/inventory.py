@@ -208,19 +208,23 @@ def _can_issue_assignments(actor=None):
 def _assignment_scope():
     query = AssignmentRecord.query.filter_by(is_deleted=False)
     if _can_view_all_operational_scope():
-        return query
+        return apply_platform_demo_scope(query, "AssignmentRecord", AssignmentRecord.id)
     if has_permission("assignment.manage") or has_permission("assignment.create"):
-        return query.filter(AssignmentRecord.airport_id == current_user.havalimani_id)
-    return query.join(AssignmentRecipient).filter(AssignmentRecipient.user_id == current_user.id).distinct()
+        scoped = query.filter(AssignmentRecord.airport_id == current_user.havalimani_id)
+        return apply_platform_demo_scope(scoped, "AssignmentRecord", AssignmentRecord.id)
+    scoped = query.join(AssignmentRecipient).filter(AssignmentRecipient.user_id == current_user.id).distinct()
+    return apply_platform_demo_scope(scoped, "AssignmentRecord", AssignmentRecord.id)
 
 
 def _ppe_scope():
     query = PPERecord.query.filter_by(is_deleted=False)
     if _can_view_all_operational_scope():
-        return query
+        return apply_platform_demo_scope(query, "PPERecord", PPERecord.id)
     if has_permission("ppe.manage"):
-        return query.filter(PPERecord.airport_id == current_user.havalimani_id)
-    return query.filter(PPERecord.user_id == current_user.id)
+        scoped = query.filter(PPERecord.airport_id == current_user.havalimani_id)
+        return apply_platform_demo_scope(scoped, "PPERecord", PPERecord.id)
+    scoped = query.filter(PPERecord.user_id == current_user.id)
+    return apply_platform_demo_scope(scoped, "PPERecord", PPERecord.id)
 
 
 def _drill_scope():
