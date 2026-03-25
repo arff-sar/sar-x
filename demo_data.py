@@ -11,7 +11,10 @@ from sqlalchemy import false, or_
 from decorators import ROLE_ADMIN, ROLE_AIRPORT_MANAGER, ROLE_EDITOR, ROLE_MAINTENANCE, ROLE_MANAGER, ROLE_OWNER, ROLE_PERSONNEL, ROLE_READONLY, ROLE_WAREHOUSE
 from extensions import db, log_kaydet, table_exists
 from models import (
+    AssignmentHistoryEntry,
+    AssignmentItem,
     AssignmentRecipient,
+    AssignmentRecord,
     CalibrationRecord,
     CalibrationSchedule,
     ConsumableItem,
@@ -505,6 +508,10 @@ def clear_demo_data():
             WorkOrderPartUsage.query.filter(or_(*clauses)).delete(synchronize_session=False)
 
     model_map = {
+        "AssignmentHistoryEntry": AssignmentHistoryEntry,
+        "AssignmentItem": AssignmentItem,
+        "AssignmentRecipient": AssignmentRecipient,
+        "AssignmentRecord": AssignmentRecord,
         "CalibrationRecord": CalibrationRecord,
         "CalibrationSchedule": CalibrationSchedule,
         "ConsumableStockMovement": ConsumableStockMovement,
@@ -526,6 +533,10 @@ def clear_demo_data():
         "Havalimani": Havalimani,
     }
     delete_order = [
+        "AssignmentHistoryEntry",
+        "AssignmentItem",
+        "AssignmentRecipient",
+        "AssignmentRecord",
         "CalibrationRecord",
         "CalibrationSchedule",
         "ConsumableStockMovement",
@@ -812,6 +823,7 @@ def seed_demo_data(reset=False):
             box = Kutu(
                 kodu=code,
                 marka=box_brands[(index - 1) % len(box_brands)],
+                konum=None,
                 havalimani_id=airport.id,
             )
             db.session.add(box)
@@ -1052,7 +1064,7 @@ def seed_demo_data(reset=False):
             elif asset_index % 4 == 0:
                 next_maintenance = today + timedelta(days=rng.randint(1, 12))
             material = Malzeme(
-                ad=_clip_text(template.name, 100, "Demo Ekipman"),
+                ad=_clip_text(f"{template.name} / {template.brand} {template.model_code}", 100, "Demo Ekipman"),
                 seri_no=serial,
                 teknik_ozellikler=template.technical_specs,
                 stok_miktari=default_units,
@@ -1171,6 +1183,7 @@ def seed_demo_data(reset=False):
                 _register_record(calibration_record, f"calibration-record-{asset.id}")
 
     technicians = [user for user in users if user.rol in {ROLE_AIRPORT_MANAGER, ROLE_MAINTENANCE, ROLE_PERSONNEL, ROLE_ADMIN}]
+    work_orders = []
     for index, asset in enumerate(assets[:45], start=1):
         creator = technicians[index % len(technicians)]
         assignee = technicians[(index + 3) % len(technicians)]
@@ -1194,6 +1207,100 @@ def seed_demo_data(reset=False):
         db.session.add(order)
         db.session.flush()
         _register_record(order, order.work_order_no)
+        work_orders.append(order)
+
+    if assets and spare_parts:
+        for index, asset in enumerate(assets[:36], start=1):
+            part = spare_parts[(index * 3) % len(spare_parts)]
+            link = AssetSparePartLink(
+                asset_id=asset.id,
+                spare_part_id=part.id,
+                quantity_required=1 + (index % 3),
+                note="Demo uyumluluk bağı",
+                is_active=True,
+            )
+            db.session.add(link)
+            db.session.flush()
+            _register_record(link, f"asset-part-{asset.id}-{part.id}")
+
+    if work_orders and spare_parts:
+        completed_orders = [order for order in work_orders if order.status == "tamamlandi"][:20]
+        for index, order in enumerate(completed_orders, start=1):
+            part = spare_parts[(index * 2) % len(spare_parts)]
+            usage = WorkOrderPartUsage(
+                work_order_id=order.id,
+                spare_part_id=part.id,
+                quantity_used=1 + (index % 2),
+                note="Demo iş emri parça kullanımı",
+                consumed_from_stock_id=None,
+            )
+            db.session.add(usage)
+            db.session.flush()
+            _register_record(usage, f"wo-usage-{order.id}-{part.id}")
+
+    if table_exists("assignment_record") and table_exists("assignment_recipient") and table_exists("assignment_item"):
+        staff_by_airport = {}
+        for airport in airports:
+            scoped_staff = [u for u in users if u.havalimani_id == airport.id and u.rol in {ROLE_PERSONNEL, ROLE_MAINTENANCE}]
+            if scoped_staff:
+                staff_by_airport[airport.id] = scoped_staff
+
+        for index, airport in enumerate(airports, start=1):
+            scoped_staff = staff_by_airport.get(airport.id, [])
+            scoped_assets = [asset for asset in assets if asset.havalimani_id == airport.id]
+            if len(scoped_staff) < 2 or len(scoped_assets) < 3:
+                continue
+
+            assignment = AssignmentRecord(
+                assignment_no=f"ASG-DEMO-{airport.kodu}-{index:02d}",
+                assignment_date=today - timedelta(days=index),
+                delivered_by_id=scoped_staff[0].id,
+                delivered_by_name=scoped_staff[0].tam_ad,
+                airport_id=airport.id,
+                note="Demo zimmet kaydı",
+                status="active" if index % 2 else "partially_returned",
+                created_by_id=users[0].id if users else None,
+            )
+            db.session.add(assignment)
+            db.session.flush()
+            _register_record(assignment, assignment.assignment_no)
+
+            recipient = AssignmentRecipient(
+                assignment_id=assignment.id,
+                user_id=scoped_staff[1].id,
+            )
+            db.session.add(recipient)
+            db.session.flush()
+            _register_record(recipient, f"recipient-{assignment.id}-{scoped_staff[1].id}")
+
+            selected_assets = scoped_assets[:2]
+            for item_index, asset in enumerate(selected_assets, start=1):
+                item = AssignmentItem(
+                    assignment_id=assignment.id,
+                    material_id=asset.legacy_material_id,
+                    asset_id=asset.id,
+                    item_name=_clip_text(asset.legacy_material.ad if asset.legacy_material else (asset.equipment_template.name if asset.equipment_template else "Demo Ekipman"), 180, "Demo Ekipman"),
+                    quantity=1,
+                    unit="adet",
+                    note="Demo zimmet kalemi",
+                    returned_quantity=1 if (item_index == 1 and index % 2 == 0) else 0,
+                    returned_at=get_tr_now() if (item_index == 1 and index % 2 == 0) else None,
+                    returned_by_id=scoped_staff[0].id if (item_index == 1 and index % 2 == 0) else None,
+                    return_note="Kısmi iade - demo" if (item_index == 1 and index % 2 == 0) else None,
+                )
+                db.session.add(item)
+                db.session.flush()
+                _register_record(item, f"assignment-item-{assignment.id}-{item_index}")
+
+            history = AssignmentHistoryEntry(
+                assignment_id=assignment.id,
+                event_type="created",
+                event_note="Demo zimmet oluşturuldu",
+                created_by_id=users[0].id if users else None,
+            )
+            db.session.add(history)
+            db.session.flush()
+            _register_record(history, f"assignment-history-{assignment.id}")
 
     db.session.commit()
     summary = _summary()

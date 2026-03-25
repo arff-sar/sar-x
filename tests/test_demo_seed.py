@@ -1,7 +1,26 @@
+import re
+from datetime import date
+
 from demo_data import AIRPORT_PERSONNEL_COUNT, AIRPORTS, DEMO_SEED_TAG, clear_demo_data, seed_demo_data
-from extensions import db
+from extensions import db, table_exists
 from sqlalchemy import text
-from models import AssignmentRecipient, AssignmentRecord, DemoSeedRecord, EquipmentTemplate, Havalimani, InventoryAsset, Kutu, Kullanici, MaintenancePlan, Malzeme, SparePart, WorkOrder
+from models import (
+    AssignmentItem,
+    AssignmentRecipient,
+    AssignmentRecord,
+    AssetSparePartLink,
+    DemoSeedRecord,
+    EquipmentTemplate,
+    Havalimani,
+    InventoryAsset,
+    Kutu,
+    Kullanici,
+    MaintenancePlan,
+    Malzeme,
+    SparePart,
+    WorkOrder,
+    WorkOrderPartUsage,
+)
 from tests.factories import KullaniciFactory
 
 
@@ -30,8 +49,9 @@ def test_seed_demo_data_creates_expected_records(app):
             assert Kullanici.query.filter_by(havalimani_id=airport.id, is_deleted=False).count() >= AIRPORT_PERSONNEL_COUNT
             assert Kutu.query.filter_by(havalimani_id=airport.id, is_deleted=False).count() >= 5
         for box in Kutu.query.all():
-            assert box.kodu.startswith(f"{box.havalimani.kodu}-SAR-")
+            assert re.match(rf"^{box.havalimani.kodu}-SAR-\d{{2}}$", box.kodu)
             assert box.marka is not None and box.marka.strip() != ""
+            assert not (box.konum or "").strip()
 
         sample_asset = InventoryAsset.query.first()
         assert sample_asset is not None
@@ -39,6 +59,25 @@ def test_seed_demo_data_creates_expected_records(app):
         assert sample_asset.legacy_material is not None
         assert sample_asset.legacy_material.kutu is not None
         assert sample_asset.asset_code.startswith("ARFF-SAR-")
+        assert sample_asset.equipment_template is not None
+        assert (sample_asset.equipment_template.brand or "").strip() != ""
+        assert (sample_asset.equipment_template.model_code or "").strip() != ""
+        assert sample_asset.legacy_material.ad.startswith(sample_asset.equipment_template.name)
+
+        today = date.today()
+        critical_plans = MaintenancePlan.query.filter(MaintenancePlan.next_due_date < today).count()
+        upcoming_plans = MaintenancePlan.query.filter(MaintenancePlan.next_due_date >= today).count()
+        assert critical_plans > 0
+        assert upcoming_plans > 0
+
+        if table_exists("assignment_record"):
+            assert AssignmentRecord.query.count() > 0
+            assert AssignmentRecipient.query.count() > 0
+            assert AssignmentItem.query.count() > 0
+        if table_exists("asset_spare_part_link"):
+            assert AssetSparePartLink.query.count() > 0
+        if table_exists("work_order_part_usage"):
+            assert WorkOrderPartUsage.query.count() > 0
 
         assert DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG).count() > 0
 
@@ -207,3 +246,17 @@ def test_clear_demo_data_handles_assignment_recipients_for_demo_users(app):
         result = clear_demo_data()
         assert result["deleted"] > 0
         assert AssignmentRecipient.query.filter_by(id=recipient_id).first() is None
+
+
+def test_seed_and_clear_chain_is_stable_for_multiple_cycles(app):
+    with app.app_context():
+        first_seed = seed_demo_data(reset=True)
+        first_clear = clear_demo_data()
+        second_seed = seed_demo_data(reset=False)
+        second_clear = clear_demo_data()
+
+        assert first_seed["asset"] > 0
+        assert second_seed["asset"] > 0
+        assert first_clear["deleted"] > 0
+        assert second_clear["deleted"] > 0
+        assert DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG).count() == 0
