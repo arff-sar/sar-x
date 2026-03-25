@@ -200,31 +200,12 @@ class GoogleDriveDrillService:
         if file_content is None:
             raise GoogleDriveError("Dosya içeriği okunamadı.")
 
-        def _build_multipart(folder_id):
-            metadata = {
-                "name": filename,
-                "parents": [folder_id],
-            }
-            boundary = f"sarx-{uuid.uuid4().hex}"
-            metadata_part = json.dumps(metadata).encode("utf-8")
-            body = b"".join(
-                [
-                    f"--{boundary}\r\n".encode("utf-8"),
-                    b"Content-Type: application/json; charset=UTF-8\r\n\r\n",
-                    metadata_part,
-                    b"\r\n",
-                    f"--{boundary}\r\n".encode("utf-8"),
-                    f"Content-Type: {mime_type}\r\n\r\n".encode("utf-8"),
-                    file_content,
-                    b"\r\n",
-                    f"--{boundary}--\r\n".encode("utf-8"),
-                ]
-            )
-            return boundary, body
+        def _build_multipart_payload(folder_id):
+            return self._build_multipart_payload(folder_id, filename, mime_type, file_content)
 
         folder_id = self.ensure_airport_folder(airport)
         try:
-            boundary, body = _build_multipart(folder_id)
+            boundary, body = _build_multipart_payload(folder_id)
             _, response_body = self._request(
                 "POST",
                 self.DRIVE_UPLOAD_BASE,
@@ -239,7 +220,7 @@ class GoogleDriveDrillService:
             airport.drive_folder_id = None
             db.session.flush()
             folder_id = self.ensure_airport_folder(airport, refresh=True)
-            boundary, body = _build_multipart(folder_id)
+            boundary, body = _build_multipart_payload(folder_id)
             _, response_body = self._request(
                 "POST",
                 self.DRIVE_UPLOAD_BASE,
@@ -249,6 +230,53 @@ class GoogleDriveDrillService:
             )
             data = json.loads(response_body.decode("utf-8"))
 
+        file_id = data.get("id")
+        if not file_id:
+            raise GoogleDriveError("Google Drive dosya kimliği alınamadı.")
+        return {
+            "drive_file_id": file_id,
+            "drive_folder_id": folder_id,
+            "mime_type": data.get("mimeType") or mime_type,
+            "file_size": int(data.get("size") or len(file_content)),
+            "filename": data.get("name") or filename,
+        }
+
+    @staticmethod
+    def _build_multipart_payload(folder_id, filename, mime_type, file_content):
+        metadata = {
+            "name": filename,
+            "parents": [folder_id],
+        }
+        boundary = f"sarx-{uuid.uuid4().hex}"
+        metadata_part = json.dumps(metadata).encode("utf-8")
+        body = b"".join(
+            [
+                f"--{boundary}\r\n".encode("utf-8"),
+                b"Content-Type: application/json; charset=UTF-8\r\n\r\n",
+                metadata_part,
+                b"\r\n",
+                f"--{boundary}\r\n".encode("utf-8"),
+                f"Content-Type: {mime_type}\r\n\r\n".encode("utf-8"),
+                file_content,
+                b"\r\n",
+                f"--{boundary}--\r\n".encode("utf-8"),
+            ]
+        )
+        return boundary, body
+
+    def upload_file_to_folder(self, folder_id, upload, filename, mime_type):
+        file_content = upload.read()
+        if file_content is None:
+            raise GoogleDriveError("Dosya içeriği okunamadı.")
+        boundary, body = self._build_multipart_payload(folder_id, filename, mime_type, file_content)
+        _, response_body = self._request(
+            "POST",
+            self.DRIVE_UPLOAD_BASE,
+            params={"uploadType": "multipart", "fields": "id,name,mimeType,size,parents"},
+            data=body,
+            headers={"Content-Type": f'multipart/related; boundary="{boundary}"'},
+        )
+        data = json.loads(response_body.decode("utf-8"))
         file_id = data.get("id")
         if not file_id:
             raise GoogleDriveError("Google Drive dosya kimliği alınamadı.")

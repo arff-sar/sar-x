@@ -405,6 +405,7 @@ class EquipmentTemplate(db.Model, TimestampMixin, SoftDeleteMixin):
     technical_specs = db.Column(db.Text)
     manufacturer = db.Column(db.String(120))
     maintenance_period_days = db.Column(db.Integer, default=180)
+    maintenance_period_months = db.Column(db.Integer, default=6)
     criticality_level = db.Column(db.String(20), default='normal', index=True)
     default_maintenance_form_id = db.Column(
         db.Integer,
@@ -451,8 +452,10 @@ class InventoryAsset(db.Model, TimestampMixin, SoftDeleteMixin):
     )
 
     serial_no = db.Column(db.String(120), index=True)
+    asset_type = db.Column(db.String(30), default="equipment", index=True)
     qr_code = db.Column(db.String(150), unique=True, index=True)
     asset_tag = db.Column(db.String(120), index=True)
+    is_demirbas = db.Column(db.Boolean, default=False, nullable=False, index=True)
     unit_count = db.Column(db.Integer, default=1)
     depot_location = db.Column(db.String(150))
     status = db.Column(db.String(30), default='aktif', index=True)
@@ -460,13 +463,17 @@ class InventoryAsset(db.Model, TimestampMixin, SoftDeleteMixin):
 
     last_maintenance_date = db.Column(db.Date)
     next_maintenance_date = db.Column(db.Date, index=True)
+    calibration_required = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    calibration_period_days = db.Column(db.Integer)
     last_calibration_date = db.Column(db.Date)
     next_calibration_date = db.Column(db.Date)
     acquired_date = db.Column(db.Date)
     warranty_end_date = db.Column(db.Date)
+    manual_url = db.Column(db.String(500))
     notes = db.Column(db.Text)
 
     maintenance_period_days = db.Column(db.Integer)
+    maintenance_period_months = db.Column(db.Integer, default=6)
     is_critical = db.Column(db.Boolean, default=False, index=True)
     last_meter_sync_at = db.Column(db.DateTime, nullable=True, index=True)
     calibration_counter = db.Column(db.Integer, default=0)
@@ -835,6 +842,10 @@ class CalibrationRecord(db.Model, TimestampMixin, SoftDeleteMixin):
     provider = db.Column(db.String(150))
     certificate_no = db.Column(db.String(120), index=True)
     certificate_file = db.Column(db.String(500))
+    certificate_drive_file_id = db.Column(db.String(255))
+    certificate_drive_folder_id = db.Column(db.String(255))
+    certificate_mime_type = db.Column(db.String(120))
+    certificate_size_bytes = db.Column(db.Integer)
     result_status = db.Column(db.String(30), default='passed', index=True)
     note = db.Column(db.Text)
 

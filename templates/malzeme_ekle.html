@@ -3,11 +3,16 @@
 
 {% block extra_css %}
 <style>
-    .asset-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .asset-form-grid .full { grid-column: 1 / -1; }
-    .inline-box { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r); padding: 14px; }
-    .muted-help { font-size: 12px; color: var(--text3); margin-top: -8px; margin-bottom: 10px; }
-    @media (max-width: 900px) { .asset-form-grid { grid-template-columns: 1fr; } }
+    .asset-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .asset-form-grid .full { grid-column:1 / -1; }
+    .inline-box { background:var(--surface2); border:1px solid var(--border); border-radius:var(--r); padding:14px; }
+    .muted-help { font-size:12px; color:var(--text3); margin-top:6px; }
+    .hidden-block { display:none; }
+    .input-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    @media (max-width: 980px) {
+      .asset-form-grid,
+      .input-row { grid-template-columns:1fr; }
+    }
 </style>
 {% endblock %}
 
@@ -15,92 +20,163 @@
 <div class="page-header">
     <div>
         <div class="page-title">Yeni Malzeme / Ekipman Kaydı</div>
-        <div class="page-meta">Merkezi katalog + havalimanı envanteri mantığıyla yeni kayıt oluşturun.</div>
+        <div class="page-meta">InventoryAsset merkezli kayıt, bakım ve kalibrasyon kurallarıyla birlikte oluşturulur.</div>
     </div>
 </div>
 
 <div class="panel">
     <div class="panel-body">
-        <form method="POST" action="{{ url_for('inventory.malzeme_ekle') }}">
+        <form method="POST" action="{{ url_for('inventory.malzeme_ekle') }}" enctype="multipart/form-data" id="assetCreateForm">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
             <div class="asset-form-grid">
                 <div class="form-group full inline-box">
-                    <label style="margin-bottom: 10px;">Kayıt Tipi</label>
-                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <label style="margin-bottom:10px;">1) Kayıt Tipi</label>
+                    <div class="input-row">
                         <div>
                             <label style="text-transform:none; font-size:13px;">
-                                <input type="checkbox" name="central_catalog" id="central_catalog" style="margin-right:8px;">
-                                Merkezi kataloğa ekle
+                                <input type="checkbox" name="central_catalog" id="central_catalog" style="margin-right:8px;" {% if can_manage_template_catalog and (preselected_asset_type or '') != 'spare_part' %}checked{% endif %} {% if not can_manage_template_catalog %}disabled{% endif %}>
+                                Merkezi kataloğa ekle (sadece sahip)
                             </label>
                         </div>
                         <div>
                             <label style="text-transform:none; font-size:13px;">
-                                <input type="checkbox" id="use_template_mode" style="margin-right:8px;">
+                                <input type="checkbox" id="use_template_mode" style="margin-right:8px;" checked>
                                 Mevcut merkezi şablondan oluştur
                             </label>
                         </div>
                     </div>
                 </div>
 
-                {% if rol == 'sahip' %}
                 <div class="form-group">
-                    <label>Havalimanı</label>
-                    <select name="havalimani_id" class="form-control" required>
-                        {% for h in havalimanlari %}
-                        <option value="{{ h.id }}">{{ h.kodu }} - {{ h.ad }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                {% endif %}
-
-                <div class="form-group {% if rol != 'sahip' %}full{% endif %}">
-                    <label>Mevcut Merkezi Şablon</label>
-                    <select name="template_id" id="template_id" class="form-control">
-                        <option value="">Seçilmedi (Yeni Şablon Oluştur)</option>
+                    <label>2) Merkezi Şablon</label>
+                    <select name="template_id" id="template_id" class="form-control" {% if not can_manage_template_catalog %}required{% endif %}>
+                        <option value="">Şablon seçin</option>
                         {% for t in templates %}
                         <option value="{{ t.id }}"
                                 data-name="{{ t.name }}"
                                 data-category="{{ t.category or '' }}"
                                 data-brand="{{ t.brand or '' }}"
                                 data-model="{{ t.model_code or '' }}"
-                                data-period="{{ t.maintenance_period_days or 180 }}"
+                                data-period-months="{{ t.maintenance_period_months or (((t.maintenance_period_days or 180) + 29) // 30) }}"
                                 data-description="{{ t.description or '' }}"
                                 data-specs="{{ t.technical_specs or '' }}">
                             {{ t.name }} {% if t.category %}({{ t.category }}){% endif %}
                         </option>
                         {% endfor %}
                     </select>
-                    <div class="muted-help">Şablon seçerseniz ortak alanlar otomatik dolacaktır.</div>
+                    <div class="muted-help">Sahip dışı roller için şablon seçimi zorunludur.</div>
+                </div>
+
+                {% if rol == 'sahip' %}
+                <div class="form-group">
+                    <label>Havalimanı</label>
+                    <select name="havalimani_id" id="havalimani_id" class="form-control" required>
+                        {% for h in havalimanlari %}
+                        <option value="{{ h.id }}" {% if preselected_airport_id == h.id %}selected{% endif %}>{{ h.kodu }} - {{ h.ad }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+
+                <div class="form-group">
+                    <label>3) Kategori</label>
+                    <select name="kategori" id="kategori" class="form-control" required>
+                        <option value="">Kategori seçin</option>
+                        {% for c in categories %}
+                        <option value="{{ c }}">{{ c }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
 
                 <div class="form-group">
-                    <label>Malzeme Adı</label>
-                    <input type="text" name="ad" id="ad" required placeholder="Örn: Termal Kamera">
+                    <label>4) Malzeme Adı</label>
+                    <input type="text" name="ad" id="ad" class="form-control" required placeholder="Örn: Termal Kamera">
                 </div>
 
                 <div class="form-group">
-                    <label>Kategori</label>
-                    <input type="text" name="kategori" id="kategori" placeholder="Örn: Elektronik">
+                    <label>5) Marka</label>
+                    <input type="text" name="marka" id="marka" class="form-control" placeholder="Örn: FLIR">
                 </div>
 
                 <div class="form-group">
-                    <label>Marka</label>
-                    <input type="text" name="marka" id="marka" placeholder="Örn: FLIR">
+                    <label>6) Model</label>
+                    <input type="text" name="model" id="model" class="form-control" placeholder="Örn: K65">
+                </div>
+
+                <div class="form-group full inline-box">
+                    <label style="margin-bottom:10px;">8) Demirbaş mı?</label>
+                    <label style="text-transform:none; font-size:13px;">
+                        <input type="checkbox" name="is_demirbas" id="is_demirbas" style="margin-right:8px;">
+                        Demirbaş olarak işaretle
+                    </label>
+                    <div id="demirbas_block" class="hidden-block" style="margin-top:10px;">
+                        <label>Demirbaş Numarası</label>
+                        <input type="text" name="demirbas_no" id="demirbas_no" class="form-control" placeholder="Örn: DMR-1043">
+                    </div>
                 </div>
 
                 <div class="form-group">
-                    <label>Model</label>
-                    <input type="text" name="model" id="model" placeholder="Örn: K65">
+                    <label>9) Seri No</label>
+                    <input type="text" name="seri_no" class="form-control" placeholder="Örn: SN-2026-0001">
                 </div>
 
                 <div class="form-group">
-                    <label>Üretici</label>
-                    <input type="text" name="uretici" placeholder="Örn: FLIR Systems">
+                    <label>10) Stok Birim Sayısı</label>
+                    <input type="number" name="stok" value="1" min="1" step="1" class="form-control" required>
                 </div>
 
                 <div class="form-group">
-                    <label>Bakım Formu Ata</label>
+                    <label>11) Kullanım Durumu</label>
+                    <select name="durum" class="form-control">
+                        <option value="aktif">Aktif</option>
+                        <option value="pasif">Pasif</option>
+                    </select>
+                </div>
+
+                <div class="form-group full inline-box">
+                    <label style="margin-bottom:10px;">12) Kalibrasyon Gerekli mi?</label>
+                    <label style="text-transform:none; font-size:13px;">
+                        <input type="checkbox" name="calibration_required" id="calibration_required" style="margin-right:8px;">
+                        Bu ekipman kalibrasyon gerektirir
+                    </label>
+                    <div id="calibration_block" class="hidden-block" style="margin-top:10px;">
+                        <div class="input-row">
+                            <div class="form-group">
+                                <label>Son Kalibrasyon Tarihi</label>
+                                <input type="date" name="last_calibration_date" id="last_calibration_date" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>13) Kalibrasyon Periyodu (Ay)</label>
+                                <select name="calibration_periyodu_ay" id="calibration_periyodu_ay" class="form-control">
+                                    {% for m in maintenance_month_values %}
+                                    <option value="{{ m }}" {% if m == 6 %}selected{% endif %}>{{ m }} Ay</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Sonraki Kalibrasyon</label>
+                                <input type="date" name="next_calibration_date" id="next_calibration_date" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Kalibrasyon Sağlayıcısı</label>
+                                <input type="text" name="calibration_provider" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Sertifika No</label>
+                                <input type="text" name="certificate_no" class="form-control">
+                            </div>
+                            <div class="form-group full">
+                                <label>14) Kalibrasyon Sertifikası (PDF)</label>
+                                <input type="file" name="calibration_certificate" accept="application/pdf,.pdf" class="form-control">
+                                <div class="muted-help">Sadece PDF yüklenebilir. Dosya Drive’da Kalibrasyonlar/&lt;Havalimanı&gt;/&lt;Malzeme&gt; yapısına aktarılır.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>15) Bakım Formu Ata</label>
                     <select name="bakim_formu_id" class="form-control">
                         <option value="">Form atanmadı</option>
                         {% for form in form_templates %}
@@ -110,111 +186,65 @@
                 </div>
 
                 <div class="form-group">
-                    <label>Bakım Periyodu (Gün)</label>
-                    <input type="number" name="bakim_periyodu_gun" id="bakim_periyodu_gun" min="1" value="180">
+                    <label>16) Bakım Periyodu (Ay)</label>
+                    <select name="bakim_periyodu_ay" id="bakim_periyodu_ay" class="form-control">
+                        {% for m in maintenance_month_values %}
+                        <option value="{{ m }}" {% if m == 6 %}selected{% endif %}>{{ m }} Ay</option>
+                        {% endfor %}
+                    </select>
                 </div>
 
                 <div class="form-group">
-                    <label>Kutu / Depo Kodu</label>
-                    <input type="text" name="kutu_kodu" required placeholder="Örn: DEP-01 / KUTU-A1">
+                    <label>17) Edinim Tarihi</label>
+                    <input type="date" name="edinim_tarihi" class="form-control">
                 </div>
 
                 <div class="form-group">
-                    <label>Üst Ekipman (Opsiyonel)</label>
-                    <select name="parent_asset_id" class="form-control">
-                        <option value="">Bağlı değil</option>
-                        {% for parent in parent_candidates %}
-                        <option value="{{ parent.id }}">
-                            {{ parent.equipment_template.name if parent.equipment_template else 'Ekipman' }} · {{ parent.serial_no or 'SN yok' }}
+                    <label>18) Garanti Bitiş Tarihi</label>
+                    <input type="date" name="garanti_bitis_tarihi" class="form-control">
+                </div>
+
+                <div class="form-group">
+                    <label>19) Kutu Kodu</label>
+                    <select name="kutu_id" id="kutu_id" class="form-control" required>
+                        <option value="">Kutu seçin</option>
+                        {% for box in boxes %}
+                        <option value="{{ box.id }}" data-airport="{{ box.havalimani_id }}">
+                            {{ box.kodu }}{% if box.havalimani %} · {{ box.havalimani.kodu }}{% endif %}
                         </option>
                         {% endfor %}
                     </select>
                 </div>
 
                 <div class="form-group">
-                    <label>Seri No</label>
-                    <input type="text" name="seri_no" placeholder="Örn: SN-2026-0001">
-                </div>
-
-                <div class="form-group">
-                    <label>QR Kodu (Opsiyonel)</label>
-                    <input type="text" name="qr_kodu" placeholder="Boş bırakılırsa otomatik üretilir">
-                </div>
-
-                <div class="form-group">
-                    <label>Demirbaş No</label>
-                    <input type="text" name="demirbas_no" placeholder="Örn: DMR-1043">
-                </div>
-
-                <div class="form-group">
-                    <label>Stok / Birim Sayısı</label>
-                    <input type="number" name="stok" value="1" min="1">
-                </div>
-
-                <div class="form-group">
-                    <label>Depo Konumu</label>
-                    <input type="text" name="depo_konumu" placeholder="Örn: Hangar B / Raf 3">
-                </div>
-
-                <div class="form-group">
-                    <label>Kullanım Durumu</label>
-                    <select name="durum">
-                        <option value="Aktif">Aktif</option>
-                        <option value="Bakımda">Bakımda</option>
-                        <option value="Arızalı">Arızalı</option>
-                        <option value="Hurda">Hurda</option>
-                        <option value="Pasif">Pasif</option>
+                    <label>Yedek Parça Bağlantısı (Opsiyonel)</label>
+                    <select name="parent_asset_id" id="parent_asset_id" class="form-control">
+                        <option value="">Bağlı değil</option>
+                        {% for parent in parent_candidates %}
+                        <option value="{{ parent.id }}" {% if default_parent_id == parent.id %}selected{% endif %}>
+                            {{ parent.equipment_template.name if parent.equipment_template else 'Ekipman' }} · {{ parent.asset_code or '-' }}
+                        </option>
+                        {% endfor %}
                     </select>
                 </div>
 
-                <div class="form-group">
-                    <label>Bakım Durumu</label>
-                    <select name="bakim_durumu">
-                        <option value="normal">Normal</option>
-                        <option value="yaklasan">Yaklaşan</option>
-                        <option value="geciken">Geciken</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label>Son Bakım Tarihi</label>
-                    <input type="date" name="bakim">
-                </div>
-
-                <div class="form-group">
-                    <label>Sonraki Bakım Tarihi</label>
-                    <input type="date" name="gelecek_bakim">
-                </div>
-
-                <div class="form-group">
-                    <label>Edinim Tarihi</label>
-                    <input type="date" name="edinim_tarihi">
-                </div>
-
-                <div class="form-group">
-                    <label>Garanti Bitiş Tarihi</label>
-                    <input type="date" name="garanti_bitis_tarihi">
+                <div class="form-group full">
+                    <label>20) Kullanım Kılavuzu Linki</label>
+                    <input type="url" name="manual_url" class="form-control" placeholder="https://...">
                 </div>
 
                 <div class="form-group full">
                     <label>Teknik Özellikler</label>
-                    <textarea name="teknik" id="teknik" style="height:100px;" placeholder="Teknik özellikleri veya bakım notlarını girin"></textarea>
+                    <textarea name="teknik" id="teknik" class="form-control" style="height:90px;" placeholder="Teknik özellikler"></textarea>
                 </div>
 
                 <div class="form-group full">
-                    <label>Açıklama / Notlar</label>
-                    <textarea name="notlar" style="height:100px;" placeholder="Yerel kullanım notları"></textarea>
-                </div>
-
-                <div class="form-group full inline-box">
-                    <label style="text-transform:none; font-size:13px; margin-bottom:0;">
-                        <input type="checkbox" name="kritik" style="margin-right:8px;">
-                        Kritik ekipman olarak işaretle
-                    </label>
+                    <label>21) Açıklama / Notlar</label>
+                    <textarea name="notlar" class="form-control" style="height:90px;" placeholder="Saha notları"></textarea>
                 </div>
 
                 <div class="form-group full">
-                    <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center; padding: 14px;">
+                    <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center; padding:14px;">
                         Kaydı Oluştur
                     </button>
                 </div>
@@ -224,54 +254,107 @@
 </div>
 
 <script>
-const templateSelect = document.getElementById("template_id");
-const useTemplateMode = document.getElementById("use_template_mode");
-const centralCatalog = document.getElementById("central_catalog");
+(function () {
+    const templateSelect = document.getElementById("template_id");
+    const useTemplateMode = document.getElementById("use_template_mode");
+    const centralCatalog = document.getElementById("central_catalog");
+    const demirbasToggle = document.getElementById("is_demirbas");
+    const demirbasBlock = document.getElementById("demirbas_block");
+    const demirbasInput = document.getElementById("demirbas_no");
+    const calibrationToggle = document.getElementById("calibration_required");
+    const calibrationBlock = document.getElementById("calibration_block");
+    const airportSelect = document.getElementById("havalimani_id");
+    const boxSelect = document.getElementById("kutu_id");
+    const assetType = "{{ preselected_asset_type or 'equipment' }}";
+    const parentSelect = document.getElementById("parent_asset_id");
 
-function applyTemplateData() {
-    if (!templateSelect) return;
-    const selected = templateSelect.options[templateSelect.selectedIndex];
-    if (!selected || !selected.value) return;
-
-    const map = {
-        ad: selected.dataset.name || "",
-        kategori: selected.dataset.category || "",
-        marka: selected.dataset.brand || "",
-        model: selected.dataset.model || "",
-        bakim_periyodu_gun: selected.dataset.period || "180",
-        teknik: selected.dataset.specs || selected.dataset.description || "",
+    const toggleSection = function (toggle, block, requiredInput) {
+        const visible = !!(toggle && toggle.checked);
+        if (block) {
+            block.classList.toggle("hidden-block", !visible);
+        }
+        if (requiredInput) {
+            requiredInput.required = visible;
+        }
     };
 
-    Object.keys(map).forEach((key) => {
-        const field = document.getElementById(key);
-        if (field && map[key]) field.value = map[key];
-    });
-}
-
-if (templateSelect) {
-    templateSelect.addEventListener("change", function () {
-        if (this.value) {
-            useTemplateMode.checked = true;
-            applyTemplateData();
+    const filterBoxesByAirport = function () {
+        if (!boxSelect) return;
+        const airportId = airportSelect ? (airportSelect.value || "") : "";
+        Array.from(boxSelect.options).forEach(function (option, index) {
+            if (index === 0) {
+                option.hidden = false;
+                return;
+            }
+            const owner = option.getAttribute("data-airport") || "";
+            option.hidden = !!airportId && owner !== airportId;
+        });
+        if (boxSelect.selectedOptions.length && boxSelect.selectedOptions[0].hidden) {
+            boxSelect.value = "";
         }
-    });
-}
+    };
 
-if (useTemplateMode) {
-    useTemplateMode.addEventListener("change", function () {
-        if (!this.checked && templateSelect) {
-            templateSelect.value = "";
-        }
-    });
-}
+    const applyTemplateData = function () {
+        if (!templateSelect) return;
+        const selected = templateSelect.options[templateSelect.selectedIndex];
+        if (!selected || !selected.value) return;
+        const map = {
+            ad: selected.dataset.name || "",
+            kategori: selected.dataset.category || "",
+            marka: selected.dataset.brand || "",
+            model: selected.dataset.model || "",
+            bakim_periyodu_ay: selected.dataset.periodMonths || "6",
+            teknik: selected.dataset.specs || selected.dataset.description || "",
+        };
+        Object.keys(map).forEach(function (key) {
+            const field = document.getElementById(key);
+            if (field && map[key]) field.value = map[key];
+        });
+    };
 
-if (centralCatalog) {
-    centralCatalog.addEventListener("change", function () {
-        if (this.checked && useTemplateMode) {
-            useTemplateMode.checked = false;
-            if (templateSelect) templateSelect.value = "";
-        }
-    });
-}
+    if (templateSelect) {
+        templateSelect.addEventListener("change", function () {
+            if (this.value) {
+                if (useTemplateMode) useTemplateMode.checked = true;
+                applyTemplateData();
+            }
+        });
+    }
+
+    if (useTemplateMode) {
+        useTemplateMode.addEventListener("change", function () {
+            if (!this.checked && templateSelect) templateSelect.value = "";
+        });
+    }
+
+    if (centralCatalog && useTemplateMode) {
+        centralCatalog.addEventListener("change", function () {
+            if (this.checked) useTemplateMode.checked = false;
+        });
+    }
+
+    if (demirbasToggle) {
+        demirbasToggle.addEventListener("change", function () {
+            toggleSection(demirbasToggle, demirbasBlock, demirbasInput);
+        });
+        toggleSection(demirbasToggle, demirbasBlock, demirbasInput);
+    }
+
+    if (calibrationToggle) {
+        calibrationToggle.addEventListener("change", function () {
+            toggleSection(calibrationToggle, calibrationBlock, null);
+        });
+        toggleSection(calibrationToggle, calibrationBlock, null);
+    }
+
+    if (airportSelect) {
+        airportSelect.addEventListener("change", filterBoxesByAirport);
+    }
+    filterBoxesByAirport();
+
+    if (assetType === "spare_part" && parentSelect && !parentSelect.value) {
+        parentSelect.focus();
+    }
+})();
 </script>
 {% endblock %}

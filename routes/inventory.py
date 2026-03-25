@@ -7,6 +7,7 @@ from urllib.parse import unquote, urlparse
 from datetime import datetime, timedelta
 
 import pandas as pd
+import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
@@ -106,6 +107,22 @@ DRILL_ALLOWED_MIME_TYPES = (
     "application/vnd.rar",
     "application/octet-stream",
 )
+ASSET_STATUS_ACTIVE = "aktif"
+ASSET_STATUS_PASSIVE = "pasif"
+ASSET_STATUS_VALUES = {ASSET_STATUS_ACTIVE, ASSET_STATUS_PASSIVE}
+MAINTENANCE_MONTH_VALUES = list(range(1, 13))
+CALIBRATION_PDF_MAX_BYTES = 15 * 1024 * 1024
+INVENTORY_CATEGORY_OPTIONS = [
+    "Elektronik",
+    "Mekanik",
+    "Hidrolik",
+    "Kurtarma",
+    "Koruyucu Donanım",
+    "Haberleşme",
+    "Aydınlatma",
+    "Diğer",
+]
+_MISSING = object()
 
 
 def havalimani_filtreli_sorgu(model_sinifi):
@@ -680,31 +697,409 @@ def _parse_positive_int(raw_value, default=1):
     return max(value, 1)
 
 
+def _parse_non_negative_int(raw_value, default=0):
+    try:
+        value = int(str(raw_value).strip())
+    except (TypeError, ValueError, AttributeError):
+        return default
+    return max(value, 0)
+
+
+def _parse_month_period(raw_value, default=6):
+    value = _parse_positive_int(raw_value, default=default)
+    return min(max(value, 1), 12)
+
+
+def _to_bool(raw_value):
+    return str(raw_value or "").strip().lower() in {"1", "true", "on", "evet", "yes"}
+
+
+def _field_present(form_data, key):
+    if form_data is None:
+        return False
+    try:
+        return key in form_data
+    except Exception:
+        return form_data.get(key) is not None
+
+
+def _first_value(form_data, *keys, default=None):
+    for key in keys:
+        if _field_present(form_data, key):
+            return form_data.get(key)
+    return default
+
+
+def _canonical_asset_payload(form_data, *, mode):
+    payload = {}
+
+    payload["airport_id"] = _first_value(form_data, "airport_id", "havalimani_id")
+    payload["asset_name"] = _first_value(form_data, "asset_name", "ad")
+    payload["serial_no"] = _first_value(form_data, "serial_no", "seri_no")
+    payload["unit_count"] = _first_value(form_data, "unit_count", "stok")
+    payload["status"] = _first_value(form_data, "status", "durum")
+    payload["is_demirbas"] = _first_value(form_data, "is_demirbas")
+    payload["demirbas_no"] = _first_value(form_data, "demirbas_no", "asset_tag")
+    payload["last_maintenance_date"] = _first_value(
+        form_data,
+        "last_maintenance_date",
+        "son_bakim_tarihi",
+        "bakim",
+    )
+    payload["maintenance_period_months"] = _first_value(form_data, "maintenance_period_months", "bakim_periyodu_ay")
+    payload["calibration_required"] = _first_value(form_data, "calibration_required")
+    payload["calibration_period_months"] = _first_value(form_data, "calibration_period_months", "calibration_periyodu_ay")
+    payload["last_calibration_date"] = _first_value(form_data, "last_calibration_date")
+    payload["next_calibration_date"] = _first_value(form_data, "next_calibration_date")
+    payload["acquired_date"] = _first_value(form_data, "acquired_date", "edinim_tarihi")
+    payload["warranty_end_date"] = _first_value(form_data, "warranty_end_date", "garanti_bitis_tarihi")
+    payload["box_id"] = _first_value(form_data, "box_id", "kutu_id")
+    payload["box_code"] = _first_value(form_data, "kutu_kodu")
+    payload["manual_url"] = _first_value(form_data, "manual_url")
+    payload["technical_specs"] = _first_value(form_data, "technical_specs", "teknik")
+    payload["notes"] = _first_value(form_data, "notes", "notlar", "note")
+    payload["parent_asset_id"] = _first_value(form_data, "parent_asset_id")
+
+    payload["catalog_mode"] = "existing_template"
+    if _to_bool(_first_value(form_data, "central_catalog")):
+        payload["catalog_mode"] = "create_template_owner"
+    elif _field_present(form_data, "use_template_mode") and not _to_bool(_first_value(form_data, "use_template_mode")):
+        payload["catalog_mode"] = "create_template_owner"
+
+    payload["template_id"] = _first_value(form_data, "template_id")
+    payload["maintenance_form_template_id"] = _first_value(form_data, "maintenance_form_template_id", "bakim_formu_id")
+    payload["category"] = _first_value(form_data, "category", "kategori")
+    payload["brand"] = _first_value(form_data, "brand", "marka")
+    payload["model_code"] = _first_value(form_data, "model_code", "model")
+    payload["template_name_seed"] = _first_value(form_data, "template_name_seed", "asset_name", "ad")
+
+    if mode in {"asset_duzenle", "quick_detail"}:
+        payload["airport_id"] = None
+        payload["asset_name"] = None
+        payload["acquired_date"] = None
+        payload["warranty_end_date"] = None
+        payload["box_id"] = None
+        payload["box_code"] = None
+        payload["technical_specs"] = None
+        payload["template_id"] = None
+        payload["catalog_mode"] = None
+        payload["maintenance_form_template_id"] = None
+        payload["category"] = None
+        payload["brand"] = None
+        payload["model_code"] = None
+        payload["template_name_seed"] = None
+    return payload
+
+
+def _months_to_days(period_months):
+    months = _parse_month_period(period_months, default=6)
+    return months * 30
+
+
+def _is_valid_url(raw_value):
+    value = str(raw_value or "").strip()
+    if not value:
+        return True
+    parsed = urlparse(value)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _safe_asset_display_name(asset):
+    base_name = (
+        (asset.equipment_template.name if asset and asset.equipment_template else "")
+        or (asset.legacy_material.ad if asset and asset.legacy_material else "")
+        or "asset"
+    )
+    return secure_upload_filename(base_name).strip().lower() or "asset"
+
+
+def _can_manage_asset_registry():
+    return bool(getattr(current_user, "is_sahip", False) or getattr(current_user, "is_airport_manager", False))
+
+
+def _resolve_allowed_categories():
+    rows = (
+        db.session.query(EquipmentTemplate.category)
+        .filter(
+            EquipmentTemplate.is_deleted.is_(False),
+            EquipmentTemplate.category.isnot(None),
+            EquipmentTemplate.category != "",
+        )
+        .distinct()
+        .order_by(EquipmentTemplate.category.asc())
+        .all()
+    )
+    seen = []
+    for row in rows:
+        value = guvenli_metin(row[0] or "").strip()
+        if value and value not in seen:
+            seen.append(value)
+    for item in INVENTORY_CATEGORY_OPTIONS:
+        if item not in seen:
+            seen.append(item)
+    return seen
+
+
 def _normalize_status(status_value):
-    mapping = {
-        "Aktif": "aktif",
-        "Bakımda": "bakimda",
-        "Arızalı": "arizali",
-        "Hurda": "hurda",
-        "Pasif": "pasif",
-        "aktif": "aktif",
-        "bakimda": "bakimda",
-        "arizali": "arizali",
-        "hurda": "hurda",
-        "pasif": "pasif",
-    }
-    return mapping.get(status_value, "aktif")
+    value = str(status_value or "").strip().lower()
+    if value in {"aktif", "active"}:
+        return ASSET_STATUS_ACTIVE
+    if value in {"pasif", "passive", "bakimda", "arizali", "hurda"}:
+        return ASSET_STATUS_PASSIVE
+    if value in {"bakımda", "arızalı"}:
+        return ASSET_STATUS_PASSIVE
+    return ASSET_STATUS_ACTIVE
 
 
 def _display_status(status_value):
     mapping = {
-        "aktif": "Aktif",
-        "bakimda": "Bakımda",
-        "arizali": "Arızalı",
-        "hurda": "Hurda",
-        "pasif": "Pasif",
+        ASSET_STATUS_ACTIVE: "Aktif",
+        ASSET_STATUS_PASSIVE: "Pasif",
     }
     return mapping.get(status_value, "Aktif")
+
+
+def _sync_maintenance_plan_for_asset(asset, template=None):
+    if not asset:
+        return
+    template = template or asset.equipment_template
+    active_plan = (
+        MaintenancePlan.query.filter_by(asset_id=asset.id, is_deleted=False)
+        .order_by(MaintenancePlan.created_at.desc())
+        .first()
+    )
+
+    if _normalize_status(asset.status) != ASSET_STATUS_ACTIVE:
+        plans = MaintenancePlan.query.filter_by(asset_id=asset.id, is_deleted=False).all()
+        for plan in plans:
+            plan.is_active = False
+        asset.next_maintenance_date = None
+        if asset.legacy_material:
+            asset.legacy_material.gelecek_bakim_tarihi = None
+        return
+
+    period_months = _parse_month_period(
+        asset.maintenance_period_months
+        or (template.maintenance_period_months if template else None)
+        or max(int((asset.maintenance_period_days or (template.maintenance_period_days if template else 180) or 180) / 30), 1),
+        default=6,
+    )
+    period_days = _months_to_days(period_months)
+    asset.maintenance_period_months = period_months
+    asset.maintenance_period_days = period_days
+    reference_date = asset.last_maintenance_date or get_tr_now().date()
+
+    if active_plan is None:
+        active_plan = MaintenancePlan(
+            name=f"{template.name if template else 'Ekipman'} Periyodik Bakım Planı",
+            equipment_template_id=template.id if template else None,
+            asset_id=asset.id,
+            owner_airport_id=asset.havalimani_id,
+            period_days=period_days,
+            start_date=get_tr_now().date(),
+            last_maintenance_date=asset.last_maintenance_date,
+            is_active=True,
+        )
+        db.session.add(active_plan)
+    else:
+        active_plan.is_active = True
+        active_plan.period_days = period_days
+        active_plan.last_maintenance_date = asset.last_maintenance_date
+        if template and not active_plan.equipment_template_id:
+            active_plan.equipment_template_id = template.id
+
+    active_plan.recalculate_next_due_date(reference_date)
+    asset.next_maintenance_date = active_plan.next_due_date
+    if asset.legacy_material:
+        asset.legacy_material.gelecek_bakim_tarihi = active_plan.next_due_date
+
+
+def _sync_calibration_schedule_for_asset(asset):
+    if not table_exists("calibration_schedule"):
+        return None
+    schedule = CalibrationSchedule.query.filter_by(asset_id=asset.id, is_deleted=False).first()
+    if not asset.calibration_required:
+        if schedule:
+            schedule.is_active = False
+        return schedule
+    if schedule is None:
+        schedule = CalibrationSchedule(
+            asset_id=asset.id,
+            period_days=asset.calibration_period_days or 180,
+            warning_days=15,
+            provider="",
+            is_active=True,
+            note="",
+        )
+        db.session.add(schedule)
+        db.session.flush()
+    else:
+        schedule.period_days = asset.calibration_period_days or schedule.period_days or 180
+        schedule.is_active = True
+    return schedule
+
+
+def _validate_calibration_certificate_upload(upload):
+    if not upload or not upload.filename:
+        return None, "Kalibrasyon sertifikası seçilmedi."
+    safe_name = secure_upload_filename(upload.filename)
+    if not safe_name.lower().endswith(".pdf"):
+        return None, "Kalibrasyon sertifikası sadece PDF olabilir."
+    if not is_allowed_mime(safe_name, allowed_mime_prefixes=("application/pdf",), upload=upload):
+        return None, "Yüklenen dosya geçerli bir PDF değil."
+    stream = getattr(upload, "stream", None)
+    if stream is not None:
+        current_pos = stream.tell()
+        stream.seek(0, io.SEEK_END)
+        file_size = int(stream.tell() or 0)
+        stream.seek(current_pos)
+    else:
+        file_size = int(getattr(upload, "content_length", 0) or 0)
+    if file_size > CALIBRATION_PDF_MAX_BYTES:
+        return None, "Kalibrasyon sertifikası en fazla 15 MB olabilir."
+    return safe_name, None
+
+
+def _upload_calibration_certificate(asset, calibration_date, upload):
+    safe_name, upload_error = _validate_calibration_certificate_upload(upload)
+    if upload_error:
+        raise ValueError(upload_error)
+
+    service = get_drill_drive_service()
+    root_name = "Kalibrasyonlar"
+    parent_folder_id = service._config("GOOGLE_DRIVE_PARENT_FOLDER_ID", "root")
+    root_id = service._find_folder(root_name, parent_folder_id) or service._create_folder(root_name, parent_folder_id)
+    airport_name = f"{asset.airport.kodu} - {asset.airport.ad}" if asset.airport else "Birim"
+    airport_folder_id = service._find_folder(airport_name, root_id) or service._create_folder(airport_name, root_id)
+    asset_folder_name = f"{asset.asset_code or 'ASSET'}-{_safe_asset_display_name(asset)}"
+    asset_folder_id = service._find_folder(asset_folder_name, airport_folder_id) or service._create_folder(asset_folder_name, airport_folder_id)
+
+    date_str = calibration_date.strftime("%Y-%m-%d")
+    base_filename = f"{_safe_asset_display_name(asset)}_{date_str}.pdf"
+    candidate = base_filename
+    suffix = 1
+    while service._request_json(
+        "GET",
+        f"{service.DRIVE_API_BASE}/files",
+        params={
+            "q": (
+                f"trashed = false and "
+                f"name = '{service._escape_query(candidate)}' and "
+                f"'{asset_folder_id}' in parents"
+            ),
+            "fields": "files(id,name)",
+            "pageSize": 1,
+        },
+    ).get("files"):
+        suffix += 1
+        candidate = f"{_safe_asset_display_name(asset)}_{date_str}_{suffix}.pdf"
+
+    upload_result = service.upload_file_to_folder(
+        folder_id=asset_folder_id,
+        upload=upload,
+        filename=candidate,
+        mime_type="application/pdf",
+    )
+    return {
+        "certificate_file": upload_result["filename"],
+        "drive_file_id": upload_result["drive_file_id"],
+        "drive_folder_id": asset_folder_id,
+        "mime_type": "application/pdf",
+        "size_bytes": upload_result.get("file_size"),
+    }
+
+
+def _resolve_box_from_payload(canonical_payload, airport_id, *, allow_auto_create=False):
+    raw_box_id = canonical_payload.get("box_id")
+    box_id = None
+    try:
+        if raw_box_id not in (None, ""):
+            box_id = int(raw_box_id)
+    except (TypeError, ValueError):
+        box_id = None
+    if box_id:
+        box = Kutu.query.filter_by(id=box_id, is_deleted=False).first()
+        if not box:
+            raise ValueError("Seçilen kutu bulunamadı.")
+        if airport_id and box.havalimani_id != airport_id:
+            raise ValueError("Seçilen kutu, seçilen havalimanına ait değil.")
+        return box
+
+    box_code = guvenli_metin(canonical_payload.get("box_code") or "").strip().upper()
+    if not box_code:
+        raise ValueError("Kutu seçimi zorunludur.")
+    box = Kutu.query.filter_by(kodu=box_code, havalimani_id=airport_id, is_deleted=False).first()
+    if box:
+        return box
+    if not allow_auto_create:
+        raise ValueError("Seçilen kutu bulunamadı.")
+    return _ensure_box(box_code, airport_id)
+
+
+def _normalized_asset_contract_values(canonical_payload, *, mode, current_asset=None):
+    values = {}
+
+    if mode == "create":
+        try:
+            values["airport_id"] = int(canonical_payload.get("airport_id")) if canonical_payload.get("airport_id") not in (None, "") else None
+        except (TypeError, ValueError):
+            values["airport_id"] = None
+        values["asset_name"] = guvenli_metin(canonical_payload.get("asset_name") or "").strip()
+        values["acquired_date"] = _parse_date(canonical_payload.get("acquired_date"))
+        values["warranty_end_date"] = _parse_date(canonical_payload.get("warranty_end_date"))
+        values["technical_specs"] = guvenli_metin(canonical_payload.get("technical_specs") or "").strip()
+        values["template_id"] = int(canonical_payload.get("template_id")) if canonical_payload.get("template_id") not in (None, "") else None
+        values["catalog_mode"] = (canonical_payload.get("catalog_mode") or "existing_template").strip()
+        values["maintenance_form_template_id"] = (
+            int(canonical_payload.get("maintenance_form_template_id"))
+            if canonical_payload.get("maintenance_form_template_id") not in (None, "")
+            else None
+        )
+        values["category"] = guvenli_metin(canonical_payload.get("category") or "").strip()
+        values["brand"] = guvenli_metin(canonical_payload.get("brand") or "").strip()
+        values["model_code"] = guvenli_metin(canonical_payload.get("model_code") or "").strip()
+        values["template_name_seed"] = guvenli_metin(canonical_payload.get("template_name_seed") or "").strip()
+
+    values["serial_no"] = guvenli_metin(canonical_payload.get("serial_no") or (current_asset.serial_no if current_asset else "")).strip()
+    values["unit_count"] = _parse_positive_int(canonical_payload.get("unit_count"), default=(current_asset.unit_count if current_asset else 1) or 1)
+    values["status"] = _normalize_status(canonical_payload.get("status") or (current_asset.status if current_asset else ASSET_STATUS_ACTIVE))
+    values["is_demirbas"] = _to_bool(canonical_payload.get("is_demirbas"))
+    values["demirbas_no"] = guvenli_metin(canonical_payload.get("demirbas_no") or "").strip() if values["is_demirbas"] else ""
+    values["last_maintenance_date"] = _parse_date(canonical_payload.get("last_maintenance_date"))
+    values["maintenance_period_months"] = _parse_month_period(
+        canonical_payload.get("maintenance_period_months"),
+        default=(current_asset.maintenance_period_months if current_asset else 6) or 6,
+    )
+    values["maintenance_period_days"] = _months_to_days(values["maintenance_period_months"])
+    values["calibration_required"] = _to_bool(canonical_payload.get("calibration_required"))
+    values["calibration_period_months"] = _parse_month_period(canonical_payload.get("calibration_period_months"), default=6)
+    values["calibration_period_days"] = _months_to_days(values["calibration_period_months"]) if values["calibration_required"] else None
+    values["last_calibration_date"] = _parse_date(canonical_payload.get("last_calibration_date")) if values["calibration_required"] else None
+    values["next_calibration_date"] = _parse_date(canonical_payload.get("next_calibration_date")) if values["calibration_required"] else None
+    values["manual_url"] = str(
+        guvenli_metin(canonical_payload.get("manual_url") or (current_asset.manual_url if current_asset else "")) or ""
+    ).strip()
+    values["notes"] = guvenli_metin(canonical_payload.get("notes") or "").strip()
+
+    raw_parent_id = canonical_payload.get("parent_asset_id")
+    try:
+        values["parent_asset_id"] = int(raw_parent_id) if raw_parent_id not in (None, "") else None
+    except (TypeError, ValueError):
+        values["parent_asset_id"] = None
+    return values
+
+
+def _validate_asset_contract_values(values, *, mode, current_asset=None):
+    if values.get("is_demirbas") and not values.get("demirbas_no"):
+        raise ValueError("Demirbaş seçildiyse demirbaş numarası zorunludur.")
+    if not _is_valid_url(values.get("manual_url")):
+        raise ValueError("Kullanım kılavuzu linki geçerli bir URL olmalıdır.")
+    if values.get("status") not in ASSET_STATUS_VALUES:
+        raise ValueError("Durum sadece aktif veya pasif olabilir.")
+    if int(values.get("unit_count") or 1) < 1:
+        raise ValueError("Stok birim sayısı en az 1 olmalıdır.")
+    if mode in {"asset_duzenle", "quick_detail"} and current_asset and values.get("parent_asset_id") == current_asset.id:
+        raise ValueError("Bir ekipman kendisine bağlanamaz.")
 
 
 def _ensure_box(kutu_kodu, havalimani_id, marka=None):
@@ -724,28 +1119,40 @@ def _ensure_box(kutu_kodu, havalimani_id, marka=None):
     return kutu
 
 
-def _ensure_template_from_form(form_data, selected_template_id):
+def _ensure_template_from_form(form_data, selected_template_id, *, allow_create=False):
     if selected_template_id:
         template = db.session.get(EquipmentTemplate, selected_template_id)
         if template and not template.is_deleted and template.is_active:
             return template
         return None
 
-    template_name = guvenli_metin(form_data.get("ad") or "").strip()
+    if not allow_create:
+        return None
+
+    template_name = guvenli_metin(_first_value(form_data, "template_name_seed", "asset_name", "ad") or "").strip()
     if not template_name:
         return None
+    category_options = _resolve_allowed_categories()
+    category = guvenli_metin(_first_value(form_data, "category", "kategori") or "").strip()
+    if category and category not in category_options:
+        category = ""
+    period_months = _parse_month_period(_first_value(form_data, "maintenance_period_months", "bakim_periyodu_ay"), default=6)
 
     template = EquipmentTemplate(
         name=template_name,
-        category=guvenli_metin(form_data.get("kategori") or "").strip(),
-        brand=guvenli_metin(form_data.get("marka") or "").strip(),
-        model_code=guvenli_metin(form_data.get("model") or "").strip(),
+        category=category,
+        brand=guvenli_metin(_first_value(form_data, "brand", "marka") or "").strip(),
+        model_code=guvenli_metin(_first_value(form_data, "model_code", "model") or "").strip(),
         description=guvenli_metin(form_data.get("aciklama") or "").strip(),
-        technical_specs=guvenli_metin(form_data.get("teknik") or "").strip(),
-        manufacturer=guvenli_metin(form_data.get("uretici") or "").strip(),
-        maintenance_period_days=form_data.get("bakim_periyodu_gun", type=int) or 180,
+        technical_specs=guvenli_metin(_first_value(form_data, "technical_specs", "teknik") or "").strip(),
+        maintenance_period_months=period_months,
+        maintenance_period_days=_months_to_days(period_months),
         criticality_level=(form_data.get("kritik_seviye") or "normal").strip(),
-        default_maintenance_form_id=form_data.get("bakim_formu_id", type=int) or None,
+        default_maintenance_form_id=(
+            form_data.get("maintenance_form_template_id", type=int)
+            or form_data.get("bakim_formu_id", type=int)
+            or None
+        ),
         is_active=True,
     )
     db.session.add(template)
@@ -754,25 +1161,49 @@ def _ensure_template_from_form(form_data, selected_template_id):
 
 
 def _create_asset_and_legacy_material(template, kutu, havalimani_id, form_data):
-    status_display = form_data.get("durum", "Aktif")
-    status_internal = _normalize_status(status_display)
+    def _raw(key, default=""):
+        value = form_data.get(key, default)
+        return default if value is None else value
+
+    def _as_int(key, default=None):
+        value = _raw(key, default)
+        try:
+            return int(value) if value not in (None, "") else default
+        except (TypeError, ValueError):
+            return default
+
+    canonical_payload = _canonical_asset_payload(form_data, mode="create")
+    canonical_payload["airport_id"] = havalimani_id
+    values = _normalized_asset_contract_values(canonical_payload, mode="create")
+    _validate_asset_contract_values(values, mode="create")
+    status_display = _display_status(values["status"])
+    status_internal = values["status"]
+    is_demirbas = values["is_demirbas"]
+    demirbas_no = values["demirbas_no"]
+    stock_count = values["unit_count"]
+    maintenance_period_months = values["maintenance_period_months"]
+    maintenance_period_days = values["maintenance_period_days"]
+    calibration_required = values["calibration_required"]
+    calibration_period_days = values["calibration_period_days"]
+    manual_url = values["manual_url"]
 
     legacy_material = Malzeme(
-        ad=guvenli_metin(form_data.get("ad") or template.name),
-        seri_no=guvenli_metin(form_data.get("seri_no") or ""),
-        teknik_ozellikler=guvenli_metin(form_data.get("teknik") or template.technical_specs),
-        stok_miktari=form_data.get("stok", type=int) or 1,
+        ad=values["asset_name"] or guvenli_metin(form_data.get("ad") or template.name),
+        seri_no=values["serial_no"],
+        teknik_ozellikler=values["technical_specs"] or guvenli_metin(form_data.get("teknik") or template.technical_specs),
+        stok_miktari=stock_count,
         durum=status_display,
-        kritik_mi=True if form_data.get("kritik") == "on" else False,
-        son_bakim_tarihi=_parse_date(form_data.get("bakim")),
+        kritik_mi=False,
+        son_bakim_tarihi=values["last_maintenance_date"],
         gelecek_bakim_tarihi=_parse_date(form_data.get("gelecek_bakim")),
+        kalibrasyon_tarihi=values["last_calibration_date"] if calibration_required else None,
         kutu_id=kutu.id,
         havalimani_id=havalimani_id,
     )
     db.session.add(legacy_material)
     db.session.flush()
 
-    parent_asset_id = form_data.get("parent_asset_id", type=int)
+    parent_asset_id = _as_int("parent_asset_id")
     parent_asset = None
     if parent_asset_id:
         parent_asset = InventoryAsset.query.filter_by(
@@ -786,41 +1217,33 @@ def _create_asset_and_legacy_material(template, kutu, havalimani_id, form_data):
         havalimani_id=havalimani_id,
         legacy_material_id=legacy_material.id,
         parent_asset_id=parent_asset.id if parent_asset else None,
-        serial_no=guvenli_metin(form_data.get("seri_no") or ""),
+        asset_type="spare_part" if parent_asset else "equipment",
+        serial_no=values["serial_no"],
         qr_code="",
-        asset_tag=guvenli_metin(form_data.get("demirbas_no") or ""),
-        unit_count=form_data.get("stok", type=int) or 1,
-        depot_location=guvenli_metin(form_data.get("depo_konumu") or kutu.kodu),
+        asset_tag=demirbas_no,
+        is_demirbas=is_demirbas,
+        unit_count=stock_count,
+        depot_location=guvenli_metin(form_data.get("depo_konumu") or kutu.kodu).strip() or kutu.kodu,
         status=status_internal,
-        maintenance_state=(form_data.get("bakim_durumu") or "normal").strip(),
-        last_maintenance_date=_parse_date(form_data.get("bakim")),
-        next_maintenance_date=_parse_date(form_data.get("gelecek_bakim")),
-        acquired_date=_parse_date(form_data.get("edinim_tarihi")),
-        warranty_end_date=_parse_date(form_data.get("garanti_bitis_tarihi")),
-        notes=guvenli_metin(form_data.get("notlar") or ""),
-        maintenance_period_days=form_data.get("bakim_periyodu_gun", type=int) or template.maintenance_period_days,
-        is_critical=True if form_data.get("kritik") == "on" else False,
+        maintenance_state="normal",
+        last_maintenance_date=values["last_maintenance_date"],
+        next_maintenance_date=None,
+        calibration_required=calibration_required,
+        calibration_period_days=calibration_period_days,
+        last_calibration_date=values["last_calibration_date"] if calibration_required else None,
+        next_calibration_date=values["next_calibration_date"] if calibration_required else None,
+        acquired_date=values["acquired_date"],
+        warranty_end_date=values["warranty_end_date"],
+        manual_url=manual_url,
+        notes=values["notes"],
+        maintenance_period_days=maintenance_period_days,
+        maintenance_period_months=maintenance_period_months,
+        is_critical=False,
     )
     db.session.add(asset)
     db.session.flush()
     asset.qr_code = _asset_qr_url(asset)
-
-    period_days = asset.maintenance_period_days or template.maintenance_period_days
-    if period_days:
-        plan = MaintenancePlan(
-            name=f"{template.name} Periyodik Bakım Planı",
-            equipment_template_id=template.id,
-            asset_id=asset.id,
-            owner_airport_id=havalimani_id,
-            period_days=period_days,
-            start_date=get_tr_now().date(),
-            last_maintenance_date=asset.last_maintenance_date,
-            is_active=True,
-        )
-        plan.recalculate_next_due_date(asset.last_maintenance_date or get_tr_now().date())
-        asset.next_maintenance_date = asset.next_maintenance_date or plan.next_due_date
-        legacy_material.gelecek_bakim_tarihi = legacy_material.gelecek_bakim_tarihi or asset.next_maintenance_date
-        db.session.add(plan)
+    _sync_maintenance_plan_for_asset(asset, template=template)
 
     return asset, legacy_material
 
@@ -1048,16 +1471,11 @@ def dashboard_alert_sync():
 def envanter():
     selected_airport = request.args.get("havalimani_id", type=int)
     selected_category = request.args.get("kategori", "").strip()
-    selected_maintenance = request.args.get("bakim_durumu", "").strip()
     selected_work_order = request.args.get("is_emri_durumu", "").strip()
-    selected_critical = request.args.get("kritik", "").strip()
 
     query = havalimani_filtreli_sorgu(Malzeme)
     if _can_view_all_operational_scope() and selected_airport:
         query = query.filter(Malzeme.havalimani_id == selected_airport)
-
-    if selected_critical == "1":
-        query = query.filter(Malzeme.kritik_mi.is_(True))
 
     malzemeler = query.order_by(Malzeme.created_at.desc()).all()
     malzemeler = [
@@ -1065,20 +1483,6 @@ def envanter():
         for malzeme in malzemeler
         if not malzeme.linked_asset or malzeme.linked_asset.lifecycle_status not in {"disposed", "decommissioned"}
     ]
-    today = get_tr_now().date()
-
-    if selected_maintenance:
-        filtered = []
-        for malzeme in malzemeler:
-            next_date = malzeme.gelecek_bakim_tarihi
-            if selected_maintenance == "geciken" and next_date and next_date < today:
-                filtered.append(malzeme)
-            elif selected_maintenance == "yaklasan" and next_date and today <= next_date <= (today + timedelta(days=15)):
-                filtered.append(malzeme)
-            elif selected_maintenance == "normal" and (not next_date or next_date > (today + timedelta(days=15))):
-                filtered.append(malzeme)
-        malzemeler = filtered
-
     if selected_category:
         malzemeler = [
             item
@@ -1125,9 +1529,7 @@ def envanter():
         categories=[row[0] for row in categories],
         selected_airport=selected_airport,
         selected_category=selected_category,
-        selected_maintenance=selected_maintenance,
         selected_work_order=selected_work_order,
-        selected_critical=selected_critical,
     )
 
 
@@ -1136,51 +1538,124 @@ def envanter():
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
 @permission_required("inventory.create")
 def malzeme_ekle():
+    if not _can_manage_asset_registry():
+        abort(403)
+
     templates = EquipmentTemplate.query.filter_by(is_deleted=False, is_active=True).order_by(
         EquipmentTemplate.name.asc()
     ).all()
     form_templates = MaintenanceFormTemplate.query.filter_by(is_deleted=False, is_active=True).order_by(
         MaintenanceFormTemplate.name.asc()
     ).all()
+    category_options = _resolve_allowed_categories()
+    airport_options = _visible_operational_airports() if current_user.is_sahip else ([current_user.havalimani] if current_user.havalimani else [])
+    airport_ids = [item.id for item in airport_options if item]
+    box_query = Kutu.query.filter(Kutu.is_deleted.is_(False))
+    if airport_ids:
+        box_query = box_query.filter(Kutu.havalimani_id.in_(airport_ids))
+    else:
+        box_query = box_query.filter(sa.text("1=0"))
+    box_options = box_query.order_by(Kutu.kodu.asc()).all()
 
     if request.method == "POST":
-        kutu_kodu = guvenli_metin(request.form.get("kutu_kodu") or "").upper().strip()
-        if not kutu_kodu:
-            flash("Kutu/depo kodu zorunludur.", "danger")
-            return redirect(url_for("inventory.malzeme_ekle"))
-
+        canonical_payload = _canonical_asset_payload(request.form, mode="create")
         if current_user.is_sahip:
-            havalimani_id = request.form.get("havalimani_id", type=int)
+            havalimani_id = request.form.get("airport_id", type=int) or request.form.get("havalimani_id", type=int)
             if not havalimani_id:
                 havalimani_id = current_user.havalimani_id or 1
         else:
             havalimani_id = current_user.havalimani_id
+        canonical_payload["airport_id"] = havalimani_id
+
+        try:
+            kutu = _resolve_box_from_payload(canonical_payload, havalimani_id, allow_auto_create=True)
+        except ValueError as exc:
+            flash(str(exc), "danger")
+            return redirect(url_for("inventory.malzeme_ekle"))
+
+        category_value = guvenli_metin(canonical_payload.get("category") or "").strip()
+        if not category_value:
+            category_value = "Diğer"
+            canonical_payload["category"] = category_value
+        if not category_value or category_value not in category_options:
+            flash("Kategori seçimi zorunludur ve listeden seçilmelidir.", "danger")
+            return redirect(url_for("inventory.malzeme_ekle"))
 
         template_id = request.form.get("template_id", type=int)
-        central_catalog_flag = request.form.get("central_catalog") == "on"
-        template = _ensure_template_from_form(request.form, template_id)
+        central_catalog_flag = (canonical_payload.get("catalog_mode") or "") == "create_template_owner"
+        can_manage_template_catalog = bool(current_user.is_sahip)
+        template = _ensure_template_from_form(request.form, template_id, allow_create=can_manage_template_catalog and central_catalog_flag)
 
         if not template and central_catalog_flag:
-            flash("Merkezi katalog kaydı için malzeme adı zorunludur.", "danger")
+            flash("Merkezi kataloga yeni şablon ekleme yetkisi sadece sahip rolünde.", "danger")
             return redirect(url_for("inventory.malzeme_ekle"))
 
         if not template:
-            # Şablon seçimi yapılmadıysa bile profesyonel yapıyı korumak için yerel bir şablon oluşturuyoruz.
-            template = _ensure_template_from_form(request.form, None)
-
-        if not template:
-            flash("Merkezi şablon oluşturulamadı.", "danger")
+            if can_manage_template_catalog:
+                template = _ensure_template_from_form(request.form, None, allow_create=True)
+            else:
+                flash("Bu işlem için mevcut merkezi şablon seçimi zorunludur.", "danger")
+                return redirect(url_for("inventory.malzeme_ekle"))
+        if template is None:
+            flash("Şablon bulunamadı veya oluşturulamadı.", "danger")
             return redirect(url_for("inventory.malzeme_ekle"))
 
-        kutu = _ensure_box(kutu_kodu, havalimani_id)
-        asset, legacy_material = _create_asset_and_legacy_material(
-            template=template,
-            kutu=kutu,
-            havalimani_id=havalimani_id,
-            form_data=request.form,
-        )
+        try:
+            asset, legacy_material = _create_asset_and_legacy_material(
+                template=template,
+                kutu=kutu,
+                havalimani_id=havalimani_id,
+                form_data=request.form,
+            )
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), "danger")
+            return redirect(url_for("inventory.malzeme_ekle"))
 
-        db.session.commit()
+        if asset.calibration_required:
+            calibration_date = asset.last_calibration_date or get_tr_now().date()
+            period_days = asset.calibration_period_days or 180
+            next_calibration_date = asset.next_calibration_date or (calibration_date + timedelta(days=period_days))
+            schedule = _sync_calibration_schedule_for_asset(asset)
+
+            certificate_upload = request.files.get("calibration_certificate")
+            certificate_payload = None
+            if certificate_upload and certificate_upload.filename:
+                try:
+                    certificate_payload = _upload_calibration_certificate(asset, calibration_date, certificate_upload)
+                except (ValueError, GoogleDriveError) as exc:
+                    db.session.rollback()
+                    flash(str(exc), "danger")
+                    return redirect(url_for("inventory.malzeme_ekle"))
+
+            calibration_record = CalibrationRecord(
+                asset_id=asset.id,
+                calibration_schedule_id=schedule.id,
+                calibration_date=calibration_date,
+                next_calibration_date=next_calibration_date,
+                calibrated_by_id=current_user.id,
+                provider=guvenli_metin(request.form.get("calibration_provider") or ""),
+                certificate_no=guvenli_metin(request.form.get("certificate_no") or ""),
+                certificate_file=certificate_payload["certificate_file"] if certificate_payload else None,
+                certificate_drive_file_id=certificate_payload["drive_file_id"] if certificate_payload else None,
+                certificate_drive_folder_id=certificate_payload["drive_folder_id"] if certificate_payload else None,
+                certificate_mime_type=certificate_payload["mime_type"] if certificate_payload else None,
+                certificate_size_bytes=certificate_payload["size_bytes"] if certificate_payload else None,
+                result_status="passed",
+                note=guvenli_metin(request.form.get("calibration_note") or ""),
+            )
+            db.session.add(calibration_record)
+            asset.last_calibration_date = calibration_date
+            asset.next_calibration_date = next_calibration_date
+        else:
+            _sync_calibration_schedule_for_asset(asset)
+
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            flash("Kayıt kaydedilemedi. Seri no veya ilişkili verilerde çakışma olabilir.", "danger")
+            return redirect(url_for("inventory.malzeme_ekle"))
         log_kaydet(
             "Envanter",
             f"Yeni ekipman eklendi: {legacy_material.ad} ({legacy_material.havalimani.kodu}) / Şablon: {template.name}",
@@ -1196,18 +1671,24 @@ def malzeme_ekle():
         flash("Malzeme başarıyla eklendi ve bakım varlığı oluşturuldu.", "success")
         return redirect(url_for("inventory.envanter"))
 
-    if current_user.is_sahip:
-        havalimanlari = _visible_operational_airports()
-    else:
-        havalimanlari = [current_user.havalimani] if current_user.havalimani else []
     parent_candidates = _asset_scope().order_by(InventoryAsset.created_at.desc()).limit(200).all()
+    default_parent_id = request.args.get("parent_asset_id", type=int)
+    preselected_asset_type = (request.args.get("asset_type") or "equipment").strip()
+    preselected_airport_id = current_user.havalimani_id if not current_user.is_sahip else (airport_options[0].id if airport_options else None)
 
     return render_template(
         "malzeme_ekle.html",
         templates=templates,
         form_templates=form_templates,
-        havalimanlari=havalimanlari,
+        havalimanlari=airport_options,
+        categories=category_options,
+        boxes=box_options,
         parent_candidates=parent_candidates,
+        default_parent_id=default_parent_id,
+        preselected_asset_type=preselected_asset_type,
+        preselected_airport_id=preselected_airport_id,
+        can_manage_template_catalog=bool(current_user.is_sahip),
+        maintenance_month_values=MAINTENANCE_MONTH_VALUES,
     )
 
 
@@ -1235,6 +1716,8 @@ def merkezi_katalog():
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 @permission_required("inventory.create")
 def merkezi_sablondan_envantere_ekle(template_id):
+    if not _can_manage_asset_registry():
+        abort(403)
     template = EquipmentTemplate.query.filter_by(id=template_id, is_deleted=False, is_active=True).first_or_404()
 
     if current_user.is_sahip:
@@ -1242,18 +1725,32 @@ def merkezi_sablondan_envantere_ekle(template_id):
     else:
         havalimani_id = current_user.havalimani_id
 
-    kutu_kodu = guvenli_metin(request.form.get("kutu_kodu") or "MERKEZ-01").upper().strip()
-    kutu = _ensure_box(kutu_kodu, havalimani_id)
+    canonical_payload = _canonical_asset_payload(request.form, mode="create")
+    canonical_payload["airport_id"] = havalimani_id
+    try:
+        kutu = _resolve_box_from_payload(canonical_payload, havalimani_id, allow_auto_create=True)
+    except ValueError as exc:
+        flash(str(exc) or "Merkezi şablondan ekleme için kutu seçimi zorunludur.", "danger")
+        return redirect(url_for("maintenance.ekipman_sablonlari"))
 
     asset, legacy_material = _create_asset_and_legacy_material(
         template=template,
         kutu=kutu,
         havalimani_id=havalimani_id,
-        form_data=request.form,
+        form_data={
+            **request.form,
+            "bakim_periyodu_ay": str(_parse_month_period(template.maintenance_period_months or max(int((template.maintenance_period_days or 180) / 30), 1))),
+            "kategori": template.category or "",
+        },
     )
     legacy_material.ad = template.name
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash("Merkezi katalogdan ekipman eklenemedi. Seri no veya ilişkili verilerde çakışma olabilir.", "danger")
+        return redirect(url_for("maintenance.ekipman_sablonlari"))
     log_kaydet(
         "Merkezi Şablon",
         f"Merkezi şablondan birime ekipman eklendi: {template.name} -> {legacy_material.havalimani.kodu}",
@@ -1274,6 +1771,8 @@ def merkezi_sablondan_envantere_ekle(template_id):
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 @permission_required("inventory.edit")
 def asset_duzenle(asset_id):
+    if not _can_manage_asset_registry():
+        abort(403)
     asset = _asset_scope().filter(InventoryAsset.id == asset_id).first_or_404()
     requested_asset_code = guvenli_metin(request.form.get("asset_code") or "").strip()
     if requested_asset_code and requested_asset_code != asset.asset_code:
@@ -1288,19 +1787,32 @@ def asset_duzenle(asset_id):
         audit_log("inventory.asset_code.change_attempt", outcome="failed", asset_id=asset.id)
         flash("Asset code doğrudan değiştirilemez.", "danger")
         return redirect(url_for("inventory.envanter"))
-    asset.serial_no = guvenli_metin(request.form.get("seri_no") or asset.serial_no)
-    asset.unit_count = request.form.get("stok", type=int) or asset.unit_count
-    asset.depot_location = guvenli_metin(request.form.get("depo_konumu") or asset.depot_location)
-    asset.status = _normalize_status(request.form.get("durum", _display_status(asset.status)))
-    asset.maintenance_state = guvenli_metin(request.form.get("bakim_durumu") or asset.maintenance_state)
-    asset.last_maintenance_date = _parse_date(request.form.get("son_bakim_tarihi")) or asset.last_maintenance_date
-    asset.next_maintenance_date = _parse_date(request.form.get("sonraki_bakim_tarihi")) or asset.next_maintenance_date
-    asset.notes = guvenli_metin(request.form.get("notlar") or asset.notes)
-
-    new_parent_id = request.form.get("parent_asset_id", type=int)
-    if new_parent_id == asset.id:
-        flash("Bir ekipman kendisine bağlanamaz.", "danger")
+    canonical_payload = _canonical_asset_payload(request.form, mode="asset_duzenle")
+    values = _normalized_asset_contract_values(canonical_payload, mode="asset_duzenle", current_asset=asset)
+    try:
+        _validate_asset_contract_values(values, mode="asset_duzenle", current_asset=asset)
+    except ValueError as exc:
+        flash(str(exc), "danger")
         return redirect(url_for("inventory.envanter"))
+
+    asset.serial_no = values["serial_no"] or asset.serial_no
+    asset.unit_count = values["unit_count"]
+    asset.depot_location = guvenli_metin(request.form.get("depo_konumu") or asset.depot_location)
+    asset.status = values["status"]
+    asset.last_maintenance_date = values["last_maintenance_date"] or asset.last_maintenance_date
+    if values["notes"]:
+        asset.notes = values["notes"]
+    asset.manual_url = values["manual_url"]
+    asset.maintenance_period_months = values["maintenance_period_months"]
+    asset.maintenance_period_days = values["maintenance_period_days"]
+    asset.calibration_required = values["calibration_required"]
+    asset.calibration_period_days = values["calibration_period_days"]
+    asset.last_calibration_date = values["last_calibration_date"] if asset.calibration_required else None
+    asset.next_calibration_date = values["next_calibration_date"] if asset.calibration_required else None
+    asset.is_demirbas = values["is_demirbas"]
+    asset.asset_tag = values["demirbas_no"] if asset.is_demirbas else ""
+
+    new_parent_id = values["parent_asset_id"]
     if new_parent_id:
         parent_candidate = _asset_scope().filter(InventoryAsset.id == new_parent_id).first()
         if not parent_candidate:
@@ -1310,13 +1822,21 @@ def asset_duzenle(asset_id):
     elif request.form.get("parent_asset_id") == "":
         asset.parent_asset_id = None
 
+    _sync_maintenance_plan_for_asset(asset)
+    _sync_calibration_schedule_for_asset(asset)
     if asset.legacy_material:
         asset.legacy_material.seri_no = asset.serial_no
         asset.legacy_material.stok_miktari = asset.unit_count
         asset.legacy_material.durum = _display_status(asset.status)
         asset.legacy_material.son_bakim_tarihi = asset.last_maintenance_date
         asset.legacy_material.gelecek_bakim_tarihi = asset.next_maintenance_date
+        asset.legacy_material.kalibrasyon_tarihi = asset.last_calibration_date if asset.calibration_required else None
+    try:
         db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash("Envanter kaydı güncellenemedi. Seri no veya ilişkili verilerde çakışma olabilir.", "danger")
+        return redirect(url_for("inventory.envanter"))
     log_kaydet("Envanter", f"Yerel asset güncellendi: ID {asset.id}")
     if asset.parent_asset_id:
         audit_log(
@@ -2521,27 +3041,47 @@ def _asset_detail_view(asset_id, detail_mode=False):
 
         if not has_permission("inventory.edit"):
             abort(403)
+        if not _can_manage_asset_registry():
+            abort(403)
 
-        quick_status = (request.form.get("status") or "").strip()
-        quick_state = (request.form.get("maintenance_state") or "").strip()
-        note = guvenli_metin(request.form.get("note") or "").strip()
-        last_maintenance = _parse_date(request.form.get("last_maintenance_date"))
+        canonical_payload = _canonical_asset_payload(request.form, mode="quick_detail")
+        values = _normalized_asset_contract_values(canonical_payload, mode="quick_detail", current_asset=asset)
+        try:
+            _validate_asset_contract_values(values, mode="quick_detail", current_asset=asset)
+        except ValueError as exc:
+            flash(str(exc), "danger")
+            return redirect(url_for(target_endpoint, asset_id=asset.id))
 
-        if quick_status in {"aktif", "bakimda", "arizali", "hurda", "pasif"}:
-            asset.status = quick_status
-        if quick_state in {"normal", "yaklasan", "gecikmis", "ariza", "bakimda"}:
-            asset.maintenance_state = quick_state
-        if last_maintenance:
-            asset.last_maintenance_date = last_maintenance
-        if note:
+        asset.status = values["status"]
+        if values["last_maintenance_date"]:
+            asset.last_maintenance_date = values["last_maintenance_date"]
+        asset.manual_url = values["manual_url"]
+        asset.maintenance_period_months = values["maintenance_period_months"]
+        asset.maintenance_period_days = values["maintenance_period_days"]
+        asset.is_demirbas = values["is_demirbas"]
+        asset.asset_tag = values["demirbas_no"] if asset.is_demirbas else ""
+        asset.calibration_required = values["calibration_required"]
+        asset.calibration_period_days = values["calibration_period_days"]
+        asset.last_calibration_date = values["last_calibration_date"] if asset.calibration_required else None
+        asset.next_calibration_date = values["next_calibration_date"] if asset.calibration_required else None
+        if values["notes"]:
             existing = (asset.notes or "").strip()
-            asset.notes = f"{existing}\n{note}".strip() if existing else note
+            asset.notes = f"{existing}\n{values['notes']}".strip() if existing else values["notes"]
 
+        _sync_maintenance_plan_for_asset(asset)
+        _sync_calibration_schedule_for_asset(asset)
         if asset.legacy_material:
             asset.legacy_material.durum = _display_status(asset.status)
             asset.legacy_material.son_bakim_tarihi = asset.last_maintenance_date
+            asset.legacy_material.gelecek_bakim_tarihi = asset.next_maintenance_date
+            asset.legacy_material.kalibrasyon_tarihi = asset.last_calibration_date if asset.calibration_required else None
 
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            flash("Hızlı güncelleme kaydedilemedi. Seri no veya ilişkili verilerde çakışma olabilir.", "danger")
+            return redirect(url_for(target_endpoint, asset_id=asset.id))
         log_kaydet("Saha Hızlı Güncelleme", f"Asset hızlı güncellendi: ID {asset.id} / durum={asset.status}")
         flash("Hızlı ekipman güncellemesi kaydedildi.", "success")
         return redirect(url_for(target_endpoint, asset_id=asset.id))

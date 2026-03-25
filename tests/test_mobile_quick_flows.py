@@ -27,8 +27,7 @@ def test_quick_asset_route_updates_status(client, app):
     assert response.status_code == 200
 
     db.session.refresh(asset)
-    assert asset.status == "arizali"
-    assert asset.maintenance_state == "ariza"
+    assert asset.status == "pasif"
 
 
 def test_mobile_inspection_can_open_corrective_work_order(client, app):
