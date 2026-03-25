@@ -50,7 +50,7 @@ body.sidebar-open { overflow: hidden; }
 .logo-mark svg { width: 18px; height: 18px; stroke: #fff; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .logo-text-main { font-size: 17px; font-weight: 800; color: #fff; letter-spacing: -0.01em; line-height: 1; }
 .logo-text-sub { font-size: 11px; font-weight: 500; color: #94a3b8; margin-top: 2px; }
-.topbar-end { margin-left: auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.topbar-end { margin-left: auto; display: flex; align-items: center; gap: 10px; min-width: 0; position: relative; z-index: 180; }
 .notification-wrap { position: relative; }
 .notification-btn { width: var(--topbar-action-height); height: var(--topbar-action-height); border-radius: 10px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.08); color: #fff; cursor: pointer; position: relative; display: inline-flex; align-items: center; justify-content: center; }
 .notification-count { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; border-radius: 999px; background: var(--orange); color: #fff; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
@@ -62,12 +62,12 @@ body.sidebar-open { overflow: hidden; }
 
 /* User Identification */
 .user-menu { position: relative; min-width: 0; }
-.user-menu-actions { display: flex; align-items: center; gap: 8px; }
-.user-chip { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 5px 12px; cursor: pointer; transition: background .15s; text-decoration: none; min-height: var(--topbar-action-height); }
+.user-menu-actions { display: flex; align-items: center; gap: 8px; position: relative; z-index: 185; }
+.user-chip { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 5px 12px; cursor: pointer; transition: background .15s; text-decoration: none; min-height: var(--topbar-action-height); position: relative; z-index: 1; }
 .user-chip:hover { background: rgba(255,255,255,.14); }
 .user-chip-button { font-family: var(--sans); color: inherit; }
 .user-chip-button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(249,115,22,.22); }
-.role-switch-launch { width: var(--topbar-action-height); min-width: var(--topbar-action-height); height: var(--topbar-action-height); border-radius: 10px; border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: #e2e8f0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 800; line-height: 1; transition: background .16s ease, border-color .16s ease, color .16s ease, transform .16s ease; }
+.role-switch-launch { width: var(--topbar-action-height); min-width: var(--topbar-action-height); height: var(--topbar-action-height); border-radius: 10px; border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: #e2e8f0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 800; line-height: 1; transition: background .16s ease, border-color .16s ease, color .16s ease, transform .16s ease; position: relative; z-index: 3; pointer-events: auto; touch-action: manipulation; }
 .role-switch-launch:hover { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.34); }
 .role-switch-launch:active { transform: scale(0.98); }
 .role-switch-launch:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(249,115,22,.22); }
@@ -809,13 +809,18 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
                 userMenu.dataset.open = willOpen ? 'true' : 'false';
                 setUserMenuExpanded(willOpen);
         };
+        const bindMenuToggle = function (element) {
+            if (!element) return;
+            element.addEventListener('click', toggleUserMenu);
+            element.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    toggleUserMenu(event);
+                }
+            });
+        };
         if (userMenu && userMenuPanel && (userMenuToggle || roleSwitchLaunch)) {
-            if (userMenuToggle) {
-                userMenuToggle.addEventListener('click', toggleUserMenu);
-            }
-            if (roleSwitchLaunch) {
-                roleSwitchLaunch.addEventListener('click', toggleUserMenu);
-            }
+            bindMenuToggle(userMenuToggle);
+            bindMenuToggle(roleSwitchLaunch);
             userMenuPanel.addEventListener('click', function (event) {
                 event.stopPropagation();
             });
