@@ -1014,6 +1014,7 @@ def create_app(config_name=None):
             ).all(),
         )
         documents = _filter_by_workflow(documents, "document")
+        documents = filter_homepage_demo_items(documents)
         quick_links = _safe_public_collection(
             ("home_quick_link",),
             lambda: HomeQuickLink.query.filter_by(is_active=True).order_by(
@@ -1021,6 +1022,7 @@ def create_app(config_name=None):
             ).all(),
         )
         quick_links = _filter_by_workflow(quick_links, "quicklink")
+        quick_links = filter_homepage_demo_items(quick_links)
 
         completed_training_count = sum(
             1 for item in sections if item.section_key in {"training", "exercise", "operation"}

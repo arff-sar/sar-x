@@ -479,6 +479,7 @@ def public_documents():
         [],
     )
     documents = [item for item in documents if _current_workflow_status("document", item) == WORKFLOW_PUBLISHED]
+    documents = filter_homepage_demo_items(documents)
     return render_template("documents.html", documents=documents, **_public_layout_context())
 
 

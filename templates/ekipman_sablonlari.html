@@ -26,7 +26,7 @@
 </div>
 
 <div class="template-grid">
-    {% if has_permission('maintenance.instructions.manage') or has_permission('maintenance.plan.change') %}
+    {% if giren_user.is_sahip %}
     <div class="panel">
         <div class="panel-header">
             <div>
@@ -53,10 +53,6 @@
                     <div class="form-group">
                         <label>Model</label>
                         <input type="text" name="model_code" class="form-control">
-                    </div>
-                    <div class="form-group">
-                        <label>Üretici</label>
-                        <input type="text" name="manufacturer" class="form-control">
                     </div>
                     <div class="form-group">
                         <label>Bakım Periyodu (Gün)</label>
@@ -144,7 +140,7 @@
                         <td>
                             <div class="template-kicker">{{ t.category or 'Kategori yok' }}</div>
                             <div style="margin-top:4px; font-weight:800; color:var(--navy);">{{ t.name }}</div>
-                            <div class="template-meta">{{ t.brand or t.manufacturer or '-' }}{% if t.model_code %} • {{ t.model_code }}{% endif %}</div>
+                            <div class="template-meta">{{ t.brand or '-' }}{% if t.model_code %} • {{ t.model_code }}{% endif %}</div>
                         </td>
                         <td>
                             <div class="template-meta">Periyot: {{ t.maintenance_period_days or '-' }} gün</div>
@@ -161,20 +157,27 @@
                         </td>
                         <td>
                             <div style="display:grid; gap:10px;">
-                                {% if has_permission('maintenance.instructions.manage') or has_permission('maintenance.plan.change') %}
+                                {% if giren_user.is_sahip %}
                                 <a href="{{ url_for('maintenance.ekipman_talimat', template_id=t.id) }}" class="row-btn" style="justify-content:center;">Talimatı Düzenle</a>
                                 {% endif %}
-                                {% if rol in ['sahip', 'yetkili'] %}
+                                {% if giren_user.is_sahip or giren_user.is_airport_manager %}
                                 <form method="POST" action="{{ url_for('inventory.merkezi_sablondan_envantere_ekle', template_id=t.id) }}" style="display:grid; gap:6px;">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    {% if rol == 'sahip' %}
+                                    {% if giren_user.is_sahip %}
                                     <select name="havalimani_id" class="form-control" style="margin-bottom:0;">
                                         {% for h in airports %}
                                         <option value="{{ h.id }}">{{ h.kodu }} - {{ h.ad }}</option>
                                         {% endfor %}
                                     </select>
                                     {% endif %}
-                                    <input type="text" name="kutu_kodu" class="form-control" placeholder="Kutu / Depo" style="margin-bottom:0;" required>
+                                    <select name="kutu_id" class="form-control" style="margin-bottom:0;" required>
+                                        <option value="">Kutu seçin</option>
+                                        {% for airport in airports %}
+                                        {% for box in airport.kutular if not box.is_deleted %}
+                                        <option value="{{ box.id }}">{{ box.kodu }} · {{ airport.kodu }}</option>
+                                        {% endfor %}
+                                        {% endfor %}
+                                    </select>
                                     <input type="text" name="seri_no" class="form-control" placeholder="Seri No" style="margin-bottom:0;">
                                     <button class="row-btn" style="justify-content:center;">Birime Ekle</button>
                                 </form>

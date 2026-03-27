@@ -240,6 +240,28 @@
                     <button type="submit" class="btn btn-danger" style="justify-content:center;">Demo Veriyi Temizle</button>
                 </form>
             </div>
+            <div class="demo-status-grid" style="margin-top: 16px;">
+                <div class="demo-status-box">
+                    <div class="demo-status-label">Platform Demo</div>
+                    <div class="demo-status-value">{{ 'Aktif' if platform_demo_status and platform_demo_status.active else 'Pasif' }}</div>
+                    <div class="demo-status-copy">Operasyonel modüller demo seed kaydıyla filtrelenir.</div>
+                </div>
+                <div class="demo-status-box">
+                    <div class="demo-status-label">Asset</div>
+                    <div class="demo-status-value">{{ platform_demo_status.summary.asset if platform_demo_status else 0 }}</div>
+                    <div class="demo-status-copy">Demo varlık sayısı</div>
+                </div>
+                <div class="demo-status-box">
+                    <div class="demo-status-label">KKD</div>
+                    <div class="demo-status-value">{{ platform_demo_status.summary.kkd if platform_demo_status else 0 }}</div>
+                    <div class="demo-status-copy">Demo KKD kayıtları</div>
+                </div>
+                <div class="demo-status-box">
+                    <div class="demo-status-label">Son Güncelleme</div>
+                    <div class="demo-status-value">{{ platform_demo_status.updated_at if platform_demo_status else '-' }}</div>
+                    <div class="demo-status-copy">Platform demo state metadata</div>
+                </div>
+            </div>
         </div>
     </div>
     {% endif %}

@@ -5,6 +5,7 @@ from demo_data import AIRPORT_PERSONNEL_COUNT, AIRPORTS, DEMO_SEED_TAG, clear_de
 from extensions import db, table_exists
 from sqlalchemy import text
 from models import (
+    AssetOperationalState,
     AssignmentItem,
     AssignmentRecipient,
     AssignmentRecord,
@@ -15,8 +16,11 @@ from models import (
     InventoryAsset,
     Kutu,
     Kullanici,
+    MaintenanceInstruction,
     MaintenancePlan,
     Malzeme,
+    PPERecord,
+    PPERecordEvent,
     SparePart,
     WorkOrder,
     WorkOrderPartUsage,
@@ -42,6 +46,10 @@ def test_seed_demo_data_creates_expected_records(app):
         assert InventoryAsset.query.count() > 0
         assert Kutu.query.count() > 0
         assert MaintenancePlan.query.count() > 0
+        assert AssetOperationalState.query.count() > 0
+        assert MaintenanceInstruction.query.count() > 0
+        assert PPERecord.query.count() > 0
+        assert PPERecordEvent.query.count() > 0
         assert WorkOrder.query.count() > 0
         assert SparePart.query.count() >= 20
         assert {airport.kodu for airport in Havalimani.query.order_by(Havalimani.kodu.asc()).all()} == {"EDO", "ERZ", "KCO"}
@@ -60,6 +68,7 @@ def test_seed_demo_data_creates_expected_records(app):
         assert sample_asset.legacy_material.kutu is not None
         assert sample_asset.asset_code.startswith("ARFF-SAR-")
         assert sample_asset.equipment_template is not None
+        assert sample_asset.operational_state is not None
         assert (sample_asset.equipment_template.brand or "").strip() != ""
         assert (sample_asset.equipment_template.model_code or "").strip() != ""
         assert sample_asset.legacy_material.ad.startswith(sample_asset.equipment_template.name)

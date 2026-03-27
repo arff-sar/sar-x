@@ -10,6 +10,7 @@ from homepage_demo import (
     get_homepage_demo_status,
     seed_homepage_demo_data,
 )
+from demo_data import get_platform_demo_status
 from models import Havalimani, Haber, Kullanici, NavMenu, SliderResim, SiteAyarlari
 from . import admin_bp
 from decorators import (
@@ -237,6 +238,7 @@ def site_yonetimi():
     aktif_sekme = request.args.get('tab', 'genel')
     if aktif_sekme not in ['genel', 'organizasyon', 'icerik']:
         aktif_sekme = 'genel'
+    platform_demo_status = get_platform_demo_status() if current_app.config.get("DEMO_TOOLS_ENABLED", False) else None
     homepage_demo_status = get_homepage_demo_status() if current_app.config.get("DEMO_TOOLS_ENABLED", False) else None
 
     return render_template(
@@ -254,6 +256,7 @@ def site_yonetimi():
         havalimanlari=Havalimani.query.filter_by(is_deleted=False).all(),
         aktif_sekme=aktif_sekme,
         demo_tools_enabled=current_app.config.get("DEMO_TOOLS_ENABLED", False),
+        platform_demo_status=platform_demo_status,
         homepage_demo_status=homepage_demo_status,
     )
 

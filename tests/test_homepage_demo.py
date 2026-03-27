@@ -5,8 +5,16 @@ from homepage_demo import (
     seed_homepage_demo_data,
 )
 from extensions import db
-from models import Announcement, DemoSeedRecord, HomeSection, HomeSlider, HomeStatCard
-from tests.factories import AnnouncementFactory, HomeSectionFactory, HomeSliderFactory, HomeStatCardFactory, KullaniciFactory
+from models import Announcement, DemoSeedRecord, DocumentResource, HomeQuickLink, HomeSection, HomeSlider, HomeStatCard
+from tests.factories import (
+    AnnouncementFactory,
+    DocumentResourceFactory,
+    HomeQuickLinkFactory,
+    HomeSectionFactory,
+    HomeSliderFactory,
+    HomeStatCardFactory,
+    KullaniciFactory,
+)
 
 
 def _login(client, user):
@@ -25,6 +33,8 @@ def test_homepage_demo_seed_is_idempotent(app):
         assert result["created"] is True
         assert summary["sliders"] == 3
         assert summary["announcements"] == 5
+        assert summary["documents"] == 2
+        assert summary["quick_links"] == 2
         assert summary["stats"] == 4
         assert summary["sections"] == 12
         assert summary["training_modules"] == 4
@@ -36,6 +46,8 @@ def test_homepage_demo_seed_is_idempotent(app):
         first_counts = (
             HomeSlider.query.count(),
             Announcement.query.count(),
+            DocumentResource.query.count(),
+            HomeQuickLink.query.count(),
             HomeStatCard.query.count(),
             HomeSection.query.count(),
             DemoSeedRecord.query.filter_by(seed_tag=HOMEPAGE_DEMO_SEED_TAG).count(),
@@ -45,6 +57,8 @@ def test_homepage_demo_seed_is_idempotent(app):
         second_counts = (
             HomeSlider.query.count(),
             Announcement.query.count(),
+            DocumentResource.query.count(),
+            HomeQuickLink.query.count(),
             HomeStatCard.query.count(),
             HomeSection.query.count(),
             DemoSeedRecord.query.filter_by(seed_tag=HOMEPAGE_DEMO_SEED_TAG).count(),
@@ -65,9 +79,11 @@ def test_homepage_demo_clear_only_removes_demo_records(app):
             slug="gercek-duyuru-basligi",
             is_published=True,
         )
+        real_document = DocumentResourceFactory(title="Gerçek Doküman Başlığı", file_path="/docs/gercek.pdf")
+        real_quicklink = HomeQuickLinkFactory(title="Gerçek Hızlı Link Başlığı", link_url="/gercek-link")
         real_stat = HomeStatCardFactory(title="Gerçek İstatistik", value_text="9")
         real_section = HomeSectionFactory(section_key="training", title="Gerçek Eğitim Modülü")
-        db.session.add_all([real_slider, real_announcement, real_stat, real_section])
+        db.session.add_all([real_slider, real_announcement, real_document, real_quicklink, real_stat, real_section])
         db.session.commit()
 
         seed_homepage_demo_data()
@@ -77,6 +93,8 @@ def test_homepage_demo_clear_only_removes_demo_records(app):
         assert DemoSeedRecord.query.filter_by(seed_tag=HOMEPAGE_DEMO_SEED_TAG).count() == 0
         assert HomeSlider.query.filter_by(title="Gerçek Slider Başlığı").first() is not None
         assert Announcement.query.filter_by(slug="gercek-duyuru-basligi").first() is not None
+        assert DocumentResource.query.filter_by(title="Gerçek Doküman Başlığı").first() is not None
+        assert HomeQuickLink.query.filter_by(title="Gerçek Hızlı Link Başlığı").first() is not None
         assert HomeStatCard.query.filter_by(title="Gerçek İstatistik").first() is not None
         assert HomeSection.query.filter_by(title="Gerçek Eğitim Modülü").first() is not None
         assert get_homepage_demo_status()["active"] is False
@@ -110,9 +128,10 @@ def test_homepage_demo_routes_render_demo_content_without_mixing_real_content(cl
         is_published=True,
     )
     real_stat = HomeStatCardFactory(title="Gerçek İstatistik", value_text="9")
+    real_document = DocumentResourceFactory(title="Gerçek Form Başlığı", file_path="/docs/gercek-form.pdf")
     real_training = HomeSectionFactory(section_key="training", title="Gerçek Eğitim Modülü")
     real_exercise = HomeSectionFactory(section_key="exercise", title="Gerçek Tatbikat Modülü")
-    db.session.add_all([owner, real_slider, real_announcement, real_stat, real_training, real_exercise])
+    db.session.add_all([owner, real_slider, real_announcement, real_stat, real_document, real_training, real_exercise])
     db.session.commit()
     _login(client, owner)
 
@@ -143,6 +162,10 @@ def test_homepage_demo_routes_render_demo_content_without_mixing_real_content(cl
     assert "Gece operasyon hazırlık tatbikatı" in drills_page
     assert "Gerçek Tatbikat Modülü" not in drills_page
 
+    documents_page = client.get("/formlar").data.decode("utf-8")
+    assert "Gerçek Form Başlığı" not in documents_page
+    assert "ARFF-SAR Operasyon Hazırlık Kontrol Formu" in documents_page
+
     clear_response = client.post("/demo-veri/anasayfa/temizle", follow_redirects=True)
     clear_page = clear_response.data.decode("utf-8")
 
@@ -152,5 +175,6 @@ def test_homepage_demo_routes_render_demo_content_without_mixing_real_content(cl
     restored_home = client.get("/").data.decode("utf-8")
     assert "https://example.com/gercek-slider.jpg" in restored_home
     assert "Gerçek Duyuru Başlığı" in client.get("/duyurular").data.decode("utf-8")
+    assert "Gerçek Form Başlığı" in client.get("/formlar").data.decode("utf-8")
     assert HomeSlider.query.filter_by(title="Gerçek Slider Başlığı").first() is not None
     assert Announcement.query.filter_by(slug="gercek-duyuru-basligi").first() is not None

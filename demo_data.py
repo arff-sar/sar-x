@@ -11,6 +11,7 @@ from sqlalchemy import false, or_
 from decorators import ROLE_ADMIN, ROLE_AIRPORT_MANAGER, ROLE_EDITOR, ROLE_MAINTENANCE, ROLE_MANAGER, ROLE_OWNER, ROLE_PERSONNEL, ROLE_READONLY, ROLE_WAREHOUSE
 from extensions import db, log_kaydet, table_exists
 from models import (
+    AssetOperationalState,
     AssignmentHistoryEntry,
     AssignmentItem,
     AssignmentRecipient,
@@ -27,10 +28,13 @@ from models import (
     Kullanici,
     MaintenanceFormField,
     MaintenanceFormTemplate,
+    MaintenanceInstruction,
     MaintenancePlan,
     MaintenanceTriggerRule,
     Malzeme,
     MeterDefinition,
+    PPERecord,
+    PPERecordEvent,
     SiteAyarlari,
     AssetSparePartLink,
     SparePart,
@@ -146,6 +150,10 @@ def _summary():
         "bakim_plani": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="MaintenancePlan").count(),
         "is_emri": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="WorkOrder").count(),
         "yedek_parca": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="SparePart").count(),
+        "operasyon_durumu": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="AssetOperationalState").count(),
+        "bakim_talimati": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="MaintenanceInstruction").count(),
+        "kkd": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="PPERecord").count(),
+        "kkd_olay": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="PPERecordEvent").count(),
     }
 
 
@@ -161,6 +169,10 @@ def format_demo_summary(summary):
             f"Bakım Planı: {summary['bakim_plani']}",
             f"İş Emri: {summary['is_emri']}",
             f"Yedek Parça: {summary['yedek_parca']}",
+            f"Operasyon Durumu: {summary['operasyon_durumu']}",
+            f"Bakım Talimatı: {summary['bakim_talimati']}",
+            f"KKD Kaydı: {summary['kkd']}",
+            f"KKD Olayı: {summary['kkd_olay']}",
         ]
     )
 
@@ -567,6 +579,8 @@ def clear_demo_data():
         "AssignmentItem": AssignmentItem,
         "AssignmentRecipient": AssignmentRecipient,
         "AssignmentRecord": AssignmentRecord,
+        "PPERecordEvent": PPERecordEvent,
+        "PPERecord": PPERecord,
         "CalibrationRecord": CalibrationRecord,
         "CalibrationSchedule": CalibrationSchedule,
         "ConsumableStockMovement": ConsumableStockMovement,
@@ -575,12 +589,14 @@ def clear_demo_data():
         "MeterDefinition": MeterDefinition,
         "MaintenancePlan": MaintenancePlan,
         "WorkOrder": WorkOrder,
+        "AssetOperationalState": AssetOperationalState,
         "InventoryAsset": InventoryAsset,
         "Malzeme": Malzeme,
         "Kutu": Kutu,
         "SparePartStock": SparePartStock,
         "SparePart": SparePart,
         "Supplier": Supplier,
+        "MaintenanceInstruction": MaintenanceInstruction,
         "MaintenanceFormField": MaintenanceFormField,
         "MaintenanceFormTemplate": MaintenanceFormTemplate,
         "EquipmentTemplate": EquipmentTemplate,
@@ -592,6 +608,8 @@ def clear_demo_data():
         "AssignmentItem",
         "AssignmentRecipient",
         "AssignmentRecord",
+        "PPERecordEvent",
+        "PPERecord",
         "CalibrationRecord",
         "CalibrationSchedule",
         "ConsumableStockMovement",
@@ -600,12 +618,14 @@ def clear_demo_data():
         "MeterDefinition",
         "MaintenancePlan",
         "WorkOrder",
+        "AssetOperationalState",
         "InventoryAsset",
         "Malzeme",
         "Kutu",
         "SparePartStock",
         "SparePart",
         "Supplier",
+        "MaintenanceInstruction",
         "EquipmentTemplate",
         "MaintenanceFormTemplate",
         "MaintenanceFormField",
@@ -1015,6 +1035,25 @@ def seed_demo_data(reset=False):
         templates.append(template)
         template_default_units[template.id] = max(int(spec.get("unit_count") or 1), 1)
 
+        instruction = MaintenanceInstruction(
+            equipment_template_id=template.id,
+            title=_clip_text(f"{template.name} Kullanım ve Bakım Talimatı", 180, "Bakım Talimatı"),
+            description=_clip_text(
+                f"{template.name} için saha güvenliği, kontrol adımları ve bakım sırası demo talimatı.",
+                2000,
+                "Demo bakım talimatı",
+            ),
+            manual_url=_clip_text(manual_url, 500),
+            visual_url="",
+            revision_no="R1",
+            revision_date=today - timedelta(days=rng.randint(10, 90)),
+            notes="Demo set içerisinde otomatik oluşturulan talimat kaydı.",
+            is_active=True,
+        )
+        db.session.add(instruction)
+        db.session.flush()
+        _register_record(instruction, template.name)
+
     suppliers = []
     for supplier_index in range(1, 6):
         supplier = Supplier(
@@ -1159,6 +1198,26 @@ def seed_demo_data(reset=False):
             asset.qr_code = f"/demo/asset/{asset.id}"
             _register_record(asset, asset.serial_no)
             assets.append(asset)
+
+            operational_state = AssetOperationalState(
+                asset_id=asset.id,
+                lifecycle_status=(
+                    "in_maintenance"
+                    if status == "bakimda"
+                    else "decommissioned"
+                    if status == "pasif"
+                    else "active"
+                ),
+                warranty_start=(asset.acquired_date or today) + timedelta(days=1),
+                service_provider="Demo Teknik Servis",
+                service_note="Demo operasyon durumu kaydı",
+                last_service_date=last_maintenance,
+                lifecycle_note=f"{airport.kodu} demo varlık izleme kaydı",
+                transfer_reference=f"TRN-{airport.kodu}-{asset.id:05d}",
+            )
+            db.session.add(operational_state)
+            db.session.flush()
+            _register_record(operational_state, asset.serial_no)
 
             plan = MaintenancePlan(
                 name=_clip_text(f"{template.name} Planı", 120, "Demo Bakım Planı"),
@@ -1356,6 +1415,48 @@ def seed_demo_data(reset=False):
             db.session.add(history)
             db.session.flush()
             _register_record(history, f"assignment-history-{assignment.id}")
+
+    ppe_specs = [
+        ("Baret", "MSA V-Gard", "M"),
+        ("Koruyucu Eldiven", "Ansell HyFlex", "L"),
+        ("Koruyucu Gözlük", "Uvex i-3", "STD"),
+        ("Yüksek Görünürlük Yeleği", "3M Reflect", "XL"),
+    ]
+    for airport in airports:
+        scoped_staff = [
+            user
+            for user in users
+            if user.havalimani_id == airport.id and user.rol in {ROLE_PERSONNEL, ROLE_MAINTENANCE, ROLE_MANAGER}
+        ]
+        for index, staff in enumerate(scoped_staff[:4], start=1):
+            item_name, brand_model, size_info = ppe_specs[(index - 1) % len(ppe_specs)]
+            record = PPERecord(
+                user_id=staff.id,
+                airport_id=airport.id,
+                assignment_id=None,
+                item_name=item_name,
+                brand_model=brand_model,
+                size_info=size_info,
+                delivered_at=today - timedelta(days=rng.randint(5, 70)),
+                quantity=1,
+                status=rng.choice(["aktif", "aktif", "eksik", "hasarli"]),
+                description=f"{airport.kodu} demo KKD kaydı",
+                created_by_id=users[0].id if users else None,
+            )
+            db.session.add(record)
+            db.session.flush()
+            _register_record(record, f"{airport.kodu}-{staff.id}-{item_name}")
+
+            event = PPERecordEvent(
+                ppe_record_id=record.id,
+                event_type="created",
+                status_after=record.status,
+                event_note="Demo seed ile oluşturuldu.",
+                created_by_id=users[0].id if users else None,
+            )
+            db.session.add(event)
+            db.session.flush()
+            _register_record(event, f"ppe-event-{record.id}")
 
     db.session.commit()
     summary = _summary()

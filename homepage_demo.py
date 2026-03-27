@@ -8,6 +8,8 @@ from models import (
     Announcement,
     ContentWorkflow,
     DemoSeedRecord,
+    DocumentResource,
+    HomeQuickLink,
     HomeSection,
     HomeSlider,
     HomeStatCard,
@@ -30,6 +32,8 @@ MODEL_MAP = {
     "HomeSlider": HomeSlider,
     "HomeSection": HomeSection,
     "Announcement": Announcement,
+    "DocumentResource": DocumentResource,
+    "HomeQuickLink": HomeQuickLink,
     "HomeStatCard": HomeStatCard,
     "ContentWorkflow": ContentWorkflow,
 }
@@ -212,6 +216,8 @@ def get_homepage_demo_status():
 
     sliders = _tracked_instances("HomeSlider") if table_exists("demo_seed_record") else []
     announcements = _tracked_instances("Announcement") if table_exists("demo_seed_record") else []
+    documents = _tracked_instances("DocumentResource") if table_exists("demo_seed_record") else []
+    quick_links = _tracked_instances("HomeQuickLink") if table_exists("demo_seed_record") else []
     stats = _tracked_instances("HomeStatCard") if table_exists("demo_seed_record") else []
     sections = _tracked_instances("HomeSection") if table_exists("demo_seed_record") else []
 
@@ -225,7 +231,7 @@ def get_homepage_demo_status():
 
     training_modules = [item for item in sections if item.section_key == "training"]
     exercise_modules = [item for item in sections if item.section_key in {"exercise", "operation"}]
-    installed = bool(sliders or announcements or stats or sections)
+    installed = bool(sliders or announcements or documents or quick_links or stats or sections)
     active = bool(installed and state.get("active"))
 
     return {
@@ -233,6 +239,8 @@ def get_homepage_demo_status():
         "active": active,
         "sliders": len(sliders),
         "announcements": len(announcements),
+        "documents": len(documents),
+        "quick_links": len(quick_links),
         "stats": len(stats),
         "sections": len(sections),
         "training_modules": len(training_modules),
@@ -252,6 +260,8 @@ def format_homepage_demo_summary(summary):
         [
             f"Slider: {summary.get('sliders', 0)}",
             f"Duyuru: {summary.get('announcements', 0)}",
+            f"Doküman: {summary.get('documents', 0)}",
+            f"Hızlı Link: {summary.get('quick_links', 0)}",
             f"Sayısal Özet: {summary.get('stats', 0)}",
             f"İçerik Modülü: {summary.get('sections', 0)}",
             f"Eğitim Modülü: {summary.get('training_modules', 0)}",
@@ -334,6 +344,38 @@ def _create_stat(payload):
     _register_record(card, card.title)
     _published_workflow("stat", card.id)
     return card
+
+
+def _create_document(payload):
+    item = DocumentResource(
+        title=payload["title"],
+        description=payload.get("description"),
+        file_path=payload.get("file_path"),
+        category=payload.get("category"),
+        order_index=payload.get("order_index", 0),
+        is_active=payload.get("is_active", True),
+    )
+    db.session.add(item)
+    db.session.flush()
+    _register_record(item, item.title)
+    _published_workflow("document", item.id)
+    return item
+
+
+def _create_quick_link(payload):
+    item = HomeQuickLink(
+        title=payload["title"],
+        description=payload.get("description"),
+        link_url=payload.get("link_url", "#"),
+        icon=payload.get("icon"),
+        order_index=payload.get("order_index", 0),
+        is_active=payload.get("is_active", True),
+    )
+    db.session.add(item)
+    db.session.flush()
+    _register_record(item, item.title)
+    _published_workflow("quicklink", item.id)
+    return item
 
 
 def _create_section(payload):
@@ -626,6 +668,48 @@ def _section_payloads():
     ]
 
 
+def _document_payloads():
+    return [
+        {
+            "title": "ARFF-SAR Operasyon Hazırlık Kontrol Formu",
+            "description": "Saha çıkışı öncesi ekipman ve personel kontrol adımlarını içerir.",
+            "file_path": "/uploads/demo/arff-sar-operasyon-kontrol-formu.pdf",
+            "category": "Operasyon",
+            "order_index": 0,
+            "is_active": True,
+        },
+        {
+            "title": "Tatbikat Sonrası Değerlendirme Şablonu",
+            "description": "Tatbikat gözlemlerini ve iyileştirme maddelerini kaydetmek için örnek şablon.",
+            "file_path": "/uploads/demo/tatbikat-sonrasi-degerlendirme.docx",
+            "category": "Tatbikat",
+            "order_index": 1,
+            "is_active": True,
+        },
+    ]
+
+
+def _quick_link_payloads():
+    return [
+        {
+            "title": "Eğitim Takvimi",
+            "description": "Güncel eğitim planına hızlı erişim",
+            "link_url": "/faaliyetlerimiz/egitimler",
+            "icon": "calendar",
+            "order_index": 0,
+            "is_active": True,
+        },
+        {
+            "title": "Tatbikat Arşivi",
+            "description": "Önceki tatbikat kayıtlarını görüntüle",
+            "link_url": "/faaliyetlerimiz/tatbikatlar",
+            "icon": "archive",
+            "order_index": 1,
+            "is_active": True,
+        },
+    ]
+
+
 def seed_homepage_demo_data():
     _guard_homepage_demo_tools()
     existing = DemoSeedRecord.query.filter_by(seed_tag=HOMEPAGE_DEMO_SEED_TAG).first()
@@ -640,6 +724,10 @@ def seed_homepage_demo_data():
         _create_slider(payload)
     for payload in _announcement_payloads():
         _create_announcement(payload)
+    for payload in _document_payloads():
+        _create_document(payload)
+    for payload in _quick_link_payloads():
+        _create_quick_link(payload)
     for payload in _stat_payloads():
         _create_stat(payload)
     for payload in _section_payloads():
@@ -661,6 +749,8 @@ def clear_homepage_demo_data():
     delete_order = [
         "ContentWorkflow",
         "Announcement",
+        "DocumentResource",
+        "HomeQuickLink",
         "HomeSection",
         "HomeStatCard",
         "HomeSlider",
@@ -682,6 +772,8 @@ def clear_homepage_demo_data():
     summary = {
         "sliders": 0,
         "announcements": 0,
+        "documents": 0,
+        "quick_links": 0,
         "stats": 0,
         "sections": 0,
         "training_modules": 0,

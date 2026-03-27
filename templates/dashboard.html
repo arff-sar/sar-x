@@ -120,8 +120,8 @@
 <a href="{{ url_for('inventory.envanter') }}" class="alarm-strip">
     <div class="alarm-strip-icon">⚠️</div>
     <div class="alarm-strip-body">
-        <div class="alarm-strip-title">{{ arizali_malzemeler|length }} Kritik Arıza</div>
-        <div class="alarm-strip-desc">Sistemde acil takip gerektiren arızalı malzemeler var.</div>
+        <div class="alarm-strip-title">{{ arizali_malzemeler|length }} Pasif Ekipman Uyarısı</div>
+        <div class="alarm-strip-desc">Sistemde operasyon dışına alınmış ekipmanlar bulunuyor.</div>
     </div>
 </a>
 {% endif %}
@@ -153,7 +153,7 @@
             <span class="stat-trend" style="background: var(--red-light); color: var(--red);">ARIZA</span>
         </div>
         <div class="stat-value" style="color: var(--red);">{{ arizali_malzemeler|length }}</div>
-        <div class="stat-label">Arızalı Malzeme</div>
+        <div class="stat-label">Pasif Ekipman</div>
         {% set trend = dashboard_trends["faulty_assets"]["trend"] %}
         <div class="stat-trend-line trend-{{ trend.direction }}">{{ trend_days }}g: {% if trend.available %}{{ trend.percent }}%{% else %}- · veri yok{% endif %}</div>
     </div>
@@ -224,7 +224,7 @@
                     <span class="stat-trend" style="background: var(--red-light); color: var(--red);">ALT</span>
                 </div>
                 <div class="stat-value" style="color: var(--red);">{{ child_asset_ariza_sayi if child_asset_ariza_sayi is defined else 0 }}</div>
-                <div class="stat-label">Alt Bileşen Arızası</div>
+                <div class="stat-label">Pasif Alt Bileşen</div>
                 {% set trend = dashboard_trends["child_faults"]["trend"] %}
                 <div class="stat-trend-line trend-{{ trend.direction }}">{{ trend_days }}g: {% if trend.available %}{{ trend.percent }}%{% else %}- · veri yok{% endif %}</div>
             </div>
@@ -268,16 +268,6 @@
                 {% set trend = dashboard_trends["low_consumables"]["trend"] %}
                 <div class="stat-trend-line trend-{{ trend.direction }}">{{ trend_days }}g: {% if trend.available %}{{ trend.percent }}%{% else %}- · veri yok{% endif %}</div>
             </div>
-            <div class="stat-card" data-kpi-tier="secondary">
-                <div class="stat-card-top">
-                    <div class="stat-icon" style="background:var(--red-light);">🚫</div>
-                    <span class="stat-trend" style="background: var(--red-light); color: var(--red);">SERVİS DIŞI</span>
-                </div>
-                <div class="stat-value" style="color: var(--red);">{{ kritik_servis_disi_sayi if kritik_servis_disi_sayi is defined else 0 }}</div>
-                <div class="stat-label">Kritik Servis Dışı</div>
-                {% set trend = dashboard_trends["out_of_service_critical"]["trend"] %}
-                <div class="stat-trend-line trend-{{ trend.direction }}">{{ trend_days }}g: {% if trend.available %}{{ trend.percent }}%{% else %}- · veri yok{% endif %}</div>
-            </div>
         </div>
     </div>
 </div>
@@ -300,7 +290,7 @@
         </a>
         {% else %}
         <div style="padding: 20px; text-align: center; color: var(--text3); font-size: 13px;">
-            Şu an acil aksiyon gerektiren kritik bir kayıt görünmüyor. Operasyon akışı stabil ilerliyor.
+            Şu an acil aksiyon gerektiren bir kayıt görünmüyor. Operasyon akışı stabil ilerliyor.
         </div>
         {% endfor %}
     </div>

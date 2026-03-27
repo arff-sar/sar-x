@@ -14,6 +14,7 @@ from decorators import (
     has_permission,
     permission_required,
 )
+from demo_data import apply_platform_demo_scope
 from models import (
     AssetMeterReading,
     EquipmentTemplate,
@@ -80,6 +81,7 @@ def _can_manage_instruction_catalog():
 
 def _asset_scope():
     query = InventoryAsset.query.filter_by(is_deleted=False)
+    query = apply_platform_demo_scope(query, "InventoryAsset", InventoryAsset.id)
     if _can_view_all():
         return query
     return query.filter_by(havalimani_id=current_user.havalimani_id)
@@ -87,6 +89,7 @@ def _asset_scope():
 
 def _work_order_scope():
     query = WorkOrder.query.filter_by(is_deleted=False).join(InventoryAsset)
+    query = apply_platform_demo_scope(query, "WorkOrder", WorkOrder.id)
     if _can_view_all():
         return query.filter(InventoryAsset.is_deleted.is_(False))
     return query.filter(
@@ -170,6 +173,7 @@ def _asset_allowed(asset):
 
 def _user_scope():
     query = Kullanici.query.filter_by(is_deleted=False)
+    query = apply_platform_demo_scope(query, "Kullanici", Kullanici.id)
     if _can_view_all():
         return query
     return query.filter(Kullanici.havalimani_id == current_user.havalimani_id)

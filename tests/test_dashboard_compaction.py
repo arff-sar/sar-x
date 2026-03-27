@@ -22,15 +22,15 @@ def test_dashboard_primary_and_secondary_kpis_are_compacted(client, app):
 
     assert response.status_code == 200
     assert html.count('data-kpi-tier="primary"') == 4
-    assert html.count('data-kpi-tier="secondary"') == 5
+    assert html.count('data-kpi-tier="secondary"') == 4
     assert "Toplam Ekipman" in html
-    assert "Arızalı Malzeme" in html
+    assert "Pasif Ekipman" in html
     assert "Geciken Bakım" in html
     assert "Açık İş Emri" in html
     assert "Düşük Stok Parça" in html
     assert "Sayaç Yaklaşan Bakım" in html
     assert "Otomatik İş Emri" in html
-    assert "Alt Bileşen Arızası" in html
+    assert "Pasif Alt Bileşen" in html
     assert "Kalibrasyon Gecikmesi" in html
     assert "Excel İndir" not in html
     assert "PDF Rapor" not in html
