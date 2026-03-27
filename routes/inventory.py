@@ -1286,7 +1286,7 @@ def _create_asset_and_legacy_material(template, kutu, havalimani_id, form_data):
     )
     db.session.add(asset)
     db.session.flush()
-    assign_asset_qr(asset)
+    assign_asset_qr(asset, force=True)
     _sync_maintenance_plan_for_asset(asset, template=template)
 
     return asset, legacy_material

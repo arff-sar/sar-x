@@ -123,6 +123,7 @@ def test_single_create_assigns_asset_code_and_qr(client, app):
     assert asset is not None
     assert (asset.asset_code or "").startswith("ARFF-SAR-")
     assert (asset.qr_code or "").startswith("http")
+    assert f"/asset/{asset.id}/quick" in (asset.qr_code or "")
 
 
 def test_asset_qr_image_endpoint_returns_png(client, app):
@@ -495,6 +496,8 @@ def test_envanter_renders_accordion_and_no_work_order_filter(client, app):
     assert "🔍 Envanter Detayı" not in html
     assert "📱 Hızlı" not in html
     assert "Hızlı Zimmet" in html
+    assert "QR Etiketi" in html
+    assert "/qr-uret/asset/" in html
     assert "🛠️ Bakım" in html
     assert "🗑️ Sil" in html
     assert "kritik ekipman" not in html.lower()

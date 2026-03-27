@@ -41,15 +41,37 @@
 }
 .inventory-detail-panel {
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: 14px;
     background: var(--surface2);
-    padding: 14px;
+    padding: 16px;
+}
+.inventory-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+.inventory-detail-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--navy);
+}
+.inventory-detail-subtitle {
+    font-size: 11px;
+    color: var(--text3);
+    font-family: var(--mono);
+    word-break: break-word;
+}
+.inventory-detail-content {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
 }
 .inventory-detail-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
-    margin-bottom: 12px;
+    gap: 12px;
 }
 .inventory-detail-item {
     border: 1px solid var(--border);
@@ -68,15 +90,37 @@
 .inventory-detail-actions {
     display: flex;
     flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 10px;
+}
+.inventory-detail-actions-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     gap: 8px;
+}
+.inventory-qr-btn {
+    background: var(--blue-light);
+    color: var(--blue);
+    border-color: rgba(30, 64, 175, 0.28);
 }
 
 @media (max-width: 900px) {
     .inventory-table-compact .col-action {
         text-align: left;
     }
+    .inventory-detail-header {
+        flex-direction: column;
+    }
     .inventory-detail-grid {
         grid-template-columns: 1fr;
+    }
+    .inventory-detail-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .inventory-detail-actions-group {
+        width: 100%;
     }
 }
 </style>
@@ -205,45 +249,71 @@
                 <tr id="{{ panel_id }}" class="inventory-detail-row" aria-hidden="true">
                     <td colspan="7">
                         <div class="inventory-detail-panel">
-                            <div class="inventory-detail-grid">
-                                <div class="inventory-detail-item">
-                                    <strong>Seri No</strong>
-                                    <div>{{ m.seri_no or '-' }}</div>
+                            <div class="inventory-detail-header">
+                                <div>
+                                    <div class="inventory-detail-title">{{ m.ad }}</div>
+                                    <div class="inventory-detail-subtitle">{{ linked_asset.asset_code if linked_asset else 'Envanter kodu atanmadı' }}</div>
                                 </div>
-                                <div class="inventory-detail-item">
-                                    <strong>Demirbaş No</strong>
-                                    <div>{{ linked_asset.asset_tag if linked_asset and linked_asset.asset_tag else '-' }}</div>
+                                <div class="inventory-detail-subtitle">{{ m.havalimani.kodu if m.havalimani else '-' }}</div>
+                            </div>
+                            <div class="inventory-detail-content">
+                                <div class="inventory-detail-grid">
+                                    <div class="inventory-detail-item">
+                                        <strong>Seri No</strong>
+                                        <div>{{ m.seri_no or '-' }}</div>
+                                    </div>
+                                    <div class="inventory-detail-item">
+                                        <strong>Demirbaş No</strong>
+                                        <div>{{ linked_asset.asset_tag if linked_asset and linked_asset.asset_tag else '-' }}</div>
+                                    </div>
+                                    <div class="inventory-detail-item">
+                                        <strong>Bağlı Kutu</strong>
+                                        <div>
+                                            {% if m.kutu %}
+                                            <a href="{{ url_for('inventory.kutu_detay', kodu=m.kutu.kodu) }}">{{ m.kutu.kodu }}</a>
+                                            {% else %}
+                                            -
+                                            {% endif %}
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="inventory-detail-item">
-                                    <strong>Bağlı Kutu</strong>
-                                    <div>
-                                        {% if m.kutu %}
-                                        <a href="{{ url_for('inventory.kutu_detay', kodu=m.kutu.kodu) }}">{{ m.kutu.kodu }}</a>
-                                        {% else %}
-                                        -
+                                <div class="inventory-detail-actions">
+                                    <div class="inventory-detail-actions-group">
+                                        {% if linked_asset and has_permission('qr.generate') %}
+                                        <a
+                                            href="{{ url_for('inventory.qr_uret', asset_id=linked_asset.id) }}"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            class="row-btn inventory-qr-btn"
+                                            title="QR etiketini yeni sekmede aç"
+                                            aria-label="{{ m.ad }} için QR etiketini yeni sekmede aç"
+                                        >
+                                            QR Etiketi
+                                        </a>
+                                        {% endif %}
+
+                                        {% if has_permission('assignment.view') %}
+                                        <a href="{{ url_for('inventory.zimmetler') }}{% if linked_asset %}?asset_id={{ linked_asset.id }}{% endif %}" class="row-btn">Hızlı Zimmet</a>
+                                        {% endif %}
+
+                                        {% if has_permission('maintenance.edit') %}
+                                        <form method="POST" action="{{ url_for('inventory.bakim_kaydet', id=m.id) }}" style="display:inline-flex;">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <input type="hidden" name="not" value="Envanter panelinden hızlı bakım kaydı.">
+                                            <button type="submit" class="row-btn" style="background: var(--navy); color: #fff; border-color: var(--navy);">🛠️ Bakım</button>
+                                        </form>
+                                        {% endif %}
+                                    </div>
+
+                                    <div class="inventory-detail-actions-group">
+                                        {% if has_permission('inventory.delete') %}
+                                        <form method="POST" action="{{ url_for('inventory.malzeme_sil', id=m.id) }}" style="display:inline-flex;" onsubmit="return confirm('Bu kayıt arşive alınacak. Devam edilsin mi?');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="row-btn" style="background: var(--red-light); color: var(--red); border-color: var(--red-border);">🗑️ Sil</button>
+                                        </form>
                                         {% endif %}
                                     </div>
                                 </div>
-                            </div>
-                            <div class="inventory-detail-actions">
-                                {% if has_permission('assignment.view') %}
-                                <a href="{{ url_for('inventory.zimmetler') }}{% if linked_asset %}?asset_id={{ linked_asset.id }}{% endif %}" class="row-btn">Hızlı Zimmet</a>
-                                {% endif %}
-
-                                {% if has_permission('maintenance.edit') %}
-                                <form method="POST" action="{{ url_for('inventory.bakim_kaydet', id=m.id) }}" style="display:inline-flex;">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <input type="hidden" name="not" value="Envanter panelinden hızlı bakım kaydı.">
-                                    <button type="submit" class="row-btn" style="background: var(--navy); color: #fff; border-color: var(--navy);">🛠️ Bakım</button>
-                                </form>
-                                {% endif %}
-
-                                {% if has_permission('inventory.delete') %}
-                                <form method="POST" action="{{ url_for('inventory.malzeme_sil', id=m.id) }}" style="display:inline-flex;" onsubmit="return confirm('Bu kayıt arşive alınacak. Devam edilsin mi?');">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <button type="submit" class="row-btn" style="background: var(--red-light); color: var(--red); border-color: var(--red-border);">🗑️ Sil</button>
-                                </form>
-                                {% endif %}
                             </div>
                         </div>
                     </td>
