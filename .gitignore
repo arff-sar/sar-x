@@ -34,3 +34,4 @@ temp/
 
 # OS files
 .DS_Store
+instance/*.db
