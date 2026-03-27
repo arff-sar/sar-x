@@ -1548,11 +1548,18 @@ def homepage_bulk_action(content_type):
 
     if action in {"publish", "activate"}:
         status = WORKFLOW_PUBLISHED
-        if not _can_publish():
+        workflow_action = "bulk_publish"
+        can_bulk_publish = _can_publish()
+        if getattr(current_user, "rol", None) == "editor":
+            can_bulk_publish = can_bulk_publish and bool(
+                current_app.config.get("HOMEPAGE_EDITOR_CAN_PUBLISH", False)
+            )
+        if not can_bulk_publish:
             flash("Yayınlama yetkiniz bulunmuyor. Kayıtlar taslak durumuna alındı.", "warning")
             status = WORKFLOW_DRAFT
+            workflow_action = "bulk_draft_fallback"
         for row in rows:
-            _set_workflow_status(content_type, row, status, action="bulk_publish")
+            _set_workflow_status(content_type, row, status, action=workflow_action)
         db.session.commit()
         log_kaydet("Anasayfa İçerik", f"Toplu yayın işlemi: {content_type} ({len(rows)} kayıt)")
         audit_log("homepage.bulk.publish", outcome="success", content_type=content_type, count=len(rows), status=status)
