@@ -394,7 +394,7 @@ def hata_kaydi_detay(log_id):
     if not current_user.is_sahip:
         abort(403)
 
-    log = IslemLog.query.get_or_404(log_id)
+    log = db.get_or_404(IslemLog, log_id)
     if not getattr(log, "error_code", None):
         abort(404)
 
@@ -432,7 +432,7 @@ def hata_kaydi_durum(log_id):
     if not current_user.is_sahip:
         abort(403)
 
-    log = IslemLog.query.get_or_404(log_id)
+    log = db.get_or_404(IslemLog, log_id)
     if not getattr(log, "error_code", None):
         abort(404)
 

@@ -743,7 +743,7 @@ def homepage_slider_create():
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
 def homepage_slider_edit(slider_id):
-    slider = HomeSlider.query.get_or_404(slider_id)
+    slider = db.get_or_404(HomeSlider, slider_id)
     if request.method == "POST":
         title = guvenli_metin(request.form.get("title") or "").strip()
         if not title:
@@ -791,7 +791,7 @@ def homepage_slider_edit(slider_id):
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 def homepage_slider_toggle(slider_id):
-    slider = HomeSlider.query.get_or_404(slider_id)
+    slider = db.get_or_404(HomeSlider, slider_id)
     current_status = _current_workflow_status("slider", slider)
     next_status = WORKFLOW_PASSIVE if current_status == WORKFLOW_PUBLISHED else WORKFLOW_PUBLISHED
     _set_workflow_status("slider", slider, next_status, action="toggle")
@@ -812,7 +812,7 @@ def homepage_slider_toggle(slider_id):
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 def homepage_slider_delete(slider_id):
-    slider = HomeSlider.query.get_or_404(slider_id)
+    slider = db.get_or_404(HomeSlider, slider_id)
     ContentWorkflow.query.filter_by(entity_type="slider", entity_id=slider.id).delete()
     db.session.delete(slider)
     db.session.commit()
@@ -894,7 +894,7 @@ def homepage_section_create():
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
 def homepage_section_edit(section_id):
-    section = HomeSection.query.get_or_404(section_id)
+    section = db.get_or_404(HomeSection, section_id)
     if request.method == "POST":
         title = guvenli_metin(request.form.get("title") or "").strip()
         section_key = guvenli_metin(request.form.get("section_key") or "").strip()
@@ -943,7 +943,7 @@ def homepage_section_edit(section_id):
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 def homepage_section_toggle(section_id):
-    section = HomeSection.query.get_or_404(section_id)
+    section = db.get_or_404(HomeSection, section_id)
     current_status = _current_workflow_status("section", section)
     next_status = WORKFLOW_PASSIVE if current_status == WORKFLOW_PUBLISHED else WORKFLOW_PUBLISHED
     _set_workflow_status("section", section, next_status, action="toggle")
@@ -964,7 +964,7 @@ def homepage_section_toggle(section_id):
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 def homepage_section_delete(section_id):
-    section = HomeSection.query.get_or_404(section_id)
+    section = db.get_or_404(HomeSection, section_id)
     ContentWorkflow.query.filter_by(entity_type="section", entity_id=section.id).delete()
     db.session.delete(section)
     db.session.commit()
@@ -1057,7 +1057,7 @@ def homepage_announcement_create():
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
 def homepage_announcement_edit(announcement_id):
-    announcement = Announcement.query.get_or_404(announcement_id)
+    announcement = db.get_or_404(Announcement, announcement_id)
     if request.method == "POST":
         title = guvenli_metin(request.form.get("title") or "").strip()
         content = guvenli_metin(request.form.get("content") or "").strip()
@@ -1114,7 +1114,7 @@ def homepage_announcement_edit(announcement_id):
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 def homepage_announcement_toggle(announcement_id):
-    announcement = Announcement.query.get_or_404(announcement_id)
+    announcement = db.get_or_404(Announcement, announcement_id)
     current_status = _current_workflow_status("announcement", announcement)
     next_status = WORKFLOW_PASSIVE if current_status == WORKFLOW_PUBLISHED else WORKFLOW_PUBLISHED
     _set_workflow_status("announcement", announcement, next_status, action="toggle")
@@ -1135,7 +1135,7 @@ def homepage_announcement_toggle(announcement_id):
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 def homepage_announcement_delete(announcement_id):
-    announcement = Announcement.query.get_or_404(announcement_id)
+    announcement = db.get_or_404(Announcement, announcement_id)
     ContentWorkflow.query.filter_by(entity_type="announcement", entity_id=announcement.id).delete()
     ContentSEO.query.filter_by(entity_type="announcement", entity_id=announcement.id).delete()
     db.session.delete(announcement)
@@ -1215,7 +1215,7 @@ def homepage_document_create():
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
 def homepage_document_edit(document_id):
-    document = DocumentResource.query.get_or_404(document_id)
+    document = db.get_or_404(DocumentResource, document_id)
     if request.method == "POST":
         title = guvenli_metin(request.form.get("title") or "").strip()
         if not title:
@@ -1261,7 +1261,7 @@ def homepage_document_edit(document_id):
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 def homepage_document_toggle(document_id):
-    document = DocumentResource.query.get_or_404(document_id)
+    document = db.get_or_404(DocumentResource, document_id)
     current_status = _current_workflow_status("document", document)
     next_status = WORKFLOW_PASSIVE if current_status == WORKFLOW_PUBLISHED else WORKFLOW_PUBLISHED
     _set_workflow_status("document", document, next_status, action="toggle")
@@ -1282,7 +1282,7 @@ def homepage_document_toggle(document_id):
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 def homepage_document_delete(document_id):
-    document = DocumentResource.query.get_or_404(document_id)
+    document = db.get_or_404(DocumentResource, document_id)
     ContentWorkflow.query.filter_by(entity_type="document", entity_id=document.id).delete()
     db.session.delete(document)
     db.session.commit()
@@ -1344,7 +1344,7 @@ def homepage_stat_create():
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 def homepage_stat_edit(card_id):
-    card = HomeStatCard.query.get_or_404(card_id)
+    card = db.get_or_404(HomeStatCard, card_id)
     title = guvenli_metin(request.form.get("title") or "").strip()
     value_text = guvenli_metin(request.form.get("value_text") or "").strip()
     if not title or not value_text:
@@ -1373,7 +1373,7 @@ def homepage_stat_edit(card_id):
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 def homepage_stat_toggle(card_id):
-    card = HomeStatCard.query.get_or_404(card_id)
+    card = db.get_or_404(HomeStatCard, card_id)
     current_status = _current_workflow_status("stat", card)
     next_status = WORKFLOW_PASSIVE if current_status == WORKFLOW_PUBLISHED else WORKFLOW_PUBLISHED
     _set_workflow_status("stat", card, next_status, action="toggle")
@@ -1389,7 +1389,7 @@ def homepage_stat_toggle(card_id):
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 def homepage_stat_delete(card_id):
-    card = HomeStatCard.query.get_or_404(card_id)
+    card = db.get_or_404(HomeStatCard, card_id)
     ContentWorkflow.query.filter_by(entity_type="stat", entity_id=card.id).delete()
     db.session.delete(card)
     db.session.commit()
@@ -1455,7 +1455,7 @@ def homepage_quicklink_create():
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 def homepage_quicklink_edit(link_id):
-    link = HomeQuickLink.query.get_or_404(link_id)
+    link = db.get_or_404(HomeQuickLink, link_id)
     title = guvenli_metin(request.form.get("title") or "").strip()
     if not title:
         flash("Hızlı bağlantı başlığı zorunludur.", "danger")
@@ -1488,7 +1488,7 @@ def homepage_quicklink_edit(link_id):
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 def homepage_quicklink_toggle(link_id):
-    link = HomeQuickLink.query.get_or_404(link_id)
+    link = db.get_or_404(HomeQuickLink, link_id)
     current_status = _current_workflow_status("quicklink", link)
     next_status = WORKFLOW_PASSIVE if current_status == WORKFLOW_PUBLISHED else WORKFLOW_PUBLISHED
     _set_workflow_status("quicklink", link, next_status, action="toggle")
@@ -1504,7 +1504,7 @@ def homepage_quicklink_toggle(link_id):
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 def homepage_quicklink_delete(link_id):
-    link = HomeQuickLink.query.get_or_404(link_id)
+    link = db.get_or_404(HomeQuickLink, link_id)
     ContentWorkflow.query.filter_by(entity_type="quicklink", entity_id=link.id).delete()
     db.session.delete(link)
     db.session.commit()
@@ -1599,7 +1599,7 @@ def homepage_move_item(content_type, item_id, direction):
     if direction not in {"up", "down"}:
         abort(400)
 
-    row = model.query.get_or_404(item_id)
+    row = db.get_or_404(model, item_id)
     moved = _swap_order_with_neighbor(content_type, row, direction)
     if moved:
         db.session.commit()
@@ -1687,7 +1687,7 @@ def media_upload():
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 def media_toggle(asset_id):
-    asset = MediaAsset.query.get_or_404(asset_id)
+    asset = db.get_or_404(MediaAsset, asset_id)
     asset.is_active = not asset.is_active
     db.session.commit()
     audit_log("homepage.media.toggle", outcome="success", media_id=asset.id, active=asset.is_active)

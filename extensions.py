@@ -1,6 +1,6 @@
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, current_user
-from flask import current_app, request, jsonify
+from flask import current_app, request, jsonify, has_request_context
 from sqlalchemy import MetaData, Table, create_engine, inspect
 from sqlalchemy.pool import NullPool
 
@@ -149,8 +149,8 @@ def log_kaydet(
         "kullanici_id": k_id,
         "islem_tipi": tip,
         "detay": detay,
-        "ip_adresi": request.remote_addr,
-        "user_agent": request.user_agent.string,
+        "ip_adresi": request.remote_addr if has_request_context() else None,
+        "user_agent": request.user_agent.string if has_request_context() else None,
     }
     optional_fields = {
         "event_key": event_key,

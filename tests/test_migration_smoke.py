@@ -136,4 +136,4 @@ def test_drifted_database_recovers_missing_havalimani_drive_folder_column(app):
 
     assert "drive_folder_id" in havalimani_columns
     assert "ix_havalimani_drive_folder_id" in havalimani_indexes
-    assert current_revision == "f1d2e3c4b5a6"
+    assert current_revision == "cfd5e1cc9bd2"

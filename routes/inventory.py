@@ -688,6 +688,16 @@ def _create_operational_alerts():
                 link_url=url_for("inventory.asset_lifecycle"),
                 severity="warning",
             )
+        if asset.is_critical and asset.lifecycle_status == "out_of_service":
+            asset_label = asset.asset_code or "Kritik ekipman"
+            create_notification_once(
+                current_user.id,
+                "critical_out_of_service",
+                "Kritik ekipman hizmet dışı",
+                f"{asset_label} hizmet dışı durumda.",
+                link_url=url_for("inventory.asset_lifecycle"),
+                severity="danger",
+            )
 def _parse_date(raw_value):
     if not raw_value:
         return None
