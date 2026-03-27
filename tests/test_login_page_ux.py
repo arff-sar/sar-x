@@ -12,6 +12,7 @@ def test_login_page_renders_updated_titles_and_home_link(client):
     assert "ENVANTER YÖNETİM SİSTEMİ" in html
     assert "SAR-X Envanter Yönetim Sistemi" in html
     assert "Bu sistem yalnızca mevcut arama kurtarma ekiplerinde görevli ARFF personelinin kullanımına açıktır." in html
+    assert 'yalnızca zorunlu teknik çerezler kullanılır; analitik veya reklam çerezi kullanılmaz.' in html
     assert "Anasayfaya Dön" in html
     assert "justify-content: flex-start;" in html
 

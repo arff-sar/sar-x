@@ -74,7 +74,7 @@ body.sidebar-open { overflow: hidden; }
 .user-name { font-size: 12px; font-weight: 600; color: #e2e8f0; line-height: 1; text-transform: capitalize; }
 .user-role { font-size: 10px; color: #64748b; margin-top: 1px; text-transform: uppercase; }
 .user-role-note { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: rgba(249,115,22,.16); color: #fdba74; font-size: 9px; font-weight: 800; letter-spacing: .03em; vertical-align: middle; }
-.impersonation-banner { margin: 10px 24px 0; padding: 10px 14px; border-radius: 12px; border: 1px solid rgba(249,115,22,.35); background: rgba(255,237,213,.75); color: var(--navy); font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.impersonation-banner { margin: 0 0 14px; padding: 10px 14px; border-radius: 12px; border: 1px solid rgba(249,115,22,.35); background: rgba(255,237,213,.75); color: var(--navy); font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .impersonation-banner strong { color: var(--orange); }
 .logout-btn { color: #fca5a5; font-size: 12px; font-weight: 700; text-decoration: none; margin-left: 10px; padding: 0 12px; min-height: var(--topbar-action-height); border-radius: 8px; border: 1px solid rgba(248, 113, 113, 0.2); transition: 0.2s; background: transparent; cursor: pointer; font-family: var(--sans); display: inline-flex; align-items: center; justify-content: center;}
 .logout-btn:hover { background: rgba(248, 113, 113, 0.1); color: #f87171;}
@@ -214,14 +214,16 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
   .sidebar { display: flex; position: fixed; top: 56px; left: 0; width: min(92vw, 340px); height: calc(100vh - 56px); z-index: 105; transform: translateX(-100%); transition: transform .2s ease; box-shadow: 0 18px 36px rgba(15,23,42,.18); }
   .sidebar.is-open { transform: translateX(0); }
   .search-input { width: 100% !important; }
-  .topbar { padding: 10px 12px; gap: 10px; flex-wrap: wrap; }
+  .topbar { padding: 8px 10px; gap: 8px; flex-wrap: nowrap; }
   .toast-stack { top: 66px; right: 12px; left: 12px; width: auto; max-height: calc(100svh - 84px); overflow: auto; }
-  .topbar-end { margin-left: 0; width: 100%; justify-content: space-between; }
+  .topbar-end { margin-left: auto; width: auto; max-width: 66vw; justify-content: flex-end; gap: 6px; }
   .logo-text-sub { display: none; }
-  .user-chip { padding: 4px 8px; }
+  .user-menu-actions { gap: 6px; }
+  .user-chip { padding: 4px 7px; min-width: 0; max-width: 42vw; }
   .role-switch-launch { width: 38px; min-width: 38px; height: 38px; }
   .user-role { display: none; }
-  .logout-btn { margin-left: 0; }
+  .logout-btn { margin-left: 0; min-height: 36px; padding: 0 9px; font-size: 11px; }
+  .user-name { max-width: 102px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .main-inner { padding: 14px; }
   .page-title { font-size: 20px; }
   .page-meta { font-size: 12px; gap: 6px; }
@@ -247,11 +249,11 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
   table, .data-table { min-width: 520px; }
   .topbar-end { gap: 8px; }
   .notification-panel { width: min(300px, calc(100vw - 24px)); right: 0; }
-  .user-chip { min-width: 0; flex: 1 1 auto; }
+  .user-chip { min-width: 0; flex: 0 1 auto; max-width: 44vw; }
   .user-menu-actions { width: auto; justify-content: flex-start; }
   .role-switch-launch { flex: 0 0 38px; }
   .user-menu-panel { top: 112px; right: 12px; width: min(320px, calc(100vw - 24px)); max-height: calc(100vh - 128px); }
-  .user-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .user-name { max-width: 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .info-popover { left: auto; right: 0; transform: translateY(-4px); max-width: min(260px, calc(100vw - 32px)); }
   .info-popover::before { left: auto; right: 18px; transform: rotate(45deg); }
   .info-stack:hover .info-popover,
@@ -347,13 +349,6 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
       </form>
     </div>
   </header>
-  {% if impersonation_mode %}
-  <div class="impersonation-banner" role="status" aria-live="polite">
-    <strong>Taklit Modu:</strong>
-    <span>Gerçek rolünüz {{ base_role_label or '-' }}, aktif görüntülenen rol {{ rol_etiketi or rol }}.</span>
-  </div>
-  {% endif %}
-
   <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
   <nav class="sidebar" id="sidebarNav">
     <div class="sidebar-scroll">
@@ -417,6 +412,12 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
 
   <main class="main-content">
     <div class="main-inner">
+        {% if impersonation_mode %}
+        <div class="impersonation-banner" role="status" aria-live="polite">
+          <strong>Taklit Modu:</strong>
+          <span>Gerçek rolünüz {{ base_role_label or '-' }}, aktif görüntülenen rol {{ rol_etiketi or rol }}.</span>
+        </div>
+        {% endif %}
         
         {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}

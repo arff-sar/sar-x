@@ -20,6 +20,17 @@
 .inventory-table-compact .col-maintenance { width: 18%; text-align: center; }
 .inventory-table-compact .col-action { width: 16%; text-align: right; }
 
+.inventory-page-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.inventory-filter-toggle {
+    display: none;
+}
+
 .inventory-row-toggle {
     display: inline-flex;
     align-items: center;
@@ -106,6 +117,137 @@
 }
 
 @media (max-width: 900px) {
+    .inventory-page-actions {
+        width: 100%;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding-bottom: 2px;
+    }
+    .inventory-page-actions::-webkit-scrollbar {
+        display: none;
+    }
+    .inventory-page-actions .btn {
+        flex: 0 0 auto;
+        min-height: 38px;
+        padding: 8px 12px;
+        font-size: 12px;
+        white-space: nowrap;
+    }
+    .inventory-page-actions .btn-primary {
+        order: -1;
+    }
+    .inventory-filter-panel .panel-header {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .inventory-filter-toggle {
+        display: inline-flex;
+        min-height: 38px;
+        padding: 6px 12px;
+        font-size: 12px;
+    }
+    .inventory-filter-panel .panel-body {
+        display: none;
+    }
+    .inventory-filter-panel.is-open .panel-body {
+        display: block;
+    }
+    .inventory-table-compact {
+        overflow: visible;
+    }
+    .inventory-table-compact table,
+    .inventory-table-compact .data-table,
+    #inventoryTable tbody {
+        display: block;
+        min-width: 0;
+    }
+    #inventoryTable thead {
+        display: none;
+    }
+    #inventoryTable tr.inventory-summary-row {
+        display: block;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: #fff;
+        padding: 12px;
+        margin-bottom: 10px;
+    }
+    #inventoryTable tr.inventory-summary-row > td {
+        display: block;
+        border: 0;
+        padding: 0;
+        text-align: left;
+    }
+    #inventoryTable tr.inventory-summary-row .col-no {
+        display: none;
+    }
+    #inventoryTable tr.inventory-summary-row .col-material {
+        color: var(--navy);
+        font-size: 14px;
+        font-weight: 800;
+        line-height: 1.35;
+        word-break: break-word;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        margin-bottom: 8px;
+    }
+    #inventoryTable tr.inventory-summary-row .col-airport,
+    #inventoryTable tr.inventory-summary-row .col-code,
+    #inventoryTable tr.inventory-summary-row .col-status,
+    #inventoryTable tr.inventory-summary-row .col-maintenance {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 6px;
+        font-size: 12px;
+        color: var(--text3);
+    }
+    #inventoryTable tr.inventory-summary-row .col-airport::before {
+        content: "Birim";
+        font-weight: 700;
+        color: var(--text4);
+    }
+    #inventoryTable tr.inventory-summary-row .col-code::before {
+        content: "Kod";
+        font-weight: 700;
+        color: var(--text4);
+    }
+    #inventoryTable tr.inventory-summary-row .col-status::before {
+        content: "Durum";
+        font-weight: 700;
+        color: var(--text4);
+    }
+    #inventoryTable tr.inventory-summary-row .col-maintenance::before {
+        content: "Bakım";
+        font-weight: 700;
+        color: var(--text4);
+    }
+    #inventoryTable tr.inventory-summary-row .col-action {
+        margin-top: 8px;
+    }
+    #inventoryTable tr.inventory-summary-row .inventory-row-toggle {
+        width: 100%;
+        justify-content: space-between;
+        min-height: 40px;
+    }
+    #inventoryTable tr.inventory-detail-row {
+        display: none;
+        margin: -4px 0 10px;
+    }
+    #inventoryTable tr.inventory-detail-row.is-open {
+        display: block;
+    }
+    #inventoryTable tr.inventory-detail-row > td {
+        display: block;
+        border: 0;
+        padding: 0;
+    }
     .inventory-table-compact .col-action {
         text-align: left;
     }
@@ -139,7 +281,7 @@
         </div>
     </div>
 
-    <div style="display: flex; gap: 10px; align-items: center;">
+    <div class="inventory-page-actions">
         {% if has_permission('inventory.export') %}
         <a href="{{ url_for('inventory.envanter_excel') }}" class="btn btn-secondary" style="color: #1d6f42;">📊 Excel</a>
         <a href="{{ url_for('inventory.envanter_pdf') }}" class="btn btn-secondary" style="color: #c62828;">📄 PDF</a>
@@ -153,14 +295,27 @@
     </div>
 </div>
 
-<div class="panel">
+<div
+    class="panel inventory-filter-panel"
+    id="inventoryFilterPanel"
+    data-has-active-filter="{% if selected_airport or selected_category %}1{% else %}0{% endif %}"
+>
     <div class="panel-header">
         <div>
             <div class="panel-title">Filtreler</div>
             <div class="panel-subtitle">Listeyi birim ve kategoriye göre daraltın.</div>
         </div>
+        <button
+            type="button"
+            class="row-btn inventory-filter-toggle"
+            id="inventoryFilterToggle"
+            aria-expanded="false"
+            aria-controls="inventoryFilterBody"
+        >
+            Filtreleri Aç
+        </button>
     </div>
-    <div class="panel-body" style="padding-bottom: 10px;">
+    <div class="panel-body" id="inventoryFilterBody" style="padding-bottom: 10px;">
         <form method="GET" action="{{ url_for('inventory.envanter') }}" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end;">
             {% if has_permission('logs.view') or has_permission('settings.manage') %}
             <div class="form-group" style="margin-bottom: 0;">
@@ -221,19 +376,19 @@
                 {% set linked_asset = m.linked_asset %}
                 {% set maintenance_label = maintenance_label_tr(m.gelecek_bakim_tarihi, today=today) %}
                 <tr class="inventory-summary-row" data-search-text="{{ (m.ad ~ ' ' ~ (m.seri_no or '') ~ ' ' ~ (m.havalimani.kodu if m.havalimani else '') ~ ' ' ~ (linked_asset.asset_code if linked_asset else ''))|lower }}">
-                    <td class="col-no"><strong>{{ loop.index }}</strong></td>
-                    <td class="col-material">{{ m.ad }}</td>
-                    <td class="col-airport" title="{{ m.havalimani.ad if m.havalimani else 'Bilinmiyor' }}">
+                    <td class="col-no" data-label="Sıra"><strong>{{ loop.index }}</strong></td>
+                    <td class="col-material" data-label="Malzeme">{{ m.ad }}</td>
+                    <td class="col-airport" data-label="Birim" title="{{ m.havalimani.ad if m.havalimani else 'Bilinmiyor' }}">
                         <span class="tag-navy" style="font-size: 10px; padding: 4px 8px;">{{ m.havalimani.kodu if m.havalimani else '-' }}</span>
                     </td>
-                    <td class="col-code">{{ linked_asset.asset_code if linked_asset else '-' }}</td>
-                    <td class="col-status">
+                    <td class="col-code" data-label="Kod">{{ linked_asset.asset_code if linked_asset else '-' }}</td>
+                    <td class="col-status" data-label="Durum">
                         <span class="status-pill {% if status_label_tr(m.durum) == 'Aktif' %}status-aktif{% else %}status-pasif{% endif %}">
                             {{ status_label_tr(m.durum) }}
                         </span>
                     </td>
-                    <td class="col-maintenance">{{ maintenance_label }}</td>
-                    <td class="col-action">
+                    <td class="col-maintenance" data-label="Bakım">{{ maintenance_label }}</td>
+                    <td class="col-action" data-label="İşlem">
                         <button
                             type="button"
                             class="row-btn inventory-row-toggle"
@@ -337,6 +492,7 @@ function filterInventory() {
     const input = document.getElementById('inventorySearch');
     const filter = (input.value || '').toLowerCase();
     const rows = document.querySelectorAll('#inventoryTable tbody tr.inventory-summary-row');
+    const detailDisplayValue = window.matchMedia('(max-width: 900px)').matches ? 'block' : 'table-row';
 
     rows.forEach(function (summaryRow) {
         const text = (summaryRow.getAttribute('data-search-text') || '').toLowerCase();
@@ -346,13 +502,36 @@ function filterInventory() {
 
         summaryRow.style.display = matched ? '' : 'none';
         if (detailRow) {
-            detailRow.style.display = matched && detailRow.classList.contains('is-open') ? 'table-row' : 'none';
+            detailRow.style.display = matched && detailRow.classList.contains('is-open') ? detailDisplayValue : 'none';
         }
     });
 }
 
 (function () {
     const toggles = document.querySelectorAll('[data-accordion-target]');
+    const filterPanel = document.getElementById('inventoryFilterPanel');
+    const filterToggle = document.getElementById('inventoryFilterToggle');
+
+    function panelDisplayValue() {
+        return window.matchMedia('(max-width: 900px)').matches ? 'block' : 'table-row';
+    }
+
+    function syncFilterPanelState(forceOpen) {
+        if (!filterPanel || !filterToggle) return;
+        const mobileView = window.matchMedia('(max-width: 900px)').matches;
+        if (!mobileView) {
+            filterPanel.classList.add('is-open');
+            filterToggle.setAttribute('aria-expanded', 'true');
+            filterToggle.textContent = 'Filtreleri Gizle';
+            return;
+        }
+        const shouldOpen = typeof forceOpen === 'boolean'
+            ? forceOpen
+            : (filterPanel.getAttribute('data-has-active-filter') === '1');
+        filterPanel.classList.toggle('is-open', shouldOpen);
+        filterToggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+        filterToggle.textContent = shouldOpen ? 'Filtreleri Gizle' : 'Filtreleri Aç';
+    }
 
     function closeAll(exceptId) {
         toggles.forEach(function (toggle) {
@@ -377,11 +556,31 @@ function filterInventory() {
             closeAll(panelId);
 
             panel.classList.toggle('is-open', willOpen);
-            panel.style.display = willOpen ? 'table-row' : 'none';
+            panel.style.display = willOpen ? panelDisplayValue() : 'none';
             panel.setAttribute('aria-hidden', willOpen ? 'false' : 'true');
             toggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
         });
     });
+
+    if (filterToggle) {
+        filterToggle.addEventListener('click', function () {
+            syncFilterPanelState(!(filterPanel && filterPanel.classList.contains('is-open')));
+        });
+    }
+
+    window.addEventListener('resize', function () {
+        syncFilterPanelState(filterPanel && filterPanel.classList.contains('is-open'));
+        toggles.forEach(function (toggle) {
+            const panelId = toggle.getAttribute('data-accordion-target');
+            if (!panelId) return;
+            const panel = document.getElementById(panelId);
+            if (panel && panel.classList.contains('is-open')) {
+                panel.style.display = panelDisplayValue();
+            }
+        });
+    });
+
+    syncFilterPanelState();
 })();
 </script>
 {% endblock %}
