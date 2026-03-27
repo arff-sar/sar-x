@@ -370,8 +370,12 @@
             font-family: var(--mono);
             font-size: 12px;
             font-weight: 700;
-            color: var(--orange);
+            color: var(--text3);
             white-space: nowrap;
+            background: var(--surface3);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 2px 8px;
         }
 
         .captcha-box {
@@ -384,6 +388,8 @@
             border: 1.5px solid var(--border-dark);
             border-radius: var(--r-lg);
             transition: border-color .2s, box-shadow .2s, background .2s;
+            max-width: 100%;
+            overflow: hidden;
         }
 
         .captcha-box:focus-within {
@@ -512,7 +518,7 @@
             font-size: 15.5px !important;
             line-height: 44px;
             color: var(--navy) !important;
-            letter-spacing: .14em;
+            letter-spacing: .1em;
             font-variant-numeric: tabular-nums;
             font-feature-settings: "tnum" 1, "case" 1;
             text-transform: uppercase;
@@ -683,6 +689,13 @@
             line-height: 1.5;
         }
 
+        .login-tech-note {
+            margin-top: 6px;
+            font-size: 10.5px;
+            line-height: 1.45;
+            color: #1e40af;
+        }
+
         .back-btn-wrapper {
             display: flex;
             align-items: center;
@@ -754,17 +767,18 @@
         @media (max-width: 560px) {
             body { align-items: flex-start; padding: 10px; }
             .login-card { max-width: 100%; border-radius: 16px; box-shadow: 0 16px 34px rgba(15,45,74,.12); }
-            .login-header { padding: 18px 16px 14px; }
-            .login-logo-mark { width: 42px; height: 42px; margin-bottom: 8px; }
-            .login-logo-mark svg { width: 22px; height: 22px; }
-            .login-brand { font-size: 20px; }
-            .login-title { font-size: 12px; }
-            .login-subtitle { font-size: 10.5px; letter-spacing: .12em; }
+            .login-header { padding: 14px 14px 10px; }
+            .login-logo-mark { width: 38px; height: 38px; margin-bottom: 6px; }
+            .login-logo-mark svg { width: 20px; height: 20px; }
+            .login-brand { font-size: 18px; }
+            .login-title { margin-top: 4px; font-size: 11px; letter-spacing: .045em; line-height: 1.2; }
+            .login-subtitle { font-size: 9.5px; letter-spacing: .1em; }
             .login-body { padding: 14px 14px 16px; }
             .login-toast-stack { padding: 12px 14px 0; }
             .section-topbar { margin-bottom: 8px; }
             .home-link { justify-content: flex-start; }
             .captcha-caption { flex-direction: column; align-items: flex-start; gap: 6px; }
+            .captcha-timer { font-size: 10px; padding: 1px 7px; opacity: .86; }
             .captcha-box { grid-template-columns: minmax(0, 1fr) 42px 124px; gap: 6px; }
             .captcha-canvas-container { grid-column: 1; }
             .captcha-refresh { grid-column: 2; }
@@ -775,14 +789,21 @@
             .captcha-input-shell { min-height: 42px; height: 42px; }
             .captcha-refresh { width: 42px; min-width: 42px; }
             .captcha-input-shell { padding: 0 10px; width: 100%; min-width: 0; overflow: hidden; }
-            .captcha-input { font-size: 16px !important; letter-spacing: .08em; line-height: 42px; }
-            .account-actions-row { gap: 8px; }
-            .remember-option { padding: 8px 10px; min-height: 44px; }
-            .forgot-password-link { min-height: 44px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface2); padding: 0 12px; }
+            .captcha-input { font-size: 15px !important; letter-spacing: .05em; line-height: 42px; }
+            .account-actions-row { gap: 8px; margin: 2px 0 8px; }
+            .remember-option { padding: 4px 8px; min-height: 40px; border-radius: 10px; }
+            .forgot-password-link { min-height: 40px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface2); padding: 0 10px; }
             .remember-copy,
             .forgot-password-link { font-size: 12px; }
             .login-btn-submit { min-height: 46px; }
-            .login-footer { padding: 12px; }
+            .login-footer { margin-top: 10px; padding: 10px 11px; }
+            .login-footer strong { margin-bottom: 4px; font-size: 12.5px; }
+            .login-footer p { font-size: 10.5px; line-height: 1.4; }
+            .login-tech-note { margin-top: 4px; font-size: 9.8px; line-height: 1.35; }
+        }
+
+        @media (max-width: 520px) {
+            .captcha-box { grid-template-columns: minmax(0, 1fr) 42px 112px; }
         }
 
         @media (max-width: 460px) {
@@ -792,7 +813,7 @@
             .captcha-input-shell { grid-column: auto; }
             .captcha-refresh { width: 100%; min-width: 0; }
             .captcha-input-shell { min-height: 44px; height: 44px; }
-            .captcha-input { font-size: 16px !important; letter-spacing: .06em; }
+            .captcha-input { font-size: 14.5px !important; letter-spacing: .04em; }
         }
 
         @media (max-height: 860px) {
@@ -996,6 +1017,7 @@
             <div class="login-footer">
                 <strong>SAR-X Envanter Yönetim Sistemi</strong>
                 <p>Bu sistem yalnızca mevcut arama kurtarma ekiplerinde görevli ARFF personelinin kullanımına açıktır.</p>
+                <p class="login-tech-note">Giriş oturumu ve "Beni hatırla" için yalnızca zorunlu teknik çerezler kullanılır; analitik veya reklam çerezi kullanılmaz.</p>
             </div>
         </div>
 
