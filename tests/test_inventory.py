@@ -142,6 +142,38 @@ def test_asset_qr_image_endpoint_returns_png(client, app):
     assert response.status_code == 200
     assert response.mimetype == "image/png"
 
+
+def test_asset_qr_image_payload_uses_detail_url_even_when_legacy_qr_code_exists(client, app, monkeypatch):
+    user = KullaniciFactory(rol="sahip")
+    airport = HavalimaniFactory(kodu="ESB")
+    template = EquipmentTemplateFactory(name="QR Legacy Template")
+    asset = InventoryAssetFactory(
+        equipment_template=template,
+        airport=airport,
+        status="aktif",
+        qr_code="LEGACY-QR-CODE-001",
+    )
+    db.session.add_all([user, airport, template, asset])
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(user.id)
+        sess["_fresh"] = True
+
+    captured = {}
+
+    def _fake_generate_qr_data(payload):
+        captured["payload"] = payload
+        return io.BytesIO(b"png")
+
+    monkeypatch.setattr("routes.inventory.generate_qr_data", _fake_generate_qr_data)
+
+    response = client.get(f"/api/qr-img/asset/{asset.id}")
+    assert response.status_code == 200
+    assert response.mimetype == "image/png"
+    assert captured["payload"].startswith("http")
+    assert f"/asset/{asset.id}/quick" in captured["payload"]
+
 # 5. YETKİ KONTROLÜ: Düz personel malzeme ekleyemez
 def test_personel_cannot_add_material(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
@@ -498,6 +530,9 @@ def test_envanter_renders_accordion_and_no_work_order_filter(client, app):
     assert "Hızlı Zimmet" in html
     assert "QR Etiketi" in html
     assert "/qr-uret/asset/" in html
+    assert 'class="inventory-page-actions"' in html
+    assert 'id="inventoryFilterPanel"' in html
+    assert 'id="inventoryFilterToggle"' in html
     assert "🛠️ Bakım" in html
     assert "🗑️ Sil" in html
     assert "kritik ekipman" not in html.lower()

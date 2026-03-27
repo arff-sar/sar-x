@@ -482,7 +482,9 @@ def _asset_qr_url(asset):
 
 
 def _asset_qr_payload(asset):
-    return asset.qr_code or _asset_qr_url(asset)
+    # Persisted qr_code alanında legacy/plain değerler kalabildiği için
+    # QR payload her zaman gerçek detay URL'sinden üretilir.
+    return _asset_qr_url(asset)
 
 
 def _asset_qr_context(asset):
