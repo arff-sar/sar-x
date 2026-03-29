@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from reportlab.rl_config import TTFSearchPath
@@ -1491,6 +1492,8 @@ def dashboard():
         Malzeme.durum != "Pasif",
     )
     ariza_sorgu = havalimani_filtreli_sorgu(Malzeme).filter_by(durum="Pasif")
+    bakim_uyari_sayi = bakim_sorgu.count()
+    arizali_malzeme_sayi = ariza_sorgu.count()
 
     asset_query = _asset_scope()
     due_today_count = asset_query.filter(
@@ -1645,8 +1648,8 @@ def dashboard():
     return render_template(
         "dashboard.html",
         havalimani_ad=h_ad,
-        bakim_uyarilari=bakim_sorgu.all(),
-        arizali_malzemeler=ariza_sorgu.all(),
+        bakim_uyari_sayi=bakim_uyari_sayi,
+        arizali_malzeme_sayi=arizali_malzeme_sayi,
         toplam_ekipman_sayi=total_asset_count,
         bugun=bugun,
         bugun_bakim_yaklasan_sayi=due_today_count,
@@ -1688,9 +1691,20 @@ def envanter():
     selected_airport = request.args.get("havalimani_id", type=int)
     selected_category = request.args.get("kategori", "").strip()
 
-    query = havalimani_filtreli_sorgu(Malzeme)
+    query = havalimani_filtreli_sorgu(Malzeme).options(
+        joinedload(Malzeme.havalimani),
+        joinedload(Malzeme.kutu),
+        joinedload(Malzeme.linked_asset).joinedload(InventoryAsset.equipment_template),
+        joinedload(Malzeme.linked_asset).joinedload(InventoryAsset.operational_state),
+    )
     if _can_view_all_operational_scope() and selected_airport:
         query = query.filter(Malzeme.havalimani_id == selected_airport)
+    if selected_category:
+        query = (
+            query.join(Malzeme.linked_asset)
+            .join(InventoryAsset.equipment_template)
+            .filter(sa.func.lower(EquipmentTemplate.category) == selected_category.lower())
+        )
 
     malzemeler = query.order_by(Malzeme.created_at.desc()).all()
     malzemeler = [
@@ -1698,14 +1712,6 @@ def envanter():
         for malzeme in malzemeler
         if not malzeme.linked_asset or malzeme.linked_asset.lifecycle_status not in {"disposed", "decommissioned"}
     ]
-    if selected_category:
-        malzemeler = [
-            item
-            for item in malzemeler
-            if item.linked_asset
-            and item.linked_asset.equipment_template
-            and (item.linked_asset.equipment_template.category or "").lower() == selected_category.lower()
-        ]
 
     if _can_view_all_operational_scope():
         h_ad = "Genel Envanter (Tüm Birimler)"

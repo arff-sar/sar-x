@@ -1,6 +1,6 @@
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, current_user
-from flask import current_app, request, jsonify, has_request_context
+from flask import current_app, request, jsonify, has_app_context, has_request_context
 from sqlalchemy import MetaData, Table, create_engine, inspect
 from sqlalchemy.pool import NullPool
 
@@ -31,7 +31,7 @@ migrate = Migrate()  # ✅ YENİ: Artık tabloları silip kurmaya son!
 # --- SİSTEM FONKSİYONLARI ---
 
 def _schema_cache():
-    if not current_app:
+    if not has_app_context():
         return {"tables": {}, "columns": {}}
     return current_app.extensions.setdefault(
         "schema_cache",
@@ -40,7 +40,7 @@ def _schema_cache():
 
 
 def reset_schema_cache():
-    if current_app:
+    if has_app_context():
         current_app.extensions["schema_cache"] = {"tables": {}, "columns": {}}
 
 
@@ -83,7 +83,7 @@ def _get_inspector():
 
 def table_exists(table_name):
     try:
-        if not current_app:
+        if not has_app_context():
             return False
         cache = _schema_cache()
         if cache["tables"].get(table_name) is True:
@@ -104,7 +104,7 @@ def table_exists(table_name):
 
 def column_exists(table_name, column_name):
     try:
-        if not current_app:
+        if not has_app_context():
             return False
         cache = _schema_cache()
         if cache["columns"].get(table_name) is None or column_name not in cache["columns"].get(table_name, set()):
@@ -124,6 +124,24 @@ def column_exists(table_name, column_name):
 def _runtime_table(table_name):
     metadata = MetaData()
     return Table(table_name, metadata, autoload_with=db.engine)
+
+
+def _safe_request_remote_addr():
+    if not has_request_context():
+        return None
+    try:
+        return request.remote_addr
+    except Exception:
+        return None
+
+
+def _safe_request_user_agent():
+    if not has_request_context():
+        return None
+    try:
+        return request.user_agent.string
+    except Exception:
+        return None
 
 
 def log_kaydet(
@@ -149,8 +167,8 @@ def log_kaydet(
         "kullanici_id": k_id,
         "islem_tipi": tip,
         "detay": detay,
-        "ip_adresi": request.remote_addr if has_request_context() else None,
-        "user_agent": request.user_agent.string if has_request_context() else None,
+        "ip_adresi": _safe_request_remote_addr(),
+        "user_agent": _safe_request_user_agent(),
     }
     optional_fields = {
         "event_key": event_key,
@@ -205,7 +223,7 @@ def log_kaydet(
                 db.session.rollback()
         except Exception:
             pass
-        if current_app:
+        if has_app_context():
             current_app.logger.exception("İşlem logu yazılamadı: %s", tip)
 
 def guvenli_metin(metin):
@@ -225,7 +243,7 @@ def api_yanit(basari=True, mesaj="", veri=None, kod=200):
 
 def audit_log(event, outcome="success", **context):
     """Yapılandırılmış denetim logu için hafif yardımcı."""
-    if not current_app:
+    if not has_app_context():
         return
     context_parts = [f"{key}={value}" for key, value in context.items() if value is not None]
     details = " ".join(context_parts)
@@ -255,7 +273,7 @@ def create_notification(user_id, notification_type, title, message, link_url=Non
     except Exception:
         if commit:
             db.session.rollback()
-        if current_app:
+        if has_app_context():
             current_app.logger.exception("Bildirim olusturulamadi: %s", notification_type)
         return None
 
@@ -323,7 +341,7 @@ def create_approval_request(
     except Exception:
         if commit:
             db.session.rollback()
-        if current_app:
+        if has_app_context():
             current_app.logger.exception("Approval request olusturulamadi: %s", approval_type)
         return None
 

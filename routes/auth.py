@@ -60,6 +60,34 @@ def _render_login_page(status_code=200, force_new=False, captcha_feedback=None):
     response.headers["Vary"] = "Cookie"
     return response
 
+
+def _expire_cookie(response, name, *, path="/", domain=None):
+    response.delete_cookie(name, path=path or "/", domain=domain)
+    if domain:
+        response.delete_cookie(name, path=path or "/")
+    return response
+
+
+def _clear_auth_cookies(response):
+    session_cookie_name = current_app.config.get("SESSION_COOKIE_NAME", "session")
+    remember_cookie_name = current_app.config.get("REMEMBER_COOKIE_NAME", "remember_token")
+    session_cookie_path = current_app.config.get("SESSION_COOKIE_PATH") or "/"
+    remember_cookie_path = current_app.config.get("REMEMBER_COOKIE_PATH") or "/"
+
+    _expire_cookie(
+        response,
+        session_cookie_name,
+        path=session_cookie_path,
+        domain=current_app.config.get("SESSION_COOKIE_DOMAIN"),
+    )
+    _expire_cookie(
+        response,
+        remember_cookie_name,
+        path=remember_cookie_path,
+        domain=current_app.config.get("REMEMBER_COOKIE_DOMAIN"),
+    )
+    return response
+
 def gizli_sifreyi_getir():
     # 1) Secret Manager erişimi yoksa/kapalıysa env üzerinden devam et.
     env_password = (current_app.config.get("SMTP_PASSWORD") or "").strip()
@@ -363,9 +391,10 @@ def login():
         user = _find_active_user_by_email(kullanici_adi)
         
         if user and user.sifre_kontrol(sifre):
+            invalidate_login_captcha(clear_session=True)
+            session.clear()
             login_user(user, remember=remember_me)
             session.permanent = True
-            invalidate_login_captcha(clear_session=True)
             try:
                 _reset_failed_login(identifier)
             except Exception:
@@ -425,9 +454,10 @@ def logout():
     clear_role_override(current_user)
     logout_user()
     invalidate_login_captcha(clear_session=True)
-    session.pop("_flashes", None)
+    session.clear()
     flash("Sistemden güvenli çıkış yapıldı.", "success")
-    return redirect(url_for('auth.login'))
+    response = redirect(url_for('auth.login'))
+    return _clear_auth_cookies(response)
 
 
 @auth_bp.route('/role-switch', methods=['GET', 'POST'])

@@ -116,21 +116,21 @@
     </div>
 </div>
 
-{% if arizali_malzemeler %}
+{% if arizali_malzeme_sayi %}
 <a href="{{ url_for('inventory.envanter') }}" class="alarm-strip">
     <div class="alarm-strip-icon">⚠️</div>
     <div class="alarm-strip-body">
-        <div class="alarm-strip-title">{{ arizali_malzemeler|length }} Pasif Ekipman Uyarısı</div>
+        <div class="alarm-strip-title">{{ arizali_malzeme_sayi }} Pasif Ekipman Uyarısı</div>
         <div class="alarm-strip-desc">Sistemde operasyon dışına alınmış ekipmanlar bulunuyor.</div>
     </div>
 </a>
 {% endif %}
 
-{% if bakim_uyarilari %}
+{% if bakim_uyari_sayi %}
 <a href="{{ url_for('inventory.envanter') }}" class="alarm-strip warn-strip">
     <div class="alarm-strip-icon">🔧</div>
     <div class="alarm-strip-body">
-        <div class="alarm-strip-title">{{ bakim_uyarilari|length }} Yaklaşan Bakım</div>
+        <div class="alarm-strip-title">{{ bakim_uyari_sayi }} Yaklaşan Bakım</div>
         <div class="alarm-strip-desc">Önümüzdeki 15 gün içinde bakım planı bulunan ekipmanlar mevcut.</div>
     </div>
 </a>
@@ -152,7 +152,7 @@
             <div class="stat-icon" style="background:var(--red-light);">🔴</div>
             <span class="stat-trend" style="background: var(--red-light); color: var(--red);">ARIZA</span>
         </div>
-        <div class="stat-value" style="color: var(--red);">{{ arizali_malzemeler|length }}</div>
+        <div class="stat-value" style="color: var(--red);">{{ arizali_malzeme_sayi if arizali_malzeme_sayi is defined else 0 }}</div>
         <div class="stat-label">Pasif Ekipman</div>
         {% set trend = dashboard_trends["faulty_assets"]["trend"] %}
         <div class="stat-trend-line trend-{{ trend.direction }}">{{ trend_days }}g: {% if trend.available %}{{ trend.percent }}%{% else %}- · veri yok{% endif %}</div>

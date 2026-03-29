@@ -116,6 +116,43 @@ def test_logout_clears_remember_me_and_stays_on_login(client, app):
     assert 'data-auto-dismiss="4200"' in html
 
 
+def test_logout_invalidates_auth_state_and_expires_remember_cookie(client, app):
+    app.config['WTF_CSRF_ENABLED'] = False
+    user = KullaniciFactory(kullanici_adi="remember-expire@sarx.com", is_deleted=False, rol="sahip")
+    user.sifre_hash = generate_password_hash('123456', method='pbkdf2:sha256')
+    db.session.add(user)
+    db.session.commit()
+
+    answer = _extract_challenge_answer(client, app)
+    login_response = client.post('/login', data={
+        'kullanici_adi': 'remember-expire@sarx.com',
+        'sifre': '123456',
+        'security_verification': answer,
+        'remember_me': 'on',
+    }, follow_redirects=False)
+
+    assert login_response.status_code == 302
+    assert any(
+        'remember_token=' in item and 'SameSite=Lax' in item
+        for item in login_response.headers.getlist('Set-Cookie')
+    )
+
+    logout_response = client.post('/logout', follow_redirects=False)
+    set_cookie_headers = logout_response.headers.getlist('Set-Cookie')
+
+    assert logout_response.status_code == 302
+    assert any('remember_token=;' in item for item in set_cookie_headers)
+    assert any('Expires=Thu, 01 Jan 1970 00:00:00 GMT' in item for item in set_cookie_headers)
+
+    with client.session_transaction() as sess:
+        assert '_user_id' not in sess
+        assert 'temporary_role_override' not in sess
+
+    blocked = client.get('/dashboard', follow_redirects=False)
+    assert blocked.status_code == 302
+    assert '/login' in blocked.headers.get('Location', '')
+
+
 def test_logout_rejects_get_method(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
     response = client.get('/logout', follow_redirects=False)

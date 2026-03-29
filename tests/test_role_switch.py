@@ -103,6 +103,53 @@ def test_mehmet_user_can_switch_role_and_session_persists(client, app):
         assert refreshed.rol == "sahip"
 
 
+def test_mehmet_user_can_switch_roles_multiple_times_without_logout(client, app):
+    with app.app_context():
+        user = KullaniciFactory(
+            rol="sahip",
+            is_deleted=False,
+            tam_ad="Mehmet",
+            kullanici_adi="mehmetcinocevi@gmail.com",
+        )
+        db.session.add(user)
+        db.session.commit()
+        user_id = user.id
+
+    _login(client, user_id)
+
+    first_switch = client.post(
+        "/role-switch",
+        data={"role": "admin", "next": "/role-switch"},
+        follow_redirects=True,
+    )
+    assert first_switch.status_code == 200
+    with client.session_transaction() as session:
+        assert session.get("temporary_role_override") == "admin"
+
+    second_switch = client.post(
+        "/role-switch",
+        data={"role": "ekip_uyesi", "next": "/role-switch"},
+        follow_redirects=True,
+    )
+    assert second_switch.status_code == 200
+    with client.session_transaction() as session:
+        assert session.get("temporary_role_override") == "ekip_uyesi"
+
+    switch_page_response = client.get("/role-switch")
+    switch_page_html = switch_page_response.data.decode("utf-8")
+    assert switch_page_response.status_code == 200
+    assert switch_page_html.find('<main class="main-content">') < switch_page_html.find('class="impersonation-banner"')
+
+    clear_response = client.post(
+        "/role-switch",
+        data={"role": "__default__", "next": "/role-switch"},
+        follow_redirects=True,
+    )
+    assert clear_response.status_code == 200
+    with client.session_transaction() as session:
+        assert "temporary_role_override" not in session
+
+
 def test_mehmet_user_can_clear_role_override(client, app):
     with app.app_context():
         user = KullaniciFactory(

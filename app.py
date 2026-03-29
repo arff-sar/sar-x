@@ -180,6 +180,8 @@ def _apply_runtime_env_overrides(app):
         "GCS_UPLOAD_PREFIX",
         "GCS_PUBLIC_BASE_URL",
         "GCS_CACHE_CONTROL",
+        "SESSION_COOKIE_SAMESITE",
+        "REMEMBER_COOKIE_SAMESITE",
     ]
     for key in direct_keys:
         value = os.getenv(key)
@@ -239,6 +241,50 @@ def _wants_json_response():
         return True
     best = request.accept_mimetypes.best_match(["application/json", "text/html"])
     return best == "application/json" and request.accept_mimetypes[best] > request.accept_mimetypes["text/html"]
+
+
+def _append_vary_header(response, value):
+    existing = [item.strip() for item in (response.headers.get("Vary") or "").split(",") if item.strip()]
+    if value.lower() not in {item.lower() for item in existing}:
+        existing.append(value)
+        response.headers["Vary"] = ", ".join(existing)
+    return response
+
+
+def _response_requires_private_cache_busting():
+    endpoint = request.endpoint or ""
+    if endpoint == "static" or request.path.startswith("/static/"):
+        return False
+    if endpoint in {
+        "serve_manifest",
+        "serve_site_manifest",
+        "serve_sw",
+        "serve_robots",
+        "serve_favicon_ico",
+        "serve_favicon_png",
+        "serve_apple_touch_icon",
+        "serve_apple_touch_icon_precomposed",
+        "serve_assetlinks",
+        "health",
+        "ready",
+    }:
+        return False
+    if endpoint.startswith("auth."):
+        return True
+
+    try:
+        from flask_login import current_user
+
+        return bool(current_user.is_authenticated)
+    except Exception:
+        return False
+
+
+def _apply_private_no_store_headers(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0, private"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return _append_vary_header(response, "Cookie")
 
 
 def _error_response(status_code, message):
@@ -663,6 +709,8 @@ def create_app(config_name=None):
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if _response_requires_private_cache_busting():
+            response = _apply_private_no_store_headers(response)
         if app.config.get("SESSION_COOKIE_SECURE"):
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response
