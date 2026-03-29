@@ -139,7 +139,8 @@ def _safe_request_user_agent():
     if not has_request_context():
         return None
     try:
-        return request.user_agent.string
+        value = request.user_agent.string
+        return value or None
     except Exception:
         return None
 
