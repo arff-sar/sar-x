@@ -151,7 +151,7 @@ def test_editor_publish_falls_back_to_draft_when_disabled(client, app):
     assert slider.is_active is True
 
 
-def test_editor_cannot_mutate_homepage_content(client, app):
+def test_editor_can_mutate_homepage_content(client, app):
     editor = KullaniciFactory(rol="editor")
     db.session.add(editor)
     db.session.commit()
@@ -168,4 +168,6 @@ def test_editor_cannot_mutate_homepage_content(client, app):
         follow_redirects=False,
     )
 
-    assert create_resp.status_code == 403
+    assert create_resp.status_code == 302
+    assert create_resp.headers["Location"].endswith("/admin/homepage/sliders")
+    assert HomeSlider.query.filter_by(title="Engelli İçerik").first() is not None

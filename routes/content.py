@@ -75,21 +75,52 @@ OWNER_ALLOWED_CONTENT_VIEW_ENDPOINTS = {
     "content.media_library",
 }
 
+CONTENT_EDIT_ENDPOINT_PREFIXES = (
+    "content.homepage_slider_",
+    "content.homepage_section_",
+    "content.homepage_announcement",
+    "content.homepage_announcements_",
+    "content.homepage_document",
+    "content.homepage_documents_",
+    "content.homepage_stat",
+    "content.homepage_quicklink_",
+)
+
+CONTENT_EDIT_ENDPOINTS = {
+    "content.homepage_bulk_action",
+    "content.homepage_move_item",
+    "content.content_preview",
+}
+
 
 @content_bp.before_request
 def _restrict_content_mutations_to_owner():
     endpoint = (request.endpoint or "").strip()
     if not endpoint.startswith("content."):
         return None
-    if endpoint in OWNER_ALLOWED_CONTENT_VIEW_ENDPOINTS and request.method == "GET":
-        return None
-    if endpoint == "content.content_preview":
-        return None
     if not current_user.is_authenticated:
         return None
-    if endpoint.startswith("content.homepage_") or endpoint.startswith("content.media_"):
-        if not getattr(current_user, "is_sahip", False):
+
+    if endpoint == "content.media_library" and request.method == "GET":
+        if not has_permission("homepage.media"):
             abort(403)
+        return None
+
+    if endpoint in OWNER_ALLOWED_CONTENT_VIEW_ENDPOINTS and request.method == "GET":
+        if not has_permission("homepage.view"):
+            abort(403)
+        return None
+
+    if endpoint.startswith("content.media_"):
+        if not has_permission("homepage.media"):
+            abort(403)
+        return None
+
+    if endpoint in CONTENT_EDIT_ENDPOINTS or endpoint.startswith(CONTENT_EDIT_ENDPOINT_PREFIXES):
+        if not has_permission("homepage.edit"):
+            abort(403)
+        return None
+
     return None
 
 
