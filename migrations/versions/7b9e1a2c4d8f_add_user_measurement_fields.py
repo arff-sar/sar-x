@@ -77,7 +77,7 @@ def upgrade():
         if _has_column("ppe_record", "physical_condition"):
             bind.execute(sa.text("UPDATE ppe_record SET physical_condition = 'iyi' WHERE physical_condition IS NULL"))
         if _has_column("ppe_record", "is_active"):
-            bind.execute(sa.text("UPDATE ppe_record SET is_active = 1 WHERE is_active IS NULL"))
+            bind.execute(sa.text("UPDATE ppe_record SET is_active = TRUE WHERE is_active IS NULL"))
         for index_name, columns in {
             "ix_ppe_record_category": ["category"],
             "ix_ppe_record_subcategory": ["subcategory"],
