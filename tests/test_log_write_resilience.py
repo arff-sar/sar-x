@@ -63,11 +63,12 @@ def test_log_kaydet_without_request_context_uses_safe_fallbacks(app):
         log_kaydet("Sistem", "Request context olmadan da log yazilabilir.")
 
         row = db.session.execute(
-            text("SELECT ip_adresi, user_agent FROM islem_log ORDER BY id DESC LIMIT 1")
+            text("SELECT ip_adresi, user_agent, zaman FROM islem_log ORDER BY id DESC LIMIT 1")
         ).one()
 
     assert row.ip_adresi is None
     assert row.user_agent is None
+    assert row.zaman is not None
 
 
 def test_audit_log_outside_app_context_is_noop():

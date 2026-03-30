@@ -8,9 +8,11 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 import sqlalchemy as sa
+from openpyxl import Workbook, load_workbook
+from openpyxl.worksheet.datavalidation import DataValidation
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
-from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, session, url_for
 from flask_login import current_user, login_required
 from reportlab.rl_config import TTFSearchPath
 from xhtml2pdf import pisa
@@ -115,7 +117,55 @@ PPE_STATUS_LABELS = {
     "kullanim_disi": "Kullanım Dışı",
     "degisim_talebi": "Değişim Talebi",
 }
-SIGNED_ASSIGNMENT_ALLOWED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "webp"}
+PPE_PHYSICAL_CONDITION_LABELS = {
+    "yeni": "Yeni",
+    "iyi": "İyi",
+    "hasarli": "Hasarlı",
+    "bakim_gerektiriyor": "Bakım Gerektiriyor",
+}
+PPE_CATEGORY_OPTIONS = {
+    "Baş ve Yüz Koruması": [
+        "Baret",
+        "Aydınlatmalı Baret",
+        "Aydınlatmasız Baret",
+        "Koruyucu Gözlük",
+        "Vizör",
+    ],
+    "Solunum Koruması": [
+        "Toz Maskesi",
+        "Yarım Yüz Gaz Maskesi",
+        "Tam Yüz Gaz Maskesi",
+        "Filtre",
+    ],
+    "Vücut Koruması": [
+        "Reflektif Yelek",
+        "Operasyon Tulumu",
+        "Yağmurluk",
+        "Isı Yalıtımlı Mont",
+    ],
+    "El Koruması": [
+        "Mekanik Risk Eldiveni",
+        "Kimyasal Eldiven",
+        "Elektrik Eldiveni",
+    ],
+    "Ayak Koruması": [
+        "Çelik Burunlu İş Botu",
+        "Çelik Tabanlı İş Botu",
+        "Çizme",
+    ],
+    "Yüksekte Çalışma ve Özel Donanım": [
+        "Emniyet Kemeri / Harness",
+        "Karabina",
+        "Baret İçi Kulaklık",
+        "Kafa Lambası",
+    ],
+}
+PPE_APPAREL_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "3XL"]
+PPE_SHOE_SIZES = [str(size) for size in range(36, 49)]
+PPE_APPAREL_CATEGORIES = {"Vücut Koruması", "El Koruması"}
+PPE_SHOE_CATEGORIES = {"Ayak Koruması"}
+PPE_EXPIRY_WARNING_DAYS = 30
+SIGNED_ASSIGNMENT_ALLOWED_EXTENSIONS = {"pdf"}
 PPE_ALLOWED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "webp"}
 DRILL_ALLOWED_EXTENSIONS = {"rar", "zip", "7z"}
 DRILL_ALLOWED_MIME_TYPES = (
@@ -354,6 +404,45 @@ def _next_assignment_no():
     return f"ZMT-{now.strftime('%Y%m%d%H%M%S')}-{now.microsecond % 1000:03d}"
 
 
+def _storage_safe_segment(raw_value, default):
+    safe_value = secure_upload_filename(guvenli_metin(raw_value or "").strip().replace(" ", "_"))
+    return safe_value or default
+
+
+def _signed_document_folder_for_person(airport_label, person_label):
+    airport_folder = _storage_safe_segment(airport_label, "global")
+    person_folder = _storage_safe_segment(person_label, "personel")
+    return f"{airport_folder}/zimmet/{person_folder}"
+
+
+def _signed_document_filename_for_person(person_label):
+    person_slug = _storage_safe_segment(person_label, "personel").lower()
+    timestamp = get_tr_now().strftime("%Y%m%d%H%M%S")
+    return secure_upload_filename(f"kkd_{person_slug}_zimmet_{timestamp}.pdf")
+
+
+def _assignment_primary_person_name(assignment):
+    names = [
+        recipient.user.tam_ad
+        for recipient in getattr(assignment, "recipients", [])
+        if getattr(recipient, "user", None) and not getattr(recipient.user, "is_deleted", False)
+    ]
+    if names:
+        return names[0]
+    delivered_by = getattr(getattr(assignment, "delivered_by", None), "tam_ad", "") or getattr(assignment, "delivered_by_name", "")
+    return delivered_by or "personel"
+
+
+def _assignment_signed_document_folder(assignment):
+    airport_label = getattr(getattr(assignment, "airport", None), "kodu", "") or getattr(getattr(assignment, "airport", None), "ad", "") or "global"
+    person_label = _assignment_primary_person_name(assignment)
+    return _signed_document_folder_for_person(airport_label, person_label)
+
+
+def _assignment_signed_document_filename(assignment):
+    return _signed_document_filename_for_person(_assignment_primary_person_name(assignment))
+
+
 def _parse_int_list(values):
     rows = []
     for value in values or []:
@@ -397,6 +486,73 @@ def _assignment_status_label(value):
 
 def _ppe_status_label(value):
     return PPE_STATUS_LABELS.get(value, value)
+
+
+def _ppe_condition_label(value):
+    return PPE_PHYSICAL_CONDITION_LABELS.get(value, value)
+
+
+def _ppe_category_options():
+    return PPE_CATEGORY_OPTIONS
+
+
+def _ppe_subtype_options(category):
+    return list(_ppe_category_options().get(category, []))
+
+
+def _ppe_requires_apparel_size(category, subcategory):
+    return category in PPE_APPAREL_CATEGORIES or subcategory in {
+        "Reflektif Yelek",
+        "Operasyon Tulumu",
+        "Yağmurluk",
+        "Isı Yalıtımlı Mont",
+        "Mekanik Risk Eldiveni",
+        "Kimyasal Eldiven",
+        "Elektrik Eldiveni",
+    }
+
+
+def _ppe_requires_shoe_size(category, subcategory):
+    return category in PPE_SHOE_CATEGORIES or subcategory in {
+        "Çelik Burunlu İş Botu",
+        "Çelik Tabanlı İş Botu",
+        "Çizme",
+    }
+
+
+def _ppe_combined_size(apparel_size, shoe_size, fallback=None):
+    if shoe_size:
+        return shoe_size
+    if apparel_size:
+        return apparel_size
+    return guvenli_metin(fallback or "").strip()
+
+
+def _ppe_brand_model_display(record):
+    return " ".join(part for part in [record.brand, record.model_name] if part).strip() or (record.brand_model or "-")
+
+
+def _ppe_size_display(record):
+    return record.size_display or "-"
+
+
+def _ppe_alert_state(record):
+    today = get_tr_now().date()
+    expiry_date = getattr(record, "expiry_date", None)
+    if expiry_date:
+        if expiry_date < today:
+            return ("danger", "Süresi doldu")
+        if expiry_date <= (today + timedelta(days=PPE_EXPIRY_WARNING_DAYS)):
+            return ("warning", "Süresi yaklaşıyor")
+    if getattr(record, "physical_condition", "") == "bakim_gerektiriyor":
+        return ("warning", "Bakım gerekiyor")
+    if getattr(record, "physical_condition", "") == "hasarli":
+        return ("danger", "Hasarlı")
+    return ("success", "Uygun")
+
+
+def _ppe_import_feedback_session_key():
+    return "ppe_import_feedback"
 
 
 def _validate_upload(upload, allowed_extensions, allowed_mime_prefixes):
@@ -2614,17 +2770,18 @@ def zimmet_imzali_belge_yukle(assignment_id):
     safe_name, error = _validate_upload(
         upload,
         SIGNED_ASSIGNMENT_ALLOWED_EXTENSIONS,
-        ("application/pdf", "image/"),
+        ("application/pdf",),
     )
     if error:
         flash(error, "danger")
         return redirect(url_for("inventory.zimmet_detay", assignment_id=assignment.id))
 
-    filename = f"{assignment.assignment_no.lower()}_{int(get_tr_now().timestamp())}_{safe_name}"
-    stored = get_storage_adapter().save_upload(upload, folder="assignments", filename=filename)
+    filename = _assignment_signed_document_filename(assignment)
+    folder = _assignment_signed_document_folder(assignment)
+    stored = get_storage_adapter().save_upload(upload, folder=folder, filename=filename)
     assignment.signed_document_key = stored.storage_key
     assignment.signed_document_url = stored.public_url
-    assignment.signed_document_name = safe_name
+    assignment.signed_document_name = filename
     _append_assignment_history(assignment, "signed_upload", "İmzalı belge yüklendi.")
     db.session.commit()
 
@@ -2701,6 +2858,280 @@ def zimmet_durum_guncelle(assignment_id):
     return redirect(url_for("inventory.zimmet_detay", assignment_id=assignment.id))
 
 
+def _ppe_airport_display(airport):
+    if not airport:
+        return ""
+    if getattr(airport, "kodu", None) and getattr(airport, "ad", None):
+        return f"{airport.kodu} - {airport.ad}"
+    return getattr(airport, "kodu", None) or getattr(airport, "ad", None) or ""
+
+
+def _ppe_visible_users(selected_airport=None):
+    query = _visible_personnel_query(selected_airport)
+    if not has_permission("ppe.manage"):
+        query = query.filter(Kullanici.id == current_user.id)
+    return query.order_by(Kullanici.tam_ad.asc()).all()
+
+
+def _ppe_field_requirements(category, subcategory):
+    return {
+        "apparel": _ppe_requires_apparel_size(category, subcategory),
+        "shoe": _ppe_requires_shoe_size(category, subcategory),
+    }
+
+
+def _ppe_form_get(source, key, *, default=None, cast=None):
+    value = default
+    if hasattr(source, "get"):
+        try:
+            value = source.get(key, default=default, type=cast) if cast else source.get(key, default)
+        except TypeError:
+            value = source.get(key, default)
+    if cast and value not in (None, "") and not isinstance(value, cast):
+        try:
+            value = cast(value)
+        except (TypeError, ValueError):
+            return default
+    return value
+
+
+def _normalize_ppe_form_payload(form, *, visible_users):
+    user_id = _ppe_form_get(form, "user_id", cast=int)
+    user = visible_users.get(user_id)
+    if not user:
+        raise ValueError("KKD kaydı için geçerli bir personel seçin.")
+
+    category = guvenli_metin(_ppe_form_get(form, "category") or "").strip()
+    subcategory = guvenli_metin(_ppe_form_get(form, "subcategory") or "").strip()
+    item_name = guvenli_metin(_ppe_form_get(form, "item_name") or "").strip()
+    brand = guvenli_metin(_ppe_form_get(form, "brand") or "").strip()
+    model_name = guvenli_metin(_ppe_form_get(form, "model_name") or "").strip()
+    serial_no = guvenli_metin(_ppe_form_get(form, "serial_no") or "").strip()
+    apparel_size = guvenli_metin(_ppe_form_get(form, "apparel_size") or "").strip()
+    shoe_size = guvenli_metin(_ppe_form_get(form, "shoe_size") or "").strip()
+    manufacturer_url = guvenli_metin(_ppe_form_get(form, "manufacturer_url") or "").strip()
+    physical_condition = str(_ppe_form_get(form, "physical_condition") or "iyi").strip()
+    is_active = str(_ppe_form_get(form, "is_active") or "1").strip() in {"1", "true", "True", "evet", "Evet", "on"}
+    requirements = _ppe_field_requirements(category, subcategory)
+
+    if category not in _ppe_category_options():
+        raise ValueError("Geçerli bir KKD kategorisi seçin.")
+    if subcategory not in _ppe_subtype_options(category):
+        raise ValueError("Seçilen kategori için geçerli bir alt tür seçin.")
+    if not item_name:
+        raise ValueError("KKD donanım adı zorunludur.")
+    if physical_condition not in PPE_PHYSICAL_CONDITION_LABELS:
+        raise ValueError("Geçerli bir fiziksel durum seçin.")
+    if manufacturer_url and not _is_valid_url(manufacturer_url):
+        raise ValueError("Üretici sayfası için geçerli bir bağlantı girin.")
+    if requirements["apparel"]:
+        if apparel_size not in PPE_APPAREL_SIZES:
+            raise ValueError("Bu KKD türü için geçerli bir beden seçin.")
+        shoe_size = ""
+    elif requirements["shoe"]:
+        if shoe_size not in PPE_SHOE_SIZES:
+            raise ValueError("Bu KKD türü için geçerli bir ayakkabı numarası seçin.")
+        apparel_size = ""
+    else:
+        apparel_size = ""
+        shoe_size = ""
+
+    delivered_at = _parse_date(_ppe_form_get(form, "delivered_at")) or get_tr_now().date()
+    production_date = _parse_date(_ppe_form_get(form, "production_date"))
+    expiry_date = _parse_date(_ppe_form_get(form, "expiry_date"))
+    if production_date and expiry_date and expiry_date < production_date:
+        raise ValueError("Son kullanma tarihi üretim tarihinden önce olamaz.")
+
+    assignment_id = _ppe_form_get(form, "assignment_id", cast=int)
+    if assignment_id:
+        assignment = _assignment_scope().filter(AssignmentRecord.id == assignment_id).first()
+        if not assignment:
+            assignment_id = None
+
+    return {
+        "user": user,
+        "user_id": user.id,
+        "airport_id": user.havalimani_id or current_user.havalimani_id,
+        "assignment_id": assignment_id,
+        "category": category,
+        "subcategory": subcategory,
+        "item_name": item_name,
+        "brand": brand,
+        "model_name": model_name,
+        "serial_no": serial_no,
+        "brand_model": " ".join(part for part in [brand, model_name] if part).strip(),
+        "apparel_size": apparel_size,
+        "shoe_size": shoe_size,
+        "size_info": _ppe_combined_size(apparel_size, shoe_size),
+        "delivered_at": delivered_at,
+        "production_date": production_date,
+        "expiry_date": expiry_date,
+        "quantity": max(_ppe_form_get(form, "quantity", cast=int, default=1) or 1, 1),
+        "status": "aktif" if is_active else "kullanim_disi",
+        "physical_condition": physical_condition,
+        "is_active": is_active,
+        "manufacturer_url": manufacturer_url,
+    }
+
+
+def _ppe_group_records(records, visible_users, selected_user):
+    user_lookup = {user.id: user for user in visible_users}
+    grouped = {}
+    for record in records:
+        grouped.setdefault(record.user_id, []).append(record)
+    items = []
+    for user_id, user in user_lookup.items():
+        user_records = grouped.get(user_id, [])
+        if selected_user and user_id != selected_user and not user_records:
+            continue
+        items.append(
+            {
+                "user": user,
+                "records": user_records,
+                "open": bool(selected_user == user_id),
+            }
+        )
+    if selected_user and selected_user not in grouped and selected_user in user_lookup:
+        return items
+    if not items and not selected_user and current_user.is_authenticated and getattr(current_user, "id", None) in grouped:
+        items.append({"user": current_user, "records": grouped.get(current_user.id, []), "open": True})
+    return items
+
+
+def _ppe_template_headers():
+    return [
+        "havalimani",
+        "personel",
+        "kategori",
+        "alt_tur",
+        "donanim_adi",
+        "marka",
+        "model",
+        "seri_no",
+        "beden",
+        "ayakkabi_numarasi",
+        "teslim_tarihi",
+        "uretim_tarihi",
+        "son_kullanim_tarihi",
+        "miktar",
+        "fiziksel_durum",
+        "aktif_mi",
+        "uretici_linki",
+    ]
+
+
+def _build_ppe_template_workbook(*, airports, users):
+    workbook = Workbook()
+    ws_data = workbook.active
+    ws_data.title = "VERI_GIRISI"
+    ws_lists = workbook.create_sheet("LISTELER")
+    ws_help = workbook.create_sheet("YARDIM")
+    headers = _ppe_template_headers()
+    ws_data.append(headers)
+    ws_data.freeze_panes = "A2"
+
+    list_columns = [
+        ("A", "havalimani", [_ppe_airport_display(item) for item in airports]),
+        ("B", "personel", [item.tam_ad for item in users]),
+        ("C", "kategori", list(_ppe_category_options().keys())),
+        ("D", "alt_tur", sorted({sub for values in _ppe_category_options().values() for sub in values})),
+        ("E", "beden", PPE_APPAREL_SIZES),
+        ("F", "ayakkabi_numarasi", PPE_SHOE_SIZES),
+        ("G", "fiziksel_durum", list(PPE_PHYSICAL_CONDITION_LABELS.values())),
+        ("H", "evet_hayir", ["Evet", "Hayır"]),
+    ]
+    for column, title, values in list_columns:
+        ws_lists[f"{column}1"] = title
+        for idx, value in enumerate(values, start=2):
+            ws_lists[f"{column}{idx}"] = value
+
+    header_to_col = {header: idx + 1 for idx, header in enumerate(headers)}
+
+    def _add_dropdown(header, formula):
+        column_letter = ws_data.cell(row=1, column=header_to_col[header]).column_letter
+        validator = DataValidation(type="list", formula1=formula, allow_blank=True)
+        ws_data.add_data_validation(validator)
+        validator.add(f"{column_letter}2:{column_letter}5000")
+
+    _add_dropdown("havalimani", "'LISTELER'!$A$2:$A$5000")
+    _add_dropdown("personel", "'LISTELER'!$B$2:$B$5000")
+    _add_dropdown("kategori", "'LISTELER'!$C$2:$C$5000")
+    _add_dropdown("alt_tur", "'LISTELER'!$D$2:$D$5000")
+    _add_dropdown("beden", "'LISTELER'!$E$2:$E$5000")
+    _add_dropdown("ayakkabi_numarasi", "'LISTELER'!$F$2:$F$5000")
+    _add_dropdown("fiziksel_durum", "'LISTELER'!$G$2:$G$5000")
+    _add_dropdown("aktif_mi", "'LISTELER'!$H$2:$H$3")
+
+    ws_help["A1"] = "KKD EXCEL ŞABLONU"
+    ws_help["A2"] = "Kategori ve alt tür değerleri sabit katalogla eşleşmelidir."
+    ws_help["A3"] = "Tarih formatı: YYYY-MM-DD veya DD.MM.YYYY"
+    ws_help["A4"] = "Aktif mi alanı için: Evet/Hayır"
+    ws_help["A5"] = "Üretici bağlantısı varsa http/https ile başlamalıdır."
+    output = io.BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return output
+
+
+def _parse_ppe_workbook(file_obj):
+    try:
+        workbook = load_workbook(file_obj, data_only=True)
+    except Exception as exc:  # pragma: no cover
+        raise ExcelTemplateError("KKD Excel dosyası okunamadı.") from exc
+
+    for name in ("VERI_GIRISI", "LISTELER", "YARDIM"):
+        if name not in workbook.sheetnames:
+            raise ExcelTemplateError(f"Eksik sheet: {name}")
+    worksheet = workbook["VERI_GIRISI"]
+    rows = list(worksheet.iter_rows(min_row=1, values_only=True))
+    if not rows:
+        raise ExcelTemplateError("VERI_GIRISI sheet'i boş.")
+    headers = _ppe_template_headers()
+    actual_headers = [str(cell or "").strip() for cell in rows[0]]
+    if actual_headers != headers:
+        raise ExcelTemplateError("KKD Excel başlık yapısı beklenen şablonla eşleşmiyor.")
+
+    parsed_rows = []
+    for row_no, row_values in enumerate(rows[1:], start=2):
+        payload = {headers[idx]: row_values[idx] if idx < len(row_values) else None for idx in range(len(headers))}
+        if not any(value not in (None, "") for value in payload.values()):
+            continue
+        parsed_rows.append({"row_no": row_no, "values": payload})
+    return parsed_rows
+
+
+def _resolve_ppe_import_airport(raw_value, visible_airports):
+    value = guvenli_metin(raw_value or "").strip()
+    if not value:
+        return None
+    normalized = normalize_lookup(value)
+    for airport in visible_airports:
+        labels = {
+            normalize_lookup(_ppe_airport_display(airport)),
+            normalize_lookup(airport.kodu or ""),
+            normalize_lookup(airport.ad or ""),
+        }
+        if normalized in labels:
+            return airport
+    raise ValueError("Havalimanı eşleşmedi.")
+
+
+def _resolve_ppe_import_user(raw_value, users, airport_id=None):
+    value = guvenli_metin(raw_value or "").strip()
+    if not value:
+        raise ValueError("Personel alanı zorunludur.")
+    normalized = normalize_lookup(value)
+    matches = [
+        user for user in users
+        if normalize_lookup(user.tam_ad or "") == normalized and (airport_id is None or user.havalimani_id == airport_id)
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise ValueError("Personel adı birden fazla kayıtla eşleşti.")
+    raise ValueError("Personel bulunamadı.")
+
+
 @inventory_bp.route("/kkd", methods=["GET", "POST"], endpoint="kkd_listesi")
 @login_required
 @permission_required("ppe.view")
@@ -2712,16 +3143,20 @@ def kkd_listesi():
     visible_airports = _visible_operational_airports()
     if not _can_view_all_operational_scope() and has_permission("ppe.manage"):
         selected_airport = current_user.havalimani_id
+    visible_users_list = _ppe_visible_users(selected_airport)
+    visible_users = {item.id: item for item in visible_users_list}
+    if selected_user and selected_user not in visible_users and not has_permission("ppe.manage"):
+        selected_user = current_user.id
 
     if request.method == "POST":
         if not has_permission("ppe.manage"):
             abort(403)
 
-        visible_users = {item.id: item for item in _visible_personnel_query(selected_airport).all()}
-        user_id = request.form.get("user_id", type=int)
-        if user_id not in visible_users:
-            flash("KKD kaydı için geçerli bir personel seçin.", "danger")
-            return redirect(url_for("inventory.kkd_listesi", airport_id=selected_airport or None))
+        try:
+            payload = _normalize_ppe_form_payload(request.form, visible_users=visible_users)
+        except ValueError as exc:
+            flash(str(exc), "danger")
+            return redirect(url_for("inventory.kkd_listesi", airport_id=selected_airport or None, user_id=selected_user or None))
 
         upload = request.files.get("photo_document")
         photo_key = None
@@ -2734,36 +3169,38 @@ def kkd_listesi():
             )
             if error:
                 flash(error, "danger")
-                return redirect(url_for("inventory.kkd_listesi", airport_id=selected_airport or None))
-            filename = f"ppe_{user_id}_{int(get_tr_now().timestamp())}_{safe_name}"
+                return redirect(url_for("inventory.kkd_listesi", airport_id=selected_airport or None, user_id=payload["user_id"]))
+            filename = f"ppe_{payload['user_id']}_{int(get_tr_now().timestamp())}_{safe_name}"
             stored = get_storage_adapter().save_upload(upload, folder="ppe", filename=filename)
             photo_key = stored.storage_key
             photo_url = stored.public_url
 
-        assignment_id = request.form.get("assignment_id", type=int)
-        if assignment_id:
-            assignment = _assignment_scope().filter(AssignmentRecord.id == assignment_id).first()
-            if not assignment:
-                assignment_id = None
-
         record = PPERecord(
-            user_id=user_id,
-            airport_id=visible_users[user_id].havalimani_id or current_user.havalimani_id,
-            assignment_id=assignment_id,
-            item_name=guvenli_metin(request.form.get("item_name") or ""),
-            brand_model=guvenli_metin(request.form.get("brand_model") or ""),
-            size_info=guvenli_metin(request.form.get("size_info") or ""),
-            delivered_at=_parse_date(request.form.get("delivered_at")) or get_tr_now().date(),
-            quantity=max(request.form.get("quantity", type=int) or 1, 1),
-            status=(request.form.get("status") or "aktif").strip(),
-            description=guvenli_metin(request.form.get("description") or ""),
+            user_id=payload["user_id"],
+            airport_id=payload["airport_id"],
+            assignment_id=payload["assignment_id"],
+            category=payload["category"],
+            subcategory=payload["subcategory"],
+            item_name=payload["item_name"],
+            brand=payload["brand"],
+            model_name=payload["model_name"],
+            serial_no=payload["serial_no"],
+            brand_model=payload["brand_model"],
+            apparel_size=payload["apparel_size"],
+            shoe_size=payload["shoe_size"],
+            size_info=payload["size_info"],
+            delivered_at=payload["delivered_at"],
+            production_date=payload["production_date"],
+            expiry_date=payload["expiry_date"],
+            quantity=payload["quantity"],
+            status=payload["status"],
+            physical_condition=payload["physical_condition"],
+            is_active=payload["is_active"],
+            manufacturer_url=payload["manufacturer_url"],
             photo_storage_key=photo_key,
             photo_url=photo_url,
             created_by_id=current_user.id,
         )
-        if not record.item_name:
-            flash("KKD malzeme adı zorunludur.", "danger")
-            return redirect(url_for("inventory.kkd_listesi", airport_id=selected_airport or None))
 
         db.session.add(record)
         db.session.flush()
@@ -2778,9 +3215,14 @@ def kkd_listesi():
         )
         db.session.commit()
         flash("KKD kaydı oluşturuldu.", "success")
-        return redirect(url_for("inventory.kkd_listesi", user_id=user_id))
+        return redirect(url_for("inventory.kkd_listesi", user_id=payload["user_id"], airport_id=payload["airport_id"]))
 
-    query = _ppe_scope()
+    query = _ppe_scope().options(
+        joinedload(PPERecord.user),
+        joinedload(PPERecord.airport),
+        joinedload(PPERecord.assignment),
+        joinedload(PPERecord.events).joinedload(PPERecordEvent.created_by),
+    )
     if selected_status:
         query = query.filter(PPERecord.status == selected_status)
     if selected_user:
@@ -2788,23 +3230,31 @@ def kkd_listesi():
     if selected_airport:
         query = query.filter(PPERecord.airport_id == selected_airport)
     records = query.order_by(PPERecord.delivered_at.desc(), PPERecord.created_at.desc()).all()
-
-    visible_user_query = _visible_personnel_query(selected_airport)
-    if not has_permission("ppe.manage"):
-        visible_user_query = visible_user_query.filter(Kullanici.id == current_user.id)
+    grouped_records = _ppe_group_records(records, visible_users_list, selected_user)
+    import_feedback = session.pop(_ppe_import_feedback_session_key(), None)
 
     return render_template(
         "kkd.html",
         records=records,
-        visible_users=visible_user_query.order_by(Kullanici.tam_ad.asc()).all(),
+        grouped_records=grouped_records,
+        visible_users=visible_users_list,
         visible_airports=visible_airports,
         active_assignments=_assignment_scope().filter(AssignmentRecord.status.in_(["active", "partial"])).order_by(AssignmentRecord.assignment_date.desc()).all(),
         ppe_status_labels=PPE_STATUS_LABELS,
+        ppe_condition_labels=PPE_PHYSICAL_CONDITION_LABELS,
+        ppe_categories=_ppe_category_options(),
+        ppe_catalog_json=json.dumps(_ppe_category_options(), ensure_ascii=False),
+        ppe_apparel_sizes=PPE_APPAREL_SIZES,
+        ppe_shoe_sizes=PPE_SHOE_SIZES,
+        ppe_alert_state=_ppe_alert_state,
+        ppe_brand_model_display=_ppe_brand_model_display,
+        ppe_size_display=_ppe_size_display,
         selected_status=selected_status,
         selected_user=selected_user,
         selected_airport=selected_airport,
         can_manage_ppe=has_permission("ppe.manage"),
         can_request_ppe=has_permission("ppe.request"),
+        import_feedback=import_feedback,
     )
 
 
@@ -2846,6 +3296,182 @@ def kkd_bildirim(record_id):
     return redirect(url_for("inventory.kkd_listesi", user_id=record.user_id if has_permission("ppe.manage") else None))
 
 
+@inventory_bp.route("/kkd/<int:record_id>/signed-document", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required("ppe.manage")
+def kkd_signed_document_upload(record_id):
+    record = _ppe_scope().filter(PPERecord.id == record_id).first_or_404()
+    upload = request.files.get("signed_document")
+    safe_name, error = _validate_upload(
+        upload,
+        SIGNED_ASSIGNMENT_ALLOWED_EXTENSIONS,
+        ("application/pdf",),
+    )
+    if error:
+        flash(error, "danger")
+        return redirect(url_for("inventory.kkd_listesi", user_id=record.user_id, airport_id=record.airport_id))
+
+    airport_label = getattr(getattr(record, "airport", None), "kodu", "") or getattr(getattr(record, "airport", None), "ad", "") or "global"
+    person_label = getattr(getattr(record, "user", None), "tam_ad", "") or "personel"
+    filename = _signed_document_filename_for_person(person_label)
+    folder = _signed_document_folder_for_person(airport_label, person_label)
+    stored = get_storage_adapter().save_upload(upload, folder=folder, filename=filename)
+    record.signed_document_key = stored.storage_key
+    record.signed_document_url = stored.public_url
+    record.signed_document_name = filename
+    db.session.add(
+        PPERecordEvent(
+            ppe_record_id=record.id,
+            event_type="signed_upload",
+            status_after=record.status,
+            event_note="İmzalı KKD zimmet PDF'i yüklendi.",
+            created_by_id=current_user.id,
+        )
+    )
+    db.session.commit()
+    flash("İmzalı KKD zimmet PDF'i yüklendi.", "success")
+    return redirect(url_for("inventory.kkd_listesi", user_id=record.user_id, airport_id=record.airport_id))
+
+
+@inventory_bp.route("/kkd/<int:record_id>/signed-document/download")
+@login_required
+@permission_required("ppe.view")
+def kkd_signed_document_download(record_id):
+    record = _ppe_scope().filter(PPERecord.id == record_id).first_or_404()
+    if not record.signed_document_url:
+        flash("Bu KKD kaydı için yüklü imzalı PDF bulunmuyor.", "warning")
+        return redirect(url_for("inventory.kkd_listesi", user_id=record.user_id if has_permission("ppe.manage") else None))
+    return redirect(record.signed_document_url)
+
+
+@inventory_bp.route("/kkd/excel-sablon")
+@login_required
+@permission_required("ppe.manage")
+def kkd_excel_sablon_indir():
+    visible_airports = _visible_operational_airports()
+    visible_users = _ppe_visible_users(request.args.get("airport_id", type=int))
+    workbook = _build_ppe_template_workbook(airports=visible_airports, users=visible_users)
+    return send_file(
+        workbook,
+        as_attachment=True,
+        download_name=f"kkd_toplu_import_sablonu_{get_tr_now().strftime('%Y%m%d')}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@inventory_bp.route("/kkd/excel-yukle", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required("ppe.manage")
+def kkd_excel_yukle():
+    upload = request.files.get("excel_file")
+    if not upload or not upload.filename:
+        flash("Excel dosyası seçilmedi.", "danger")
+        return redirect(url_for("inventory.kkd_listesi"))
+    safe_name = secure_upload_filename(upload.filename or "")
+    if not safe_name.lower().endswith(".xlsx"):
+        flash("Sadece .xlsx formatı desteklenir.", "danger")
+        return redirect(url_for("inventory.kkd_listesi"))
+
+    try:
+        rows = _parse_ppe_workbook(upload)
+    except ExcelTemplateError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("inventory.kkd_listesi"))
+
+    visible_airports = _visible_operational_airports()
+    visible_users = _ppe_visible_users()
+    success_count = 0
+    failure_count = 0
+    feedback = []
+
+    for row in rows:
+        values = row["values"]
+        savepoint = db.session.begin_nested()
+        try:
+            airport = _resolve_ppe_import_airport(values.get("havalimani"), visible_airports)
+            user = _resolve_ppe_import_user(values.get("personel"), visible_users, getattr(airport, "id", None))
+            physical_label = guvenli_metin(values.get("fiziksel_durum") or "").strip()
+            physical_condition = next(
+                (key for key, label in PPE_PHYSICAL_CONDITION_LABELS.items() if normalize_lookup(label) == normalize_lookup(physical_label)),
+                None,
+            )
+            if not physical_condition:
+                raise ValueError("Fiziksel durum değeri geçersiz.")
+            form_payload = _normalize_ppe_form_payload(
+                {
+                    "user_id": user.id,
+                    "category": values.get("kategori"),
+                    "subcategory": values.get("alt_tur"),
+                    "item_name": values.get("donanim_adi"),
+                    "brand": values.get("marka"),
+                    "model_name": values.get("model"),
+                    "serial_no": values.get("seri_no"),
+                    "apparel_size": values.get("beden"),
+                    "shoe_size": values.get("ayakkabi_numarasi"),
+                    "delivered_at": values.get("teslim_tarihi"),
+                    "production_date": values.get("uretim_tarihi"),
+                    "expiry_date": values.get("son_kullanim_tarihi"),
+                    "quantity": values.get("miktar"),
+                    "physical_condition": physical_condition,
+                    "is_active": parse_flexible_bool(values.get("aktif_mi")),
+                    "manufacturer_url": values.get("uretici_linki"),
+                },
+                visible_users={user.id: user},
+            )
+            record = PPERecord(
+                user_id=form_payload["user_id"],
+                airport_id=form_payload["airport_id"],
+                category=form_payload["category"],
+                subcategory=form_payload["subcategory"],
+                item_name=form_payload["item_name"],
+                brand=form_payload["brand"],
+                model_name=form_payload["model_name"],
+                serial_no=form_payload["serial_no"],
+                brand_model=form_payload["brand_model"],
+                apparel_size=form_payload["apparel_size"],
+                shoe_size=form_payload["shoe_size"],
+                size_info=form_payload["size_info"],
+                delivered_at=form_payload["delivered_at"],
+                production_date=form_payload["production_date"],
+                expiry_date=form_payload["expiry_date"],
+                quantity=form_payload["quantity"],
+                status=form_payload["status"],
+                physical_condition=form_payload["physical_condition"],
+                is_active=form_payload["is_active"],
+                manufacturer_url=form_payload["manufacturer_url"],
+                created_by_id=current_user.id,
+            )
+            db.session.add(record)
+            db.session.flush()
+            db.session.add(
+                PPERecordEvent(
+                    ppe_record_id=record.id,
+                    event_type="import",
+                    status_after=record.status,
+                    event_note=f"{safe_name} içe aktarma satırı alındı.",
+                    created_by_id=current_user.id,
+                )
+            )
+            savepoint.commit()
+            success_count += 1
+        except Exception as exc:  # noqa: BLE001
+            savepoint.rollback()
+            failure_count += 1
+            feedback.append({"row_no": row["row_no"], "message": str(exc)})
+            continue
+    if success_count:
+        db.session.commit()
+        flash(f"{success_count} KKD satırı içe aktarıldı.", "success")
+    else:
+        db.session.rollback()
+    if failure_count:
+        flash(f"{failure_count} satır doğrulama hatası nedeniyle alınmadı.", "warning")
+    session[_ppe_import_feedback_session_key()] = feedback[:50]
+    return redirect(url_for("inventory.kkd_listesi"))
+
+
 @inventory_bp.route("/kkd/export/<string:fmt>")
 @login_required
 @permission_required("ppe.manage")
@@ -2867,13 +3493,21 @@ def kkd_export(fmt):
         {
             "Personel": record.user.tam_ad if record.user else "-",
             "Havalimanı": record.airport.ad if record.airport else "-",
+            "Kategori": record.category or "-",
+            "Alt Tür": record.subcategory or "-",
             "KKD": record.item_name,
-            "Marka/Model": record.brand_model or "-",
-            "Beden": record.size_info or "-",
+            "Marka": record.brand or "-",
+            "Model": record.model_name or "-",
+            "Seri No": record.serial_no or "-",
+            "Beden / Numara": _ppe_size_display(record),
             "Teslim Tarihi": record.delivered_at.strftime("%d.%m.%Y") if record.delivered_at else "-",
+            "Üretim Tarihi": record.production_date.strftime("%d.%m.%Y") if record.production_date else "-",
+            "Son Kullanma": record.expiry_date.strftime("%d.%m.%Y") if record.expiry_date else "-",
             "Miktar": record.quantity,
             "Durum": _ppe_status_label(record.status),
-            "Açıklama": record.description or "-",
+            "Fiziksel Durum": _ppe_condition_label(record.physical_condition),
+            "Aktif/Pasif": "Aktif" if record.is_active else "Pasif",
+            "Üretici Linki": record.manufacturer_url or "-",
         }
         for record in records
     ]
@@ -2894,6 +3528,7 @@ def kkd_export(fmt):
             "kkd_report_pdf.html",
             records=records,
             ppe_status_label=_ppe_status_label,
+            ppe_condition_label=_ppe_condition_label,
             generated_at=get_tr_now(),
         )
         payload = io.BytesIO()

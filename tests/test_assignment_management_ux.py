@@ -373,8 +373,8 @@ def test_signed_assignment_document_upload_flow_stays_working(client, app):
     _login(client, owner_id)
     with patch("routes.inventory.get_storage_adapter") as mocked_storage:
         mocked_storage.return_value.save_upload.return_value = SimpleNamespace(
-            storage_key="assignments/zmt-up-001.pdf",
-            public_url="https://example.com/uploads/assignments/zmt-up-001.pdf",
+            storage_key="AYT/zimmet/Belge_Alan/kkd_belge_alan_zimmet_20260320010101.pdf",
+            public_url="https://example.com/uploads/AYT/zimmet/Belge_Alan/kkd_belge_alan_zimmet_20260320010101.pdf",
         )
         response = client.post(
             f"/zimmetler/{assignment_id}/signed-document",
@@ -390,13 +390,18 @@ def test_signed_assignment_document_upload_flow_stays_working(client, app):
     assert response.status_code == 200
     assert "İmzalı zimmet belgesi yüklendi." in html
 
+    upload_call = mocked_storage.return_value.save_upload.call_args.kwargs
+    assert upload_call["folder"] == "AYT/zimmet/Belge_Alan"
+    assert upload_call["filename"].startswith("kkd_belge_alan_zimmet_")
+    assert upload_call["filename"].endswith(".pdf")
+
     with app.app_context():
         from models import AssignmentRecord
 
         stored = db.session.get(AssignmentRecord, assignment_id)
-        assert stored.signed_document_key == "assignments/zmt-up-001.pdf"
-        assert stored.signed_document_url == "https://example.com/uploads/assignments/zmt-up-001.pdf"
-        assert stored.signed_document_name == "zimmet-imzali.pdf"
+        assert stored.signed_document_key == "AYT/zimmet/Belge_Alan/kkd_belge_alan_zimmet_20260320010101.pdf"
+        assert stored.signed_document_url == "https://example.com/uploads/AYT/zimmet/Belge_Alan/kkd_belge_alan_zimmet_20260320010101.pdf"
+        assert stored.signed_document_name == upload_call["filename"]
 
 
 def test_signed_assignment_document_upload_rejects_invalid_signature(client, app):
@@ -439,3 +444,39 @@ def test_signed_assignment_document_upload_rejects_invalid_signature(client, app
 
         stored = db.session.get(AssignmentRecord, assignment_id)
         assert stored.signed_document_key in (None, "")
+
+
+def test_signed_assignment_document_upload_rejects_non_pdf_files(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Gazipaşa Havalimanı", kodu="GZP")
+        box = KutuFactory(kodu="K-GZP-1", havalimani=airport)
+        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-image-upload@sarx.com")
+        recipient = KullaniciFactory(rol="personel", is_deleted=False, tam_ad="PDF Zorunlu", havalimani=airport)
+        material = MalzemeFactory(ad="Koruyucu Maske", seri_no="MSK-220", stok_miktari=1, kutu=box, havalimani=airport)
+        db.session.add_all([airport, box, owner, recipient, material])
+        db.session.flush()
+        assignment = _build_assignment(
+            assignment_no="ZMT-UP-IMG",
+            airport=airport,
+            delivered_by=owner,
+            recipient=recipient,
+            material=material,
+        )
+        db.session.commit()
+        owner_id = owner.id
+        assignment_id = assignment.id
+
+    _login(client, owner_id)
+    response = client.post(
+        f"/zimmetler/{assignment_id}/signed-document",
+        data={
+            "signed_document": (io.BytesIO(b"\x89PNG\r\n\x1a\nfake"), "zimmet.png", "image/png"),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Dosya uzantısı desteklenmiyor." in html

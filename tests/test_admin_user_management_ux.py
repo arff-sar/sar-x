@@ -376,6 +376,10 @@ def test_detail_panel_is_rendered_after_filter_and_selection_blocks(client, app)
     assert 'data-filter-summary' in html
     assert 'data-detail-empty-state' in html
     assert html.count('data-stage-accordion') >= 3
+    stage_select_start = html.index('data-admin-stage="select"')
+    stage_select_markup = html[stage_select_start:html.index('>', stage_select_start)]
+    assert " open" not in stage_select_markup
+    assert 'id="userDirectoryShell"' in html
 
 
 def test_user_selector_hides_email_and_shows_name_airport_and_role(client, app):
@@ -430,6 +434,35 @@ def test_user_cards_render_core_identity_fields_cleanly(client, app):
     assert "Havalimanı" in html
     assert "Rol" in html
     assert "Ekip Üyesi" in html
+
+
+def test_selected_user_keeps_selection_panel_open_and_detail_panel_ready(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Sivas Havalimanı", kodu="VAS")
+        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-select@sarx.com")
+        staff = KullaniciFactory(
+            rol="ekip_uyesi",
+            is_deleted=False,
+            tam_ad="Seçili Personel",
+            kullanici_adi="selected-user@sarx.com",
+            havalimani=airport,
+        )
+        db.session.add_all([airport, owner, staff])
+        db.session.commit()
+        owner_id = owner.id
+        staff_id = staff.id
+
+    _login(client, owner_id)
+    response = client.get(f"/kullanicilar?user_id={staff_id}")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    stage_select_start = html.index('data-admin-stage="select"')
+    stage_select_markup = html[stage_select_start:html.index('>', stage_select_start)]
+    assert " open" in stage_select_markup
+    assert "Detay paneli" in html
+    assert "için hazır" in html
+    assert 'id="userDetailPanel" data-stage-accordion open' in html
 
 
 def test_user_management_renders_login_email_label_in_create_and_edit_forms(client, app):
@@ -685,6 +718,305 @@ def test_user_management_inputs_render_validation_hooks(client, app):
     assert 'inputmode="numeric"' in html
     assert 'autocomplete="tel"' in html
     assert '+90 5__ ___ __ __' in html
+
+
+def test_user_management_renders_blood_and_measurement_fields(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Erzurum Havalimanı", kodu="ERZ")
+        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-profile@sarx.com")
+        staff = KullaniciFactory(
+            rol="bakim_sorumlusu",
+            is_deleted=False,
+            tam_ad="Profil Kullanıcısı",
+            kullanici_adi="profile-user@sarx.com",
+            havalimani=airport,
+            kan_grubu_harf="A",
+            kan_grubu_rh="+",
+            boy_cm=181,
+            kilo_kg=79,
+            ayak_numarasi=42.5,
+            beden="L",
+        )
+        db.session.add_all([airport, owner, staff])
+        db.session.commit()
+        owner_id = owner.id
+        staff_id = staff.id
+
+    _login(client, owner_id)
+    response = client.get(f"/kullanicilar?user_id={staff_id}")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert 'name="kan_grubu_harf"' in html
+    assert 'name="kan_grubu_rh"' in html
+    assert 'name="boy_cm"' in html
+    assert 'name="kilo_kg"' in html
+    assert 'name="ayak_numarasi"' in html
+    assert 'name="beden"' in html
+    assert '<option value="+" selected>+</option>' in html
+    assert "Kan Grubu:" in html
+    assert "A Rh+" in html
+    assert "Acil Durum" not in html
+    assert "Ekip İçi Rol" not in html
+
+
+def test_user_measurement_fields_are_saved_with_profile_update(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Kars Havalimanı", kodu="KSY")
+        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-measure@sarx.com")
+        staff = KullaniciFactory(
+            rol="bakim_sorumlusu",
+            is_deleted=False,
+            tam_ad="Olcu Personeli",
+            kullanici_adi="olcu-user@sarx.com",
+            havalimani=airport,
+        )
+        db.session.add_all([airport, owner, staff])
+        db.session.commit()
+        owner_id = owner.id
+        staff_id = staff.id
+        airport_id = airport.id
+
+    _login(client, owner_id)
+    response = client.post(
+        f"/kullanici-guncelle/{staff_id}",
+        data={
+            "tam_ad": "Olcu Personeli",
+            "k_adi": "olcu-user@sarx.com",
+            "rol": "ekip_uyesi",
+            "h_id": str(airport_id),
+            "kan_grubu_harf": "AB",
+            "kan_grubu_rh": "-",
+            "boy_cm": "182",
+            "kilo_kg": "84",
+            "ayak_numarasi": "42.5",
+            "beden": "XL",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Kullanıcı yetkileri güncellendi." in response.data.decode("utf-8")
+
+    with app.app_context():
+        updated = db.session.get(Kullanici, staff_id)
+        assert updated.kan_grubu_harf == "AB"
+        assert updated.kan_grubu_rh == "-"
+        assert updated.kan_grubu == "AB Rh-"
+        assert updated.boy_cm == 182
+        assert updated.kilo_kg == 84
+        assert updated.ayak_numarasi == 42.5
+        assert updated.beden == "XL"
+
+
+def test_user_permission_override_helper_does_not_clear_pending_profile_changes(app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Kayseri Havalimanı", kodu="ASR")
+        staff = KullaniciFactory(
+            rol="bakim_sorumlusu",
+            is_deleted=False,
+            tam_ad="Yetki Yardimcisi",
+            kullanici_adi="helper-user@sarx.com",
+            havalimani=airport,
+        )
+        db.session.add_all([airport, staff])
+        db.session.commit()
+        staff_id = staff.id
+
+        target = db.session.get(Kullanici, staff_id)
+        target.rol = "ekip_uyesi"
+        target.kan_grubu_harf = "AB"
+        target.kan_grubu_rh = "-"
+
+        update_user_permission_overrides(target.id, [], [])
+        db.session.commit()
+        db.session.expire_all()
+
+        updated = db.session.get(Kullanici, staff_id)
+        assert updated.rol == "ekip_uyesi"
+        assert updated.kan_grubu_harf == "AB"
+        assert updated.kan_grubu_rh == "-"
+
+
+def test_legacy_rh_values_render_with_new_plus_minus_selector(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Sinop Havalimanı", kodu="NOP")
+        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-rh-legacy@sarx.com")
+        staff = KullaniciFactory(
+            rol="bakim_sorumlusu",
+            is_deleted=False,
+            tam_ad="Legacy Rh Kullanıcısı",
+            kullanici_adi="legacy-rh@sarx.com",
+            havalimani=airport,
+            kan_grubu_harf="0",
+            kan_grubu_rh="Rh-",
+        )
+        db.session.add_all([airport, owner, staff])
+        db.session.commit()
+        owner_id = owner.id
+        staff_id = staff.id
+
+    _login(client, owner_id)
+    response = client.get(f"/kullanicilar?user_id={staff_id}")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert '<option value="-" selected>-</option>' in html
+    assert "0 Rh-" in html
+
+
+def test_non_owner_cannot_change_user_role_scope_or_permission_matrix(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Van Havalimanı", kodu="VAN")
+        lead = KullaniciFactory(
+            rol="ekip_sorumlusu",
+            is_deleted=False,
+            kullanici_adi="lead-permission@sarx.com",
+            havalimani=airport,
+        )
+        staff = KullaniciFactory(
+            rol="ekip_uyesi",
+            is_deleted=False,
+            tam_ad="Yetki Korunan",
+            kullanici_adi="guard-user@sarx.com",
+            havalimani=airport,
+        )
+        db.session.add_all([airport, lead, staff])
+        db.session.commit()
+        lead_id = lead.id
+        staff_id = staff.id
+        airport_id = airport.id
+
+    _login(client, lead_id)
+    response = client.post(
+        f"/kullanici-guncelle/{staff_id}",
+        data={
+            "tam_ad": "Yetki Korunan",
+            "k_adi": "guard-user@sarx.com",
+            "rol": "ekip_sorumlusu",
+            "h_id": str(airport_id),
+            "allow_permissions": ["inventory.export"],
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+
+    with app.app_context():
+        updated = db.session.get(Kullanici, staff_id)
+        assert updated.rol == "ekip_uyesi"
+
+
+def test_team_lead_create_form_is_locked_to_team_member_and_own_airport(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Rize Havalimanı", kodu="RZV")
+        lead = KullaniciFactory(
+            rol="ekip_sorumlusu",
+            is_deleted=False,
+            kullanici_adi="lead-create@sarx.com",
+            havalimani=airport,
+        )
+        db.session.add_all([airport, lead])
+        db.session.commit()
+        lead_id = lead.id
+
+    _login(client, lead_id)
+    response = client.get("/kullanicilar")
+    html = response.data.decode("utf-8")
+    create_role_select = html[html.index('data-create-role-select'):html.index("</select>", html.index('data-create-role-select'))]
+    create_airport_select = html[html.index('data-create-airport-select'):html.index("</select>", html.index('data-create-airport-select'))]
+
+    assert response.status_code == 200
+    assert 'value="ekip_uyesi" selected' in create_role_select
+    assert "Sistem Sorumlusu" not in create_role_select
+    assert "Ekip Sorumlusu" not in create_role_select
+    assert "Global" not in create_airport_select
+    assert "Rize Havalimanı" in create_airport_select
+
+
+def test_team_lead_can_create_only_team_member_in_own_airport_without_403(client, app):
+    with app.app_context():
+        own_airport = HavalimaniFactory(ad="Antalya Havalimanı", kodu="AYT")
+        other_airport = HavalimaniFactory(ad="Isparta Havalimanı", kodu="ISE")
+        lead = KullaniciFactory(
+            rol="ekip_sorumlusu",
+            is_deleted=False,
+            kullanici_adi="lead-own-airport@sarx.com",
+            havalimani=own_airport,
+        )
+        db.session.add_all([own_airport, other_airport, lead])
+        db.session.commit()
+        lead_id = lead.id
+        own_airport_id = own_airport.id
+        other_airport_id = other_airport.id
+
+    _login(client, lead_id)
+    response = client.post(
+        "/kullanici-ekle",
+        data={
+            "tam_ad": "Yeni Takim Arkadasi",
+            "k_adi": "new-team-member@sarx.com",
+            "sifre": "GucluTest@123",
+            "rol": "sistem_sorumlusu",
+            "h_id": str(other_airport_id),
+        },
+        follow_redirects=True,
+    )
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "personeli sisteme eklendi" in html
+
+    with app.app_context():
+        created = Kullanici.query.filter_by(kullanici_adi="new-team-member@sarx.com").first()
+        assert created is not None
+        assert created.rol == "ekip_uyesi"
+        assert created.havalimani_id == own_airport_id
+
+
+def test_role_switched_team_lead_can_open_user_management_and_create_scoped_user(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Bodrum Havalimanı", kodu="BJV")
+        owner = KullaniciFactory(
+            rol="sahip",
+            is_deleted=False,
+            kullanici_adi="mehmetcinocevi@gmail.com",
+            havalimani=airport,
+        )
+        db.session.add_all([airport, owner])
+        db.session.commit()
+        owner_id = owner.id
+        airport_id = airport.id
+
+    _login(client, owner_id)
+    with client.session_transaction() as session:
+        session["temporary_role_override"] = "ekip_sorumlusu"
+
+    page = client.get("/kullanicilar")
+    page_html = page.data.decode("utf-8")
+    assert page.status_code == 200
+    assert 'value="ekip_uyesi" selected' in page_html
+
+    response = client.post(
+        "/kullanici-ekle",
+        data={
+            "tam_ad": "Rol Gecis Kullanıcısı",
+            "k_adi": "switched-team@sarx.com",
+            "sifre": "GucluTest@123",
+            "rol": "admin",
+            "h_id": "",
+            "telefon_numarasi": "+90 555 111 22 33",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    with app.app_context():
+        created = Kullanici.query.filter_by(kullanici_adi="switched-team@sarx.com").first()
+        assert created is not None
+        assert created.rol == "ekip_uyesi"
+        assert created.havalimani_id == airport_id
+        assert created.telefon_numarasi is None
 
 
 def test_invalid_email_is_rejected_in_user_create_form(client, app):

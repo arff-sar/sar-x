@@ -1,8 +1,10 @@
+from datetime import datetime
 from types import SimpleNamespace
 
 from flask import abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
-from sqlalchemy import or_
+from sqlalchemy import and_, func, or_
+from sqlalchemy.orm import joinedload
 
 from error_handling import get_error_spec, mask_sensitive_text
 from extensions import column_exists, db
@@ -95,6 +97,64 @@ def _build_options(values, labeler):
     return [{"key": value, "label": labeler(value)} for value in cleaned_values]
 
 
+def _format_timestamp_label(value):
+    if value is None:
+        return "-"
+    if hasattr(value, "strftime"):
+        try:
+            return value.strftime("%d.%m.%Y %H:%M:%S")
+        except Exception:
+            return "-"
+    raw_value = str(value).strip()
+    if not raw_value:
+        return "-"
+    normalized = raw_value.replace("Z", "+00:00")
+    for parser in (
+        lambda item: datetime.fromisoformat(item),
+        lambda item: datetime.strptime(item, "%Y-%m-%d %H:%M:%S"),
+        lambda item: datetime.strptime(item, "%Y-%m-%d %H:%M:%S.%f"),
+    ):
+        try:
+            parsed = parser(normalized)
+            return parsed.strftime("%d.%m.%Y %H:%M:%S")
+        except Exception:
+            continue
+    return raw_value
+
+
+def _resolve_actor_label(log):
+    actor = getattr(log, "yapan_kullanici", None)
+    if actor and getattr(actor, "tam_ad", None):
+        return actor.tam_ad
+
+    user_id = getattr(log, "kullanici_id", None)
+    if user_id is not None:
+        try:
+            actor = db.session.get(Kullanici, user_id)
+        except Exception:
+            db.session.rollback()
+            actor = None
+        if actor and getattr(actor, "tam_ad", None):
+            return actor.tam_ad
+
+    user_email = str(getattr(log, "user_email", "") or "").strip()
+    if user_email:
+        try:
+            actor = (
+                Kullanici.query.filter(func.lower(func.trim(Kullanici.kullanici_adi)) == user_email.lower())
+                .order_by(Kullanici.id.asc())
+                .first()
+            )
+        except Exception:
+            db.session.rollback()
+            actor = None
+        if actor and getattr(actor, "tam_ad", None):
+            return actor.tam_ad
+        return user_email
+
+    return "Sistem"
+
+
 def _serialize_log_row(log):
     outcome_key = ((getattr(log, "outcome", None) or "legacy").strip().lower() or "legacy")
     outcome_meta = OUTCOME_META.get(outcome_key, OUTCOME_META["info"])
@@ -114,7 +174,8 @@ def _serialize_log_row(log):
     return SimpleNamespace(
         id=log.id,
         zaman=log.zaman,
-        user_label=log.yapan_kullanici.tam_ad if getattr(log, "yapan_kullanici", None) else "Sistem",
+        zaman_label=_format_timestamp_label(getattr(log, "zaman", None)),
+        user_label=_resolve_actor_label(log),
         operation_label=_label_event_type(getattr(log, "islem_tipi", None)),
         operation_note="Önceki sistem işlemi" if outcome_key == "legacy" else "İşlem kategorisi",
         record_label=record_label,
@@ -130,8 +191,7 @@ def _serialize_log_row(log):
 def _serialize_error_row(log):
     request_id = str(getattr(log, "request_id", "") or "").strip()
     user_email = str(getattr(log, "user_email", "") or "").strip()
-    actor = getattr(log, "yapan_kullanici", None)
-    user_label = actor.tam_ad if actor else (user_email or "Sistem")
+    user_label = _resolve_actor_label(log)
     summary = str(getattr(log, "user_message", None) or getattr(log, "detay", None) or "Açıklama bulunmuyor.").strip()
     module = str(getattr(log, "module", None) or "SYSTEM").strip().upper()
     severity = str(getattr(log, "severity", None) or "error").strip().lower()
@@ -139,6 +199,7 @@ def _serialize_error_row(log):
     return SimpleNamespace(
         id=log.id,
         created_at=getattr(log, "created_at", None) or getattr(log, "zaman", None),
+        created_at_label=_format_timestamp_label(getattr(log, "created_at", None) or getattr(log, "zaman", None)),
         status_label="Çözüldü" if getattr(log, "resolved", False) else "Açık",
         status_class="status-aktif" if getattr(log, "resolved", False) else "status-ariza",
         module=module,
@@ -165,177 +226,32 @@ def _serialize_error_row(log):
     )
 
 
-@admin_bp.route('/islem-loglari')
-@login_required
-@permission_required('logs.view')
-def loglari_gor():
-    has_event_key = column_exists("islem_log", "event_key")
-    has_target_model = column_exists("islem_log", "target_model")
-    has_target_id = column_exists("islem_log", "target_id")
-    has_outcome = column_exists("islem_log", "outcome")
-
-    user_id = request.args.get("user_id", type=int)
-    event_type = (request.args.get("event_type") or "").strip()
-    legacy_event_key = (request.args.get("event_key") or "").strip()
-    target_model = (request.args.get("target_model") or "").strip()
-    outcome = (request.args.get("outcome") or "").strip()
-    date_from = (request.args.get("date_from") or "").strip()
-    date_to = (request.args.get("date_to") or "").strip()
-    active_filters = []
-
-    event_type_values = [
-        row[0]
-        for row in IslemLog.query.with_entities(IslemLog.islem_tipi)
-        .filter(IslemLog.islem_tipi.isnot(None))
-        .distinct()
-        .all()
-    ]
-    event_type_options = _build_options(event_type_values, _label_event_type)
-    valid_event_types = {item["key"] for item in event_type_options}
-    if event_type not in valid_event_types:
-        event_type = ""
-
-    target_model_values = []
-    if has_target_model:
-        target_model_values = [
-            row[0]
-            for row in IslemLog.query.with_entities(IslemLog.target_model)
-            .filter(IslemLog.target_model.isnot(None))
-            .distinct()
-            .all()
-        ]
-    target_model_options = _build_options(target_model_values, _label_target_model)
-    valid_target_models = {item["key"] for item in target_model_options}
-    if target_model not in valid_target_models:
-        target_model = ""
-
-    valid_outcomes = {item["key"] for item in OUTCOME_OPTIONS}
-    if outcome not in valid_outcomes:
-        outcome = ""
-
-    if has_event_key and has_target_model and has_target_id and has_outcome:
-        query = IslemLog.query.order_by(IslemLog.zaman.desc())
-        if user_id:
-            query = query.filter_by(kullanici_id=user_id)
-            active_filters.append(("Kullanıcı", str(user_id)))
-        if event_type:
-            query = query.filter(IslemLog.islem_tipi == event_type)
-            active_filters.append(("Olay Tipi", _label_event_type(event_type)))
-        if legacy_event_key:
-            query = query.filter(IslemLog.event_key.ilike(f"%{legacy_event_key}%"))
-            active_filters.append(("İşlem anahtarı", legacy_event_key))
-        if target_model:
-            query = query.filter(IslemLog.target_model == target_model)
-            active_filters.append(("İlgili Kayıt Türü", _label_target_model(target_model)))
-        if outcome:
-            query = query.filter(IslemLog.outcome == outcome)
-            active_filters.append(
-                ("Sonuç", next((item["label"] for item in OUTCOME_OPTIONS if item["key"] == outcome), outcome))
-            )
-        if date_from:
-            query = query.filter(IslemLog.zaman >= f"{date_from} 00:00:00")
-            active_filters.append(("Başlangıç", date_from))
-        if date_to:
-            query = query.filter(IslemLog.zaman <= f"{date_to} 23:59:59")
-            active_filters.append(("Bitiş", date_to))
-        raw_logs = query.limit(500).all()
-    else:
-        query = IslemLog.query.with_entities(
-            IslemLog.id,
-            IslemLog.kullanici_id,
-            IslemLog.islem_tipi,
-            IslemLog.detay,
-            IslemLog.ip_adresi,
-            IslemLog.user_agent,
-            IslemLog.zaman,
-        ).order_by(IslemLog.zaman.desc())
-        if user_id:
-            query = query.filter(IslemLog.kullanici_id == user_id)
-            active_filters.append(("Kullanıcı", str(user_id)))
-        if event_type:
-            query = query.filter(IslemLog.islem_tipi == event_type)
-            active_filters.append(("Olay Tipi", _label_event_type(event_type)))
-        if date_from:
-            query = query.filter(IslemLog.zaman >= f"{date_from} 00:00:00")
-            active_filters.append(("Başlangıç", date_from))
-        if date_to:
-            query = query.filter(IslemLog.zaman <= f"{date_to} 23:59:59")
-            active_filters.append(("Bitiş", date_to))
-        raw_logs = [
-            SimpleNamespace(
-                id=row.id,
-                kullanici_id=row.kullanici_id,
-                islem_tipi=row.islem_tipi,
-                detay=row.detay,
-                ip_adresi=row.ip_adresi,
-                user_agent=row.user_agent,
-                zaman=row.zaman,
-                event_key=None,
-                target_model=None,
-                target_id=None,
-                outcome="legacy",
-            )
-            for row in query.limit(500).all()
-        ]
-    users = Kullanici.query.filter_by(is_deleted=False).order_by(Kullanici.tam_ad.asc()).all()
-    user_lookup = {user.id: user.tam_ad for user in users}
-    active_filters = [
-        ("Kullanıcı", user_lookup.get(user_id, "Sistem")) if key == "Kullanıcı" else (key, value)
-        for key, value in active_filters
-    ]
-
-    return render_template(
-        'admin/islem_loglari.html',
-        loglar=[_serialize_log_row(log) for log in raw_logs],
-        users=users,
-        event_type_options=event_type_options,
-        target_model_options=target_model_options,
-        outcome_options=OUTCOME_OPTIONS,
-        selected_user_id=user_id,
-        selected_event_type=event_type,
-        selected_target_model=target_model,
-        selected_outcome=outcome,
-        selected_date_from=date_from,
-        selected_date_to=date_to,
-        has_target_model=has_target_model and bool(target_model_options),
-        has_active_filters=bool(active_filters),
-        active_filters=active_filters,
-        filtered_count=len(raw_logs),
-    )
-
-
-@admin_bp.route('/hata-kayitlari')
-@login_required
-@permission_required('logs.view')
-def hata_kayitlari():
-    required_columns = (
-        "error_code",
-        "title",
-        "user_message",
-        "module",
-        "severity",
-        "request_id",
-        "resolved",
-    )
-    if any(not column_exists("islem_log", column_name) for column_name in required_columns):
-        return render_template(
-            "admin/hata_kayitlari.html",
-            hata_kayitlari=[],
-            module_options=[],
-            severity_options=[],
-            selected_module="",
-            selected_severity="",
-            selected_status="",
-            search_query="",
-            has_schema_support=False,
+def _scope_logs_query(query):
+    if current_user.is_sahip:
+        return query
+    airport_id = getattr(current_user, "havalimani_id", None)
+    query = query.outerjoin(Kullanici, IslemLog.kullanici_id == Kullanici.id)
+    return query.filter(
+        or_(
+            IslemLog.havalimani_id == airport_id,
+            and_(
+                IslemLog.havalimani_id.is_(None),
+                Kullanici.havalimani_id == airport_id,
+            ),
         )
+    )
 
-    search_query = (request.args.get("q") or "").strip()
-    selected_module = (request.args.get("module") or "").strip().upper()
-    selected_severity = (request.args.get("severity") or "").strip().lower()
-    selected_status = (request.args.get("status") or "").strip().lower()
 
-    query = IslemLog.query.filter(IslemLog.error_code.isnot(None)).order_by(IslemLog.zaman.desc(), IslemLog.id.desc())
+def _scoped_log_option_query(column):
+    return _scope_logs_query(IslemLog.query.with_entities(column)).filter(column.isnot(None))
+
+
+def _load_error_log_listing_data(search_query, selected_module, selected_severity, selected_status):
+    query = (
+        IslemLog.query.options(joinedload(IslemLog.yapan_kullanici))
+        .filter(IslemLog.error_code.isnot(None))
+        .order_by(IslemLog.zaman.desc(), IslemLog.id.desc())
+    )
     if search_query:
         like_value = f"%{search_query}%"
         query = query.filter(
@@ -373,6 +289,193 @@ def hata_kayitlari():
         .order_by(IslemLog.severity.asc())
         .all()
     ]
+    return raw_logs, module_options, severity_options
+
+
+@admin_bp.route('/islem-loglari')
+@login_required
+@permission_required('logs.view')
+def loglari_gor():
+    has_event_key = column_exists("islem_log", "event_key")
+    has_target_model = column_exists("islem_log", "target_model")
+    has_target_id = column_exists("islem_log", "target_id")
+    has_outcome = column_exists("islem_log", "outcome")
+
+    user_id = request.args.get("user_id", type=int)
+    event_type = (request.args.get("event_type") or "").strip()
+    legacy_event_key = (request.args.get("event_key") or "").strip()
+    target_model = (request.args.get("target_model") or "").strip()
+    outcome = (request.args.get("outcome") or "").strip()
+    date_from = (request.args.get("date_from") or "").strip()
+    date_to = (request.args.get("date_to") or "").strip()
+    active_filters = []
+
+    event_type_values = [
+        row[0]
+        for row in _scoped_log_option_query(IslemLog.islem_tipi)
+        .distinct()
+        .all()
+    ]
+    event_type_options = _build_options(event_type_values, _label_event_type)
+    valid_event_types = {item["key"] for item in event_type_options}
+    if event_type not in valid_event_types:
+        event_type = ""
+
+    target_model_values = []
+    if has_target_model:
+        target_model_values = [
+            row[0]
+            for row in _scoped_log_option_query(IslemLog.target_model)
+            .distinct()
+            .all()
+        ]
+    target_model_options = _build_options(target_model_values, _label_target_model)
+    valid_target_models = {item["key"] for item in target_model_options}
+    if target_model not in valid_target_models:
+        target_model = ""
+
+    valid_outcomes = {item["key"] for item in OUTCOME_OPTIONS}
+    if outcome not in valid_outcomes:
+        outcome = ""
+
+    if has_event_key and has_target_model and has_target_id and has_outcome:
+        query = _scope_logs_query(IslemLog.query.options(joinedload(IslemLog.yapan_kullanici))).order_by(IslemLog.zaman.desc())
+        if user_id:
+            query = query.filter_by(kullanici_id=user_id)
+            active_filters.append(("Kullanıcı", str(user_id)))
+        if event_type:
+            query = query.filter(IslemLog.islem_tipi == event_type)
+            active_filters.append(("Olay Tipi", _label_event_type(event_type)))
+        if legacy_event_key:
+            query = query.filter(IslemLog.event_key.ilike(f"%{legacy_event_key}%"))
+            active_filters.append(("İşlem anahtarı", legacy_event_key))
+        if target_model:
+            query = query.filter(IslemLog.target_model == target_model)
+            active_filters.append(("İlgili Kayıt Türü", _label_target_model(target_model)))
+        if outcome:
+            query = query.filter(IslemLog.outcome == outcome)
+            active_filters.append(
+                ("Sonuç", next((item["label"] for item in OUTCOME_OPTIONS if item["key"] == outcome), outcome))
+            )
+        if date_from:
+            query = query.filter(IslemLog.zaman >= f"{date_from} 00:00:00")
+            active_filters.append(("Başlangıç", date_from))
+        if date_to:
+            query = query.filter(IslemLog.zaman <= f"{date_to} 23:59:59")
+            active_filters.append(("Bitiş", date_to))
+        raw_logs = query.limit(500).all()
+    else:
+        query = _scope_logs_query(IslemLog.query.with_entities(
+            IslemLog.id,
+            IslemLog.kullanici_id,
+            IslemLog.islem_tipi,
+            IslemLog.detay,
+            IslemLog.ip_adresi,
+            IslemLog.user_agent,
+            IslemLog.zaman,
+        )).order_by(IslemLog.zaman.desc())
+        if user_id:
+            query = query.filter(IslemLog.kullanici_id == user_id)
+            active_filters.append(("Kullanıcı", str(user_id)))
+        if event_type:
+            query = query.filter(IslemLog.islem_tipi == event_type)
+            active_filters.append(("Olay Tipi", _label_event_type(event_type)))
+        if date_from:
+            query = query.filter(IslemLog.zaman >= f"{date_from} 00:00:00")
+            active_filters.append(("Başlangıç", date_from))
+        if date_to:
+            query = query.filter(IslemLog.zaman <= f"{date_to} 23:59:59")
+            active_filters.append(("Bitiş", date_to))
+        raw_logs = [
+            SimpleNamespace(
+                id=row.id,
+                kullanici_id=row.kullanici_id,
+                islem_tipi=row.islem_tipi,
+                detay=row.detay,
+                ip_adresi=row.ip_adresi,
+                user_agent=row.user_agent,
+                zaman=row.zaman,
+                event_key=None,
+                target_model=None,
+                target_id=None,
+                outcome="legacy",
+            )
+            for row in query.limit(500).all()
+        ]
+    users_query = Kullanici.query.filter_by(is_deleted=False)
+    if not current_user.is_sahip:
+        users_query = users_query.filter(Kullanici.havalimani_id == getattr(current_user, "havalimani_id", None))
+    users = users_query.order_by(Kullanici.tam_ad.asc()).all()
+    user_lookup = {user.id: user.tam_ad for user in users}
+    active_filters = [
+        ("Kullanıcı", user_lookup.get(user_id, "Sistem")) if key == "Kullanıcı" else (key, value)
+        for key, value in active_filters
+    ]
+
+    return render_template(
+        'admin/islem_loglari.html',
+        loglar=[_serialize_log_row(log) for log in raw_logs],
+        users=users,
+        event_type_options=event_type_options,
+        target_model_options=target_model_options,
+        outcome_options=OUTCOME_OPTIONS,
+        selected_user_id=user_id,
+        selected_event_type=event_type,
+        selected_target_model=target_model,
+        selected_outcome=outcome,
+        selected_date_from=date_from,
+        selected_date_to=date_to,
+        has_target_model=has_target_model and bool(target_model_options),
+        has_active_filters=bool(active_filters),
+        active_filters=active_filters,
+        filtered_count=len(raw_logs),
+    )
+
+
+@admin_bp.route('/hata-kayitlari')
+@login_required
+@permission_required('logs.view')
+def hata_kayitlari():
+    if not current_user.is_sahip:
+        abort(403)
+
+    required_columns = (
+        "error_code",
+        "title",
+        "user_message",
+        "module",
+        "severity",
+        "request_id",
+        "resolved",
+    )
+    if any(not column_exists("islem_log", column_name) for column_name in required_columns):
+        return render_template(
+            "admin/hata_kayitlari.html",
+            hata_kayitlari=[],
+            module_options=[],
+            severity_options=[],
+            selected_module="",
+            selected_severity="",
+            selected_status="",
+            search_query="",
+            has_schema_support=False,
+        )
+
+    search_query = (request.args.get("q") or "").strip()
+    selected_module = (request.args.get("module") or "").strip().upper()
+    selected_severity = (request.args.get("severity") or "").strip().lower()
+    selected_status = (request.args.get("status") or "").strip().lower()
+
+    try:
+        raw_logs, module_options, severity_options = _load_error_log_listing_data(
+            search_query,
+            selected_module,
+            selected_severity,
+            selected_status,
+        )
+    except Exception:
+        db.session.rollback()
+        raw_logs, module_options, severity_options = [], [], []
 
     return render_template(
         "admin/hata_kayitlari.html",
@@ -419,6 +522,7 @@ def hata_kaydi_detay(log_id):
         ip_address=str(getattr(log, "ip_address", None) or getattr(log, "ip_adresi", None) or "-").strip() or "-",
         user_agent=mask_sensitive_text(getattr(log, "user_agent", None) or "-", limit=280),
         created_at=getattr(log, "created_at", None) or getattr(log, "zaman", None),
+        created_at_label=_format_timestamp_label(getattr(log, "created_at", None) or getattr(log, "zaman", None)),
         resolved=bool(getattr(log, "resolved", False)),
         resolution_note=str(getattr(log, "resolution_note", None) or "").strip(),
     )

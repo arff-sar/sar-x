@@ -18,6 +18,11 @@ def test_login_page_contains_mobile_friendly_captcha_and_actions_rules(client):
     assert ".captcha-input-shell { grid-column: 3; }" in html
     assert "@media (max-width: 460px)" in html
     assert ".captcha-input { font-size: 14.5px !important; letter-spacing: .04em; }" in html
+    assert "-webkit-text-size-adjust: 100%;" in html
+    assert ".captcha-canvas-container," in html
+    assert ".captcha-canvas-container { display: flex; align-items: center; justify-content: center; }" in html
+    assert ".captcha-visual { height: 100%; object-fit: contain; }" in html
+    assert ".captcha-input { font-size: 15px !important; letter-spacing: .05em; line-height: 1; min-height: 0; height: 100%; }" in html
     assert ".account-actions-row { gap: 8px; margin: 2px 0 8px; }" in html
     assert ".forgot-password-link { min-height: 40px; border-radius: 10px;" in html
 
@@ -79,3 +84,24 @@ def test_public_shell_contains_mobile_nav_and_footer_guards(client):
     assert "max-height: calc(100svh - 104px);" in html
     assert 'shell.querySelectorAll("a")' in html
     assert ".public-copy { flex-direction: column; align-items: flex-start; }" in html
+
+
+def test_authenticated_shell_contains_mobile_sidebar_logout_and_saha_mode_order(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Trabzon Havalimanı", kodu="TZX")
+        user = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False)
+        db.session.add_all([airport, user])
+        db.session.commit()
+        user_id = user.id
+
+    _login(client, user_id)
+    response = client.get("/dashboard")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert 'class="topbar-logout-form"' in html
+    assert 'class="sidebar-footer-actions"' in html
+    assert 'class="sidebar-logout-form"' in html
+    assert 'class="sidebar-logout-btn"' in html
+    assert html.index("<strong>Saha Modu</strong>") < html.index('class="sidebar-logout-form"')
+    assert ".topbar-end > form { display: none !important; }" in html

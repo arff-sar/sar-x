@@ -37,6 +37,7 @@ from decorators import (
     get_role_labels,
     get_role_options,
     get_user_permission_overrides,
+    is_impersonation_mode,
     permission_required,
     update_user_permission_overrides,
 )
@@ -67,6 +68,13 @@ EMAIL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 USER_PASSWORD_PATTERN = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$")
+BLOOD_TYPE_LETTER_OPTIONS = ("A", "B", "AB", "0")
+RH_FACTOR_OPTIONS = ("+", "-")
+BODY_SIZE_OPTIONS = ("XS", "S", "M", "L", "XL", "XXL", "3XL")
+SHOE_SIZE_OPTIONS = tuple(
+    str(size).rstrip("0").rstrip(".")
+    for size in (34 + (step * 0.5) for step in range(33))
+)
 
 
 def _visible_users_query(actor):
@@ -140,6 +148,16 @@ def _visible_airports(actor):
     return Havalimani.query.filter_by(is_deleted=False, id=actor.havalimani_id).all()
 
 
+def _create_role_options_for_actor(actor, role_options):
+    if get_effective_role(actor) == CANONICAL_ROLE_TEAM_LEAD:
+        return [role for role in role_options if role["key"] == CANONICAL_ROLE_TEAM_MEMBER]
+    return role_options
+
+
+def _can_manage_user_phone_on_create(actor):
+    return bool(getattr(actor, "is_sahip", False) and get_effective_role(actor) == CANONICAL_ROLE_SYSTEM)
+
+
 def _bulk_import_session_key():
     return "bulk_user_import_preview"
 
@@ -152,6 +170,77 @@ def _safe_import_phone(raw_value):
     if not current_user.is_sahip:
         return None, None
     return _normalize_phone_number(raw_value)
+
+
+def _normalize_optional_positive_int(raw_value, field_label, *, min_value=None, max_value=None):
+    cleaned = guvenli_metin(raw_value or "").strip()
+    if not cleaned:
+        return None, None
+    try:
+        value = int(cleaned)
+    except (TypeError, ValueError):
+        return None, f"{field_label} sayısal olmalıdır."
+    if min_value is not None and value < min_value:
+        return None, f"{field_label} en az {min_value} olmalıdır."
+    if max_value is not None and value > max_value:
+        return None, f"{field_label} en fazla {max_value} olabilir."
+    return value, None
+
+
+def _normalize_shoe_size(raw_value):
+    cleaned = guvenli_metin(raw_value or "").strip().replace(",", ".")
+    if not cleaned:
+        return None, None
+    if cleaned not in SHOE_SIZE_OPTIONS:
+        return None, "Ayak numarası listeden seçilmelidir."
+    try:
+        return float(cleaned), None
+    except (TypeError, ValueError):
+        return None, "Ayak numarası doğrulanamadı."
+
+
+def _collect_user_profile_fields(form):
+    blood_letter = guvenli_metin(form.get("kan_grubu_harf") or "").strip()
+    rh_factor = guvenli_metin(form.get("kan_grubu_rh") or "").strip()
+    body_size = guvenli_metin(form.get("beden") or "").strip().upper()
+
+    if rh_factor == "Rh+":
+        rh_factor = "+"
+    elif rh_factor == "Rh-":
+        rh_factor = "-"
+
+    if blood_letter and blood_letter not in BLOOD_TYPE_LETTER_OPTIONS:
+        return None, "Kan grubu harfi listeden seçilmelidir."
+    if rh_factor and rh_factor not in RH_FACTOR_OPTIONS:
+        return None, "Rh alanı listeden seçilmelidir."
+    if bool(blood_letter) != bool(rh_factor):
+        return None, "Kan grubu için harf ve Rh alanlarını birlikte seçin."
+    if body_size and body_size not in BODY_SIZE_OPTIONS:
+        return None, "Beden alanı listeden seçilmelidir."
+
+    boy_cm, error = _normalize_optional_positive_int(form.get("boy_cm"), "Boy", min_value=90, max_value=260)
+    if error:
+        return None, error
+    kilo_kg, error = _normalize_optional_positive_int(form.get("kilo_kg"), "Kilo", min_value=30, max_value=250)
+    if error:
+        return None, error
+    ayak_numarasi, error = _normalize_shoe_size(form.get("ayak_numarasi"))
+    if error:
+        return None, error
+
+    return {
+        "kan_grubu_harf": blood_letter or None,
+        "kan_grubu_rh": rh_factor or None,
+        "boy_cm": boy_cm,
+        "kilo_kg": kilo_kg,
+        "ayak_numarasi": ayak_numarasi,
+        "beden": body_size or None,
+    }, None
+
+
+def _apply_user_profile_fields(user, profile_fields):
+    for key, value in (profile_fields or {}).items():
+        setattr(user, key, value)
 
 
 def _resolve_airport_for_import(actor, airport_text, role_key, visible_airports):
@@ -363,11 +452,20 @@ def kullanicilar():
         selected_effective_permissions = get_effective_permissions(selected_user)
         selected_user_effective_role = get_effective_role(selected_user)
 
+    create_role_options = _create_role_options_for_actor(current_user, role_options)
+    create_default_role = create_role_options[0]["key"] if create_role_options else ""
+    create_lock_to_airport = get_effective_role(current_user) == CANONICAL_ROLE_TEAM_LEAD
+    create_default_airport_id = str(current_user.havalimani_id or "") if create_lock_to_airport else ""
+
     return render_template(
         'admin/kullanicilar.html',
         kullanicilar=liste,
         havalimanlari=havalimanlari,
         role_options=role_options,
+        blood_type_letter_options=BLOOD_TYPE_LETTER_OPTIONS,
+        rh_factor_options=RH_FACTOR_OPTIONS,
+        body_size_options=BODY_SIZE_OPTIONS,
+        shoe_size_options=SHOE_SIZE_OPTIONS,
         status_options=STATUS_OPTIONS,
         permission_catalog=permission_catalog,
         permission_lookup=permission_lookup,
@@ -386,6 +484,12 @@ def kullanicilar():
         selected_override_deny=selected_override_deny,
         selected_effective_permissions=selected_effective_permissions,
         selected_user_effective_role=selected_user_effective_role,
+        create_role_options=create_role_options,
+        create_default_role=create_default_role,
+        create_lock_to_airport=create_lock_to_airport,
+        create_default_airport_id=create_default_airport_id,
+        create_can_manage_phone=_can_manage_user_phone_on_create(current_user),
+        create_is_impersonation=is_impersonation_mode(current_user),
         bulk_import_preview=bulk_import_preview,
         can_download_user_template=has_permission("users.template.download"),
         can_import_users=has_permission("users.import"),
@@ -526,9 +630,11 @@ def kullanici_ekle():
         for role_key in expand_role_keys(role["key"]):
             role_lookup[role_key] = role["key"]
     rol = role_lookup.get(submitted_role, submitted_role)
-    h_id = request.form.get('h_id')
+    h_id = request.form.get('h_id', type=int)
     sifre = request.form.get('sifre')
     telefon_numarasi = None
+    profile_fields, profile_error = _collect_user_profile_fields(request.form)
+    actor_role = get_effective_role(current_user)
 
     if not tam_ad:
         flash("Ad soyad alanını doldurun.", "danger")
@@ -540,14 +646,17 @@ def kullanici_ekle():
     if password_error:
         flash(password_error, "danger")
         return redirect(url_for('admin.kullanicilar'))
+    if profile_error:
+        flash(profile_error, "danger")
+        return redirect(url_for('admin.kullanicilar'))
 
-    if current_user.is_sahip:
+    if _can_manage_user_phone_on_create(current_user):
         telefon_numarasi, phone_error = _normalize_phone_number(request.form.get('telefon_numarasi'))
         if request.form.get('telefon_numarasi') and phone_error:
             flash(phone_error, "danger")
             return redirect(url_for('admin.kullanicilar'))
     
-    if get_effective_role(current_user) == CANONICAL_ROLE_TEAM_LEAD:
+    if actor_role == CANONICAL_ROLE_TEAM_LEAD:
         rol = CANONICAL_ROLE_TEAM_MEMBER
         h_id = current_user.havalimani_id
     elif not can_assign_role(current_user, rol):
@@ -572,6 +681,7 @@ def kullanici_ekle():
         havalimani_id=h_id,
         telefon_numarasi=telefon_numarasi,
     )
+    _apply_user_profile_fields(yeni, profile_fields)
     yeni.sifre_set(sifre)
     db.session.add(yeni)
     db.session.commit()
@@ -614,6 +724,7 @@ def kullanici_guncelle(id):
     allow_permissions = request.form.getlist('allow_permissions')
     deny_permissions = request.form.getlist('deny_permissions')
     yeni_telefon_numarasi = user.telefon_numarasi
+    profile_fields, profile_error = _collect_user_profile_fields(request.form)
     if current_user.is_sahip:
         yeni_telefon_numarasi, phone_error = _normalize_phone_number(request.form.get('telefon_numarasi'))
         if request.form.get('telefon_numarasi') and phone_error:
@@ -627,6 +738,19 @@ def kullanici_guncelle(id):
     if email_error:
         flash(email_error, "danger")
         return redirect(url_for('admin.kullanicilar', user_id=user.id))
+    if profile_error:
+        flash(profile_error, "danger")
+        return redirect(url_for('admin.kullanicilar', user_id=user.id))
+
+    current_overrides = get_user_permission_overrides(user)
+    role_or_scope_changed = (
+        yeni_rol != user.rol
+        or h_id != user.havalimani_id
+        or set(allow_permissions) != set(current_overrides["allow"])
+        or set(deny_permissions) != set(current_overrides["deny"])
+    )
+    if role_or_scope_changed and not current_user.is_sahip:
+        abort(403)
 
     approval_required = False
     if not approval_required and not can_assign_role(current_user, yeni_rol):
@@ -686,7 +810,9 @@ def kullanici_guncelle(id):
     user.havalimani_id = h_id
     if current_user.is_sahip:
         user.telefon_numarasi = yeni_telefon_numarasi
+    _apply_user_profile_fields(user, profile_fields)
     update_user_permission_overrides(user.id, allow_permissions, deny_permissions)
+    db.session.commit()
 
     log_kaydet(
         'Güvenlik',
@@ -694,7 +820,6 @@ def kullanici_guncelle(id):
         event_key='role.assignment.change',
         target_model='Kullanici',
         target_id=user.id,
-        commit=False,
     )
     audit_log('role.assignment.change', outcome='success', target_user_id=user.id, old_role=eski_rol, new_role=yeni_rol)
     create_notification(
@@ -704,9 +829,7 @@ def kullanici_guncelle(id):
         f"Hesabınız için yeni rol ataması yapıldı: {role_labels.get(yeni_rol, yeni_rol)}",
         link_url=url_for('admin.kullanicilar'),
         severity="info",
-        commit=False,
     )
-    db.session.commit()
     flash("Kullanıcı yetkileri güncellendi.", "success")
     if phone_changed and current_user.is_sahip:
         flash("Telefon numarası kaydedildi.", "success")

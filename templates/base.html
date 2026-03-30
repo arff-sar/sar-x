@@ -106,10 +106,14 @@ body.sidebar-open { overflow: hidden; }
 .nav-icon { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; background: #e2e8f0; color: var(--navy); flex-shrink: 0; }
 .nav-item.active .nav-icon { background: rgba(255,255,255,.12); }
 .sidebar-footer { flex: 0 0 auto; padding: 10px 12px 4px; border-top: 1px solid var(--border); background: linear-gradient(180deg, rgba(248,250,252,.55) 0%, rgba(248,250,252,.95) 100%); position: sticky; bottom: 0; z-index: 2; }
+.sidebar-footer-actions { display: grid; gap: 10px; }
 .pwa-banner { background: #f8fafc; border: 1px solid var(--border); border-radius: var(--r); padding: 9px 10px; display: flex; align-items: flex-start; gap: 8px; }
 .pwa-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
 .pwa-text { font-size: 10.5px; color: var(--text3); line-height: 1.4; }
 .pwa-text strong { display: block; font-weight: 700; margin-bottom: 2px; }
+.sidebar-logout-form { display: none; }
+.sidebar-logout-btn { width: 100%; min-height: 40px; border-radius: 10px; border: 1px solid rgba(248, 113, 113, 0.24); background: rgba(254, 242, 242, 0.96); color: var(--red); font-family: var(--sans); font-size: 12px; font-weight: 800; cursor: pointer; }
+.sidebar-logout-btn:hover { background: var(--red-light); }
 
 /* Content Area */
 .main-content { overflow: auto; background: var(--bg); min-width: 0; min-height: 0; }
@@ -216,13 +220,17 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
   .search-input { width: 100% !important; }
   .topbar { padding: 8px 10px; gap: 8px; flex-wrap: nowrap; }
   .toast-stack { top: 66px; right: 12px; left: 12px; width: auto; max-height: calc(100svh - 84px); overflow: auto; }
-  .topbar-end { margin-left: auto; width: auto; max-width: 66vw; justify-content: flex-end; gap: 6px; }
+  .logo { flex: 1 1 auto; min-width: 0; }
+  .topbar-end { margin-left: auto; width: auto; max-width: 66vw; justify-content: flex-end; gap: 6px; flex: 0 1 auto; min-width: 0; }
   .logo-text-sub { display: none; }
-  .user-menu-actions { gap: 6px; }
+  .user-menu-actions { gap: 6px; min-width: 0; }
   .user-chip { padding: 4px 7px; min-width: 0; max-width: 42vw; }
   .role-switch-launch { width: 38px; min-width: 38px; height: 38px; }
   .user-role { display: none; }
   .logout-btn { margin-left: 0; min-height: 36px; padding: 0 9px; font-size: 11px; }
+  .topbar-end > form { display: none !important; }
+  .sidebar-footer { padding-bottom: 10px; }
+  .sidebar-logout-form { display: block; }
   .user-name { max-width: 102px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .main-inner { padding: 14px; }
   .page-title { font-size: 20px; }
@@ -343,7 +351,7 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
         </div>
       </div>
       {% endif %}
-      <form method="POST" action="{{ url_for('auth.logout') }}" style="display:inline;">
+      <form method="POST" action="{{ url_for('auth.logout') }}" style="display:inline;" class="topbar-logout-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="logout-btn">Çıkış Yap</button>
       </form>
@@ -400,12 +408,18 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
     </div>
 
     <div class="sidebar-footer">
-      <div class="pwa-banner">
-        <div class="pwa-icon">📲</div>
-        <div class="pwa-text">
-          <strong>Saha Modu</strong>
-          Telefona ekleyin, hızlı erişim sağlayın.
+      <div class="sidebar-footer-actions">
+        <div class="pwa-banner">
+          <div class="pwa-icon">📲</div>
+          <div class="pwa-text">
+            <strong>Saha Modu</strong>
+            Telefona ekleyin, hızlı erişim sağlayın.
+          </div>
         </div>
+        <form method="POST" action="{{ url_for('auth.logout') }}" class="sidebar-logout-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="sidebar-logout-btn">Çıkış Yap</button>
+        </form>
       </div>
     </div>
   </nav>

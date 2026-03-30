@@ -182,7 +182,7 @@
                 <tbody>
                     {% for log in loglar %}
                     <tr>
-                        <td>{{ log.zaman.strftime('%d.%m.%Y %H:%M:%S') if log.zaman else '-' }}</td>
+                        <td>{{ log.zaman_label }}</td>
                         <td>
                             <div class="log-user-cell">
                                 <div class="log-user-name">{{ log.user_label }}</div>

@@ -117,7 +117,7 @@
           {% for item in hata_kayitlari %}
           <tr>
             <td><span class="status-pill {{ item.status_class }}">{{ item.status_label }}</span></td>
-            <td>{{ item.created_at.strftime('%d.%m.%Y %H:%M:%S') if item.created_at else '-' }}</td>
+            <td>{{ item.created_at_label }}</td>
             <td>{{ item.module }}</td>
             <td>
               <button

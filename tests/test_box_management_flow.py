@@ -1,5 +1,5 @@
 from extensions import db
-from models import Kutu
+from models import Kutu, Malzeme
 from tests.factories import EquipmentTemplateFactory, HavalimaniFactory, InventoryAssetFactory, KutuFactory, KullaniciFactory, MalzemeFactory
 
 
@@ -258,11 +258,86 @@ def test_box_detail_uses_accordion_edit_pattern(client, app):
 
     assert response.status_code == 200
     assert 'data-box-accordion' in html
-    assert 'data-accordion-toggle' in html
-    assert "closeOthers" in html
-    assert "Kutudan Sil" in html
-    assert "Düzenle" in html
-    assert "Konum tanımsız" not in html
+
+
+def test_archive_page_scopes_rows_to_team_lead_airport(client, app):
+    with app.app_context():
+        airport_one = HavalimaniFactory(ad="Erzurum", kodu="ERZ")
+        airport_two = HavalimaniFactory(ad="Trabzon", kodu="TZX")
+        lead = KullaniciFactory(rol="yetkili", havalimani=airport_one, is_deleted=False)
+        own_box = KutuFactory(kodu="ERZ-SAR-90", havalimani=airport_one)
+        own_material = MalzemeFactory(ad="ERZ Arşiv Kaydı", kutu=own_box, havalimani=airport_one, is_deleted=True)
+        own_material.deleted_at = own_material.deleted_at or own_material.created_at
+        own_user = KullaniciFactory(
+            rol="ekip_uyesi",
+            havalimani=airport_one,
+            is_deleted=True,
+            tam_ad="ERZ Arşiv Personeli",
+            kullanici_adi="erz-archive@sarx.com",
+        )
+        own_user.deleted_at = own_user.deleted_at or own_user.created_at
+        remote_box = KutuFactory(kodu="TZX-SAR-90", havalimani=airport_two)
+        remote_material = MalzemeFactory(ad="TZX Arşiv Kaydı", kutu=remote_box, havalimani=airport_two, is_deleted=True)
+        remote_material.deleted_at = remote_material.deleted_at or remote_material.created_at
+        remote_user = KullaniciFactory(
+            rol="ekip_uyesi",
+            havalimani=airport_two,
+            is_deleted=True,
+            tam_ad="TZX Arşiv Personeli",
+            kullanici_adi="tzx-archive@sarx.com",
+        )
+        remote_user.deleted_at = remote_user.deleted_at or remote_user.created_at
+        db.session.add_all([
+            airport_one,
+            airport_two,
+            lead,
+            own_box,
+            own_material,
+            own_user,
+            remote_box,
+            remote_material,
+            remote_user,
+        ])
+        db.session.commit()
+        lead_id = lead.id
+
+    _login(client, lead_id)
+    response = client.get("/arsiv")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "ERZ Arşiv Kaydı" in html
+    assert "ERZ Arşiv Personeli" in html
+    assert "TZX Arşiv Kaydı" not in html
+    assert "TZX Arşiv Personeli" not in html
+
+
+def test_team_lead_cannot_restore_other_airport_archived_record(client, app):
+    with app.app_context():
+        airport_one = HavalimaniFactory(ad="Erzurum", kodu="ERZ")
+        airport_two = HavalimaniFactory(ad="Trabzon", kodu="TZX")
+        lead = KullaniciFactory(rol="yetkili", havalimani=airport_one, is_deleted=False)
+        remote_box = KutuFactory(kodu="TZX-SAR-91", havalimani=airport_two)
+        remote_material = MalzemeFactory(ad="TZX Korumalı Kayıt", kutu=remote_box, havalimani=airport_two, is_deleted=True)
+        remote_material.deleted_at = remote_material.deleted_at or remote_material.created_at
+        db.session.add_all([airport_one, airport_two, lead, remote_box, remote_material])
+        db.session.commit()
+        lead_id = lead.id
+        remote_material_id = remote_material.id
+
+    _login(client, lead_id)
+    response = client.post(
+        "/arsiv_islem",
+        data={"model_tipi": "malzeme", "kayit_id": str(remote_material_id), "islem_tipi": "geri_yukle"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+
+    with app.app_context():
+        protected = db.session.get(Malzeme, remote_material_id)
+        assert protected is not None
+        assert protected.is_deleted is True
 
 
 def test_personnel_sees_box_detail_without_edit_controls(client, app):

@@ -15,7 +15,7 @@
 </style>
 </head>
 <body>
-  <div class="title">KKD Eksik / Hasarlı / Kayıp Raporu</div>
+  <div class="title">KKD Tahsis Raporu</div>
   <div class="subtitle">Üretilme zamanı: {{ generated_at.strftime('%d.%m.%Y %H:%M') if generated_at else '-' }}</div>
 
   <table>
@@ -23,13 +23,15 @@
       <tr>
         <th>Personel</th>
         <th>Havalimanı</th>
+        <th>Kategori</th>
+        <th>Alt Tür</th>
         <th>KKD</th>
         <th>Marka / Model</th>
-        <th>Beden</th>
+        <th>Beden / Numara</th>
         <th>Teslim</th>
         <th>Miktar</th>
-        <th>Durum</th>
-        <th>Açıklama</th>
+        <th>Fiziksel Durum</th>
+        <th>Aktif/Pasif</th>
       </tr>
     </thead>
     <tbody>
@@ -37,13 +39,15 @@
       <tr>
         <td>{{ record.user.tam_ad if record.user else '-' }}</td>
         <td>{{ record.airport.ad if record.airport else '-' }}</td>
+        <td>{{ record.category or '-' }}</td>
+        <td>{{ record.subcategory or '-' }}</td>
         <td>{{ record.item_name }}</td>
-        <td>{{ record.brand_model or '-' }}</td>
-        <td>{{ record.size_info or '-' }}</td>
+        <td>{{ record.brand_model_display or record.brand_model or '-' }}</td>
+        <td>{{ record.size_display or record.size_info or '-' }}</td>
         <td>{{ record.delivered_at.strftime('%d.%m.%Y') if record.delivered_at else '-' }}</td>
         <td>{{ record.quantity }}</td>
-        <td>{{ ppe_status_label(record.status) }}</td>
-        <td>{{ record.description or '-' }}</td>
+        <td>{{ ppe_condition_label(record.physical_condition) if record.physical_condition else '-' }}</td>
+        <td>{{ 'Aktif' if record.is_active else 'Pasif' }}</td>
       </tr>
       {% endfor %}
     </tbody>

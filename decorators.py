@@ -457,6 +457,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "ppe.view",
         "ppe.request",
         "ppe.manage",
+        "archive.manage",
         "maintenance.view",
         "maintenance.edit",
         "maintenance.plan.change",
@@ -865,6 +866,11 @@ CONTROL_PLANE_WHITELIST_ENDPOINTS = {
     "auth.logout",
 }
 
+TEAM_LEAD_IMPERSONATION_ALLOWED_ENDPOINTS = {
+    "admin.kullanicilar",
+    "admin.kullanici_ekle",
+}
+
 
 def should_block_control_plane(user=None, endpoint=None):
     user = user or current_user
@@ -874,6 +880,8 @@ def should_block_control_plane(user=None, endpoint=None):
         return False
     resolved_endpoint = str(endpoint or request.endpoint or "").strip()
     if not resolved_endpoint or resolved_endpoint in CONTROL_PLANE_WHITELIST_ENDPOINTS:
+        return False
+    if get_effective_role(user) == CANONICAL_ROLE_TEAM_LEAD and resolved_endpoint in TEAM_LEAD_IMPERSONATION_ALLOWED_ENDPOINTS:
         return False
     if resolved_endpoint in CONTROL_PLANE_ENDPOINTS:
         return True
@@ -1387,60 +1395,86 @@ def get_permission_matrix_snapshot():
 
 
 def update_permission_matrix(role_key, allow_permissions, deny_permissions):
-    meta = _load_authorization_meta()
-    matrix = meta.setdefault("permission_matrix", {})
-    matrix[role_key] = {
-        "allow": sorted({item for item in allow_permissions if item}),
-        "deny": sorted({item for item in deny_permissions if item}),
-    }
-    _save_authorization_meta(meta)
+    with db.session.no_autoflush:
+        meta = _load_authorization_meta()
+        matrix = meta.setdefault("permission_matrix", {})
+        matrix[role_key] = {
+            "allow": sorted({item for item in allow_permissions if item}),
+            "deny": sorted({item for item in deny_permissions if item}),
+        }
+        _save_authorization_meta(meta)
     if table_exists("role") and table_exists("permission") and table_exists("role_permission"):
         try:
-            from extensions import db
             from models import Permission, RolePermission
 
             sync_authorization_registry()
-            role_id = db.session.execute(
-                text("SELECT id FROM role WHERE key = :role_key LIMIT 1"),
-                {"role_key": role_key},
-            ).scalar()
-            if role_id:
-                RolePermission.query.filter_by(role_id=role_id).delete(synchronize_session=False)
-                for permission_key in sorted({item for item in allow_permissions if item}):
-                    permission = Permission.query.filter_by(key=permission_key).first()
-                    if permission:
-                        db.session.add(RolePermission(role_id=role_id, permission_id=permission.id, is_allowed=True))
-                for permission_key in sorted({item for item in deny_permissions if item}):
-                    permission = Permission.query.filter_by(key=permission_key).first()
-                    if permission:
-                        db.session.add(RolePermission(role_id=role_id, permission_id=permission.id, is_allowed=False))
-                db.session.flush()
+            savepoint = db.session.begin_nested()
+            try:
+                role_id = db.session.execute(
+                    text("SELECT id FROM role WHERE key = :role_key LIMIT 1"),
+                    {"role_key": role_key},
+                ).scalar()
+                if role_id:
+                    RolePermission.query.filter_by(role_id=role_id).delete(synchronize_session=False)
+                    for permission_key in sorted({item for item in allow_permissions if item}):
+                        permission = Permission.query.filter_by(key=permission_key).first()
+                        if permission:
+                            db.session.add(
+                                RolePermission(role_id=role_id, permission_id=permission.id, is_allowed=True)
+                            )
+                    for permission_key in sorted({item for item in deny_permissions if item}):
+                        permission = Permission.query.filter_by(key=permission_key).first()
+                        if permission:
+                            db.session.add(
+                                RolePermission(role_id=role_id, permission_id=permission.id, is_allowed=False)
+                            )
+                    db.session.flush()
+                savepoint.commit()
+            except Exception:
+                savepoint.rollback()
+                if has_app_context():
+                    current_app.logger.exception("Rol izin matrisi veritabanina yansitilamadi: %s", role_key)
         except Exception:
-            db.session.rollback()
+            if has_app_context():
+                current_app.logger.exception("Rol izin matrisi guncellenemedi: %s", role_key)
     return meta
 
 
 def update_user_permission_overrides(user_id, allow_permissions, deny_permissions):
-    meta = _load_authorization_meta()
-    overrides = meta.setdefault("user_permission_overrides", {})
-    overrides[str(user_id)] = {
-        "allow": sorted({item for item in allow_permissions if item}),
-        "deny": sorted({item for item in deny_permissions if item}),
-    }
-    _save_authorization_meta(meta)
+    with db.session.no_autoflush:
+        meta = _load_authorization_meta()
+        overrides = meta.setdefault("user_permission_overrides", {})
+        overrides[str(user_id)] = {
+            "allow": sorted({item for item in allow_permissions if item}),
+            "deny": sorted({item for item in deny_permissions if item}),
+        }
+        _save_authorization_meta(meta)
     if table_exists("user_permission_override"):
         try:
-            from extensions import db
             from models import UserPermissionOverride
 
-            UserPermissionOverride.query.filter_by(user_id=int(user_id)).delete(synchronize_session=False)
-            for permission_key in sorted({item for item in allow_permissions if item}):
-                db.session.add(UserPermissionOverride(user_id=int(user_id), permission_key=permission_key, is_allowed=True))
-            for permission_key in sorted({item for item in deny_permissions if item}):
-                db.session.add(UserPermissionOverride(user_id=int(user_id), permission_key=permission_key, is_allowed=False))
-            db.session.flush()
+            savepoint = db.session.begin_nested()
+            try:
+                UserPermissionOverride.query.filter_by(user_id=int(user_id)).delete(synchronize_session=False)
+                for permission_key in sorted({item for item in allow_permissions if item}):
+                    db.session.add(
+                        UserPermissionOverride(user_id=int(user_id), permission_key=permission_key, is_allowed=True)
+                    )
+                for permission_key in sorted({item for item in deny_permissions if item}):
+                    db.session.add(
+                        UserPermissionOverride(user_id=int(user_id), permission_key=permission_key, is_allowed=False)
+                    )
+                db.session.flush()
+                savepoint.commit()
+            except Exception:
+                savepoint.rollback()
+                if has_app_context():
+                    current_app.logger.exception(
+                        "Kullanici yetki override kaydi veritabanina yansitilamadi: %s", user_id
+                    )
         except Exception:
-            db.session.rollback()
+            if has_app_context():
+                current_app.logger.exception("Kullanici yetki override guncellenemedi: %s", user_id)
     return meta
 
 

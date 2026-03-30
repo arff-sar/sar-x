@@ -10,10 +10,10 @@ def _login(client, user):
 
 
 def test_draft_slider_not_visible_until_published(client, app):
-    editor = KullaniciFactory(rol="editor")
-    db.session.add(editor)
+    owner = KullaniciFactory(rol="sahip")
+    db.session.add(owner)
     db.session.commit()
-    _login(client, editor)
+    _login(client, owner)
 
     create_resp = client.post(
         "/admin/homepage/sliders/new",
@@ -61,10 +61,10 @@ def test_draft_slider_not_visible_until_published(client, app):
 
 
 def test_reorder_updates_slider_order_indices(client, app):
-    editor = KullaniciFactory(rol="editor")
-    db.session.add(editor)
+    owner = KullaniciFactory(rol="sahip")
+    db.session.add(owner)
     db.session.commit()
-    _login(client, editor)
+    _login(client, owner)
 
     first = HomeSliderFactory(title="İlk Slider", order_index=0, is_active=True)
     second = HomeSliderFactory(title="İkinci Slider", order_index=1, is_active=True)
@@ -73,8 +73,8 @@ def test_reorder_updates_slider_order_indices(client, app):
 
     db.session.add_all(
         [
-            ContentWorkflow(entity_type="slider", entity_id=first.id, status="published", last_edited_by_id=editor.id),
-            ContentWorkflow(entity_type="slider", entity_id=second.id, status="published", last_edited_by_id=editor.id),
+            ContentWorkflow(entity_type="slider", entity_id=first.id, status="published", last_edited_by_id=owner.id),
+            ContentWorkflow(entity_type="slider", entity_id=second.id, status="published", last_edited_by_id=owner.id),
         ]
     )
     db.session.commit()
@@ -92,18 +92,18 @@ def test_reorder_updates_slider_order_indices(client, app):
 
 
 def test_bulk_archive_sets_quick_links_passive(client, app):
-    editor = KullaniciFactory(rol="editor")
-    db.session.add(editor)
+    owner = KullaniciFactory(rol="sahip")
+    db.session.add(owner)
     db.session.commit()
-    _login(client, editor)
+    _login(client, owner)
 
     q1 = HomeQuickLinkFactory(title="Kart 1", order_index=0, is_active=True)
     q2 = HomeQuickLinkFactory(title="Kart 2", order_index=1, is_active=True)
     db.session.add_all([q1, q2])
     db.session.flush()
 
-    wf1 = ContentWorkflow(entity_type="quicklink", entity_id=q1.id, status="published", last_edited_by_id=editor.id)
-    wf2 = ContentWorkflow(entity_type="quicklink", entity_id=q2.id, status="published", last_edited_by_id=editor.id)
+    wf1 = ContentWorkflow(entity_type="quicklink", entity_id=q1.id, status="published", last_edited_by_id=owner.id)
+    wf2 = ContentWorkflow(entity_type="quicklink", entity_id=q2.id, status="published", last_edited_by_id=owner.id)
     db.session.add_all([wf1, wf2])
     db.session.commit()
 
@@ -126,15 +126,15 @@ def test_bulk_archive_sets_quick_links_passive(client, app):
 
 def test_editor_publish_falls_back_to_draft_when_disabled(client, app):
     app.config["HOMEPAGE_EDITOR_CAN_PUBLISH"] = False
-    editor = KullaniciFactory(rol="editor")
-    db.session.add(editor)
+    owner = KullaniciFactory(rol="sahip")
+    db.session.add(owner)
     db.session.commit()
-    _login(client, editor)
+    _login(client, owner)
 
     slider = HomeSliderFactory(title="Yayın Yetkisi Testi", order_index=0, is_active=False)
     db.session.add(slider)
     db.session.flush()
-    wf = ContentWorkflow(entity_type="slider", entity_id=slider.id, status="draft", last_edited_by_id=editor.id)
+    wf = ContentWorkflow(entity_type="slider", entity_id=slider.id, status="draft", last_edited_by_id=owner.id)
     db.session.add(wf)
     db.session.commit()
 
@@ -147,5 +147,25 @@ def test_editor_publish_falls_back_to_draft_when_disabled(client, app):
 
     db.session.refresh(slider)
     db.session.refresh(wf)
-    assert wf.status == "draft"
-    assert slider.is_active is False
+    assert wf.status == "published"
+    assert slider.is_active is True
+
+
+def test_editor_cannot_mutate_homepage_content(client, app):
+    editor = KullaniciFactory(rol="editor")
+    db.session.add(editor)
+    db.session.commit()
+    _login(client, editor)
+
+    create_resp = client.post(
+        "/admin/homepage/sliders/new",
+        data={
+            "title": "Engelli İçerik",
+            "subtitle": "Test",
+            "description": "Deneme",
+            "image_url": "https://example.com/x.jpg",
+        },
+        follow_redirects=False,
+    )
+
+    assert create_resp.status_code == 403

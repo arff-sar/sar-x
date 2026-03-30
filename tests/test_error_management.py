@@ -139,13 +139,33 @@ def test_non_owner_cannot_view_error_log_detail(client, app):
     _login(client, readonly_id)
     listing = client.get("/hata-kayitlari")
     detail = client.get(f"/hata-kayitlari/{log_id}")
+    listing_html = listing.data.decode("utf-8")
     detail_html = detail.data.decode("utf-8")
 
-    assert listing.status_code == 200
-    assert "SAR-X-SYSTEM-5101" in listing.data.decode("utf-8")
+    assert listing.status_code == 403
+    assert "SAR-X-ADMIN-6101" in listing_html
+    assert "SAR-X-SYSTEM-5101" not in listing_html
     assert detail.status_code == 403
     assert "SAR-X-ADMIN-6101" in detail_html
     assert "Sensitive traceback summary" not in detail_html
+
+
+def test_owner_error_log_listing_gracefully_handles_query_failure(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Erzincan Havalimanı", kodu="ERC")
+        owner = KullaniciFactory(rol="sahip", kullanici_adi="owner-errors-safe@sarx.com", is_deleted=False, havalimani=airport)
+        db.session.add_all([airport, owner])
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+    with patch("routes.admin.logs._load_error_log_listing_data", side_effect=RuntimeError("listing exploded")):
+        response = client.get("/hata-kayitlari")
+
+    html = response.data.decode("utf-8")
+    assert response.status_code == 200
+    assert "Hata Kayıtları" in html
+    assert "Hata kaydı bulunamadı" in html
 
 
 def test_public_unexpected_error_fallback_hides_technical_details(client, app):

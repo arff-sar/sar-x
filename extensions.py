@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, current_user
 from flask import current_app, request, jsonify, has_app_context, has_request_context
@@ -10,6 +12,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import bleach
 import mimetypes
+import pytz
 from flask_executor import Executor
 from flask_migrate import Migrate  # ✅ YENİ: Veri kaybını önleyen göç sistemi
 from werkzeug.utils import secure_filename
@@ -27,6 +30,7 @@ csrf = CSRFProtect()
 limiter = Limiter(key_func=get_remote_address)
 executor = Executor()
 migrate = Migrate()  # ✅ YENİ: Artık tabloları silip kurmaya son!
+TR_TZ = pytz.timezone("Europe/Istanbul")
 
 # --- SİSTEM FONKSİYONLARI ---
 
@@ -145,6 +149,10 @@ def _safe_request_user_agent():
         return None
 
 
+def _log_timestamp_now():
+    return datetime.now(TR_TZ)
+
+
 def log_kaydet(
     tip,
     detay,
@@ -160,12 +168,35 @@ def log_kaydet(
         return
     
     try:
-        k_id = current_user.id if current_user.is_authenticated else None
+        k_id = extra_fields.get("user_id")
+        if k_id is None and current_user.is_authenticated:
+            k_id = current_user.id
     except Exception:
-        k_id = None
+        k_id = extra_fields.get("user_id")
+    try:
+        user_email = extra_fields.get("user_email")
+        if not user_email and current_user.is_authenticated:
+            user_email = getattr(current_user, "kullanici_adi", None)
+    except Exception:
+        user_email = extra_fields.get("user_email")
+    if not user_email and k_id is not None:
+        try:
+            from models import Kullanici
+
+            actor = db.session.get(Kullanici, int(k_id))
+            user_email = getattr(actor, "kullanici_adi", None)
+        except Exception:
+            user_email = user_email or None
+    try:
+        airport_id = extra_fields.get("havalimani_id")
+        if airport_id is None and current_user.is_authenticated:
+            airport_id = getattr(current_user, "havalimani_id", None)
+    except Exception:
+        airport_id = extra_fields.get("havalimani_id")
     
     payload = {
         "kullanici_id": k_id,
+        "havalimani_id": airport_id,
         "islem_tipi": tip,
         "detay": detay,
         "ip_adresi": _safe_request_remote_addr(),
@@ -188,7 +219,7 @@ def log_kaydet(
         "route": extra_fields.get("route"),
         "method": extra_fields.get("method"),
         "request_id": extra_fields.get("request_id"),
-        "user_email": extra_fields.get("user_email"),
+        "user_email": user_email,
         "ip_address": extra_fields.get("ip_address"),
         "resolved": extra_fields.get("resolved", False),
         "resolution_note": extra_fields.get("resolution_note"),
@@ -196,28 +227,39 @@ def log_kaydet(
     for field_name, value in optional_fields.items():
         if column_exists("islem_log", field_name):
             payload[field_name] = value
+    if column_exists("islem_log", "zaman"):
+        payload["zaman"] = extra_fields.get("zaman") or _log_timestamp_now()
     if column_exists("islem_log", "kullanici_id") and extra_fields.get("user_id") is not None:
         payload["kullanici_id"] = extra_fields.get("user_id")
+    if column_exists("islem_log", "havalimani_id") and extra_fields.get("havalimani_id") is not None:
+        payload["havalimani_id"] = extra_fields.get("havalimani_id")
     if column_exists("islem_log", "ip_address") and extra_fields.get("ip_address"):
         payload["ip_address"] = extra_fields.get("ip_address")
     if column_exists("islem_log", "user_agent") and extra_fields.get("user_agent"):
         payload["user_agent"] = extra_fields.get("user_agent")
     try:
-        runtime_table = _runtime_table("islem_log")
-        runtime_columns = {column.name for column in runtime_table.columns}
+        try:
+            from models import IslemLog
+
+            model_table = IslemLog.__table__
+            model_columns = {column.name for column in model_table.columns}
+            runtime_columns = {
+                str(column.get("name") or "").strip()
+                for column in inspect(db.engine).get_columns("islem_log")
+                if column.get("name")
+            }
+            runtime_table = model_table if runtime_columns == model_columns else _runtime_table("islem_log")
+        except Exception:
+            runtime_table = _runtime_table("islem_log")
+            runtime_columns = {column.name for column in runtime_table.columns}
         safe_payload = {key: value for key, value in payload.items() if key in runtime_columns}
 
         if commit:
             db.session.execute(runtime_table.insert().values(**safe_payload))
             db.session.commit()
         else:
-            savepoint = db.session.begin_nested()
-            try:
+            with db.session.no_autoflush:
                 db.session.execute(runtime_table.insert().values(**safe_payload))
-                savepoint.commit()
-            except Exception:
-                savepoint.rollback()
-                raise
     except Exception:
         try:
             if commit or db.session.is_active is False:
@@ -257,19 +299,26 @@ def create_notification(user_id, notification_type, title, message, link_url=Non
     if not table_exists("notification"):
         return None
     try:
-        item = Notification(
-            user_id=user_id,
-            type=notification_type,
-            title=title,
-            message=message,
-            link_url=link_url,
-            severity=severity,
-        )
-        db.session.add(item)
+        payload = {
+            "user_id": user_id,
+            "type": notification_type,
+            "title": title,
+            "message": message,
+            "link_url": link_url,
+            "severity": severity,
+            "is_read": False,
+        }
         if commit:
+            item = Notification(**payload)
+            db.session.add(item)
             db.session.commit()
         else:
-            db.session.flush()
+            with db.session.no_autoflush:
+                result = db.session.execute(Notification.__table__.insert().values(**payload))
+            item = Notification(**payload)
+            inserted_primary_key = getattr(result, "inserted_primary_key", None) or ()
+            if inserted_primary_key:
+                item.id = inserted_primary_key[0]
         return item
     except Exception:
         if commit:
@@ -285,18 +334,20 @@ def create_notification_once(user_id, notification_type, title, message, link_ur
     if not table_exists("notification"):
         return None
     try:
-        existing = Notification.query.filter_by(
-            user_id=user_id,
-            type=notification_type,
-            title=title,
-            link_url=link_url,
-            is_read=False,
-        ).first()
+        with db.session.no_autoflush:
+            existing = Notification.query.filter_by(
+                user_id=user_id,
+                type=notification_type,
+                title=title,
+                link_url=link_url,
+                is_read=False,
+            ).first()
         if existing:
             return existing
     except Exception:
         try:
-            db.session.rollback()
+            if commit:
+                db.session.rollback()
         except Exception:
             pass
     return create_notification(
@@ -324,20 +375,26 @@ def create_approval_request(
     if not table_exists("approval_request"):
         return None
     try:
-        item = ApprovalRequest(
-            approval_type=approval_type,
-            target_model=target_model,
-            target_id=target_id,
-            requested_by_id=requested_by_id,
-            request_payload=request_payload,
-            review_note=review_note,
-            status="pending",
-        )
-        db.session.add(item)
+        payload = {
+            "approval_type": approval_type,
+            "target_model": target_model,
+            "target_id": target_id,
+            "requested_by_id": requested_by_id,
+            "request_payload": request_payload,
+            "review_note": review_note,
+            "status": "pending",
+        }
         if commit:
+            item = ApprovalRequest(**payload)
+            db.session.add(item)
             db.session.commit()
         else:
-            db.session.flush()
+            with db.session.no_autoflush:
+                result = db.session.execute(ApprovalRequest.__table__.insert().values(**payload))
+            item = ApprovalRequest(**payload)
+            inserted_primary_key = getattr(result, "inserted_primary_key", None) or ()
+            if inserted_primary_key:
+                item.id = inserted_primary_key[0]
         return item
     except Exception:
         if commit:

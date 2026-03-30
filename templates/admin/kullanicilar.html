@@ -70,6 +70,7 @@
   .directory-count-row { display:flex; justify-content:space-between; gap:12px; align-items:center; font-size:12.5px; color:var(--text3); }
   .directory-count-row strong { color:var(--navy); font-size:14px; }
   .directory-count-row span:last-child { white-space:nowrap; }
+  .user-directory-shell { max-height:min(60vh, 680px); overflow:auto; padding-right:4px; scrollbar-gutter:stable; }
   .user-directory { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; }
   .user-option { display:grid; gap:14px; text-decoration:none; color:inherit; padding:18px; border:1px solid var(--border); border-radius:18px; background:var(--surface); transition:border-color .18s ease, box-shadow .18s ease, transform .18s ease, background .18s ease; min-height:100%; }
   .user-option:hover { border-color:#cbd5e1; box-shadow:0 14px 32px rgba(15,23,42,.06); transform:translateY(-1px); }
@@ -150,6 +151,8 @@
   .section-card-note { font-size:12px; color:var(--text3); line-height:1.55; margin-top:5px; }
   .editor-form-grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:14px; }
   .editor-form-grid .form-group.full { grid-column:1 / -1; }
+  .inline-field-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+  .inline-field-grid .form-control { margin-bottom:0; }
   .role-select-help { display:flex; align-items:center; gap:8px; margin-top:8px; color:var(--text3); font-size:11.5px; line-height:1.5; }
   .override-summary-grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:14px; }
   .override-summary-card { border-radius:16px; border:1px solid var(--border); padding:16px; background:#fff; display:grid; gap:12px; }
@@ -202,6 +205,7 @@
     .filter-grid,
     .directory-utility-strip,
     .editor-form-grid,
+    .inline-field-grid,
     .section-split-grid,
     .override-summary-grid,
     .bulk-import-steps,
@@ -371,7 +375,7 @@
         </div>
     </details>
 
-    <details class="panel user-directory-panel stage-accordion" data-admin-stage="select" data-stage-accordion {% if not selected_user and filter_result_count > 0 %}open{% endif %}>
+    <details class="panel user-directory-panel stage-accordion" data-admin-stage="select" data-stage-accordion {% if selected_user %}open{% endif %}>
         <summary class="panel-header stage-accordion-summary">
             <div class="stage-accordion-copy">
                 <div class="panel-kicker">Aşama 2</div>
@@ -454,46 +458,48 @@
                 </div>
             </div>
 
-            <div class="user-directory" id="userDirectory">
-                {% for user in kullanicilar %}
-                {% set role_label = rol_etiketleri.get(user.rol, user.rol) %}
-                {% set scope_label = user.havalimani.ad if user.havalimani else 'Global erişim' %}
-                <a
-                    href="{{ url_for('admin.kullanicilar', user_id=user.id, q=search_term or None, role=selected_role_key or None, airport_id=selected_airport_key or None, status=selected_status_key if selected_status_key != 'active' else None) }}"
-                    class="user-option {% if selected_user and user.id == selected_user.id %}is-active{% endif %}"
-                    data-user-card="{{ user.id }}"
-                    data-user-search="{{ (user.tam_ad ~ ' ' ~ scope_label ~ ' ' ~ role_label ~ ' ' ~ user.kullanici_adi)|lower }}"
-                >
-                    <div class="user-option-head">
-                        <div>
-                            <div class="user-option-eyebrow">Kullanıcı kaydı</div>
-                            <div class="user-option-name">{{ user.tam_ad }}</div>
-                            <div class="user-option-mail">{{ user.kullanici_adi }}</div>
+            <div class="user-directory-shell" id="userDirectoryShell" data-directory-shell>
+                <div class="user-directory" id="userDirectory">
+                    {% for user in kullanicilar %}
+                    {% set role_label = rol_etiketleri.get(user.rol, user.rol) %}
+                    {% set scope_label = user.havalimani.ad if user.havalimani else 'Global erişim' %}
+                    <a
+                        href="{{ url_for('admin.kullanicilar', user_id=user.id, q=search_term or None, role=selected_role_key or None, airport_id=selected_airport_key or None, status=selected_status_key if selected_status_key != 'active' else None) }}"
+                        class="user-option {% if selected_user and user.id == selected_user.id %}is-active{% endif %}"
+                        data-user-card="{{ user.id }}"
+                        data-user-search="{{ (user.tam_ad ~ ' ' ~ scope_label ~ ' ' ~ role_label ~ ' ' ~ user.kullanici_adi)|lower }}"
+                    >
+                        <div class="user-option-head">
+                            <div>
+                                <div class="user-option-eyebrow">Kullanıcı kaydı</div>
+                                <div class="user-option-name">{{ user.tam_ad }}</div>
+                                <div class="user-option-mail">{{ user.kullanici_adi }}</div>
+                            </div>
+                            <span class="status-pill {% if user.is_deleted %}status-pasif{% else %}status-aktif{% endif %}">
+                                {{ 'Arşivde' if user.is_deleted else 'Aktif' }}
+                            </span>
                         </div>
-                        <span class="status-pill {% if user.is_deleted %}status-pasif{% else %}status-aktif{% endif %}">
-                            {{ 'Arşivde' if user.is_deleted else 'Aktif' }}
-                        </span>
+                        <div class="user-option-grid">
+                            <div class="user-option-data">
+                                <span class="user-option-label">Havalimanı</span>
+                                <span class="user-option-value">{{ scope_label }}</span>
+                            </div>
+                            <div class="user-option-data">
+                                <span class="user-option-label">Rol</span>
+                                <span class="user-option-value">{{ role_label }}</span>
+                            </div>
+                        </div>
+                    </a>
+                    {% else %}
+                    <div class="user-list-empty" id="userServerEmpty" data-empty-state="server">
+                        <strong>Seçili filtrelerle kullanıcı bulunamadı</strong>
+                        <div>Arama metnini veya filtre kombinasyonunu değiştirerek görünür kullanıcı listesini genişletebilirsiniz.</div>
                     </div>
-                    <div class="user-option-grid">
-                        <div class="user-option-data">
-                            <span class="user-option-label">Havalimanı</span>
-                            <span class="user-option-value">{{ scope_label }}</span>
-                        </div>
-                        <div class="user-option-data">
-                            <span class="user-option-label">Rol</span>
-                            <span class="user-option-value">{{ role_label }}</span>
-                        </div>
+                    {% endfor %}
+                    <div class="user-list-empty" id="userLocalEmpty" hidden>
+                        <strong>Listede eşleşen kullanıcı yok</strong>
+                        <div>Hızlı arama metnini temizleyerek mevcut filtre sonucundaki kayıtları yeniden listeleyin.</div>
                     </div>
-                </a>
-                {% else %}
-                <div class="user-list-empty" id="userServerEmpty" data-empty-state="server">
-                    <strong>Seçili filtrelerle kullanıcı bulunamadı</strong>
-                    <div>Arama metnini veya filtre kombinasyonunu değiştirerek görünür kullanıcı listesini genişletebilirsiniz.</div>
-                </div>
-                {% endfor %}
-                <div class="user-list-empty" id="userLocalEmpty" hidden>
-                    <strong>Listede eşleşen kullanıcı yok</strong>
-                    <div>Hızlı arama metnini temizleyerek mevcut filtre sonucundaki kayıtları yeniden listeleyin.</div>
                 </div>
             </div>
         </div>
@@ -535,6 +541,21 @@
                         <span class="selection-pill"><strong>Geri çekilen:</strong> {{ selected_override_deny|length }}</span>
                         {% if current_user.is_sahip and selected_user.telefon_numarasi %}
                         <span class="selection-pill"><strong>Telefon:</strong> {{ selected_user.telefon_numarasi }}</span>
+                        {% endif %}
+                        {% if selected_user.kan_grubu %}
+                        <span class="selection-pill"><strong>Kan Grubu:</strong> {{ selected_user.kan_grubu }}</span>
+                        {% endif %}
+                        {% if selected_user.boy_cm %}
+                        <span class="selection-pill"><strong>Boy:</strong> {{ selected_user.boy_cm }} cm</span>
+                        {% endif %}
+                        {% if selected_user.kilo_kg %}
+                        <span class="selection-pill"><strong>Kilo:</strong> {{ selected_user.kilo_kg }} kg</span>
+                        {% endif %}
+                        {% if selected_user.ayak_numarasi is not none %}
+                        <span class="selection-pill"><strong>Ayak No:</strong> {{ '{:g}'.format(selected_user.ayak_numarasi) }}</span>
+                        {% endif %}
+                        {% if selected_user.beden %}
+                        <span class="selection-pill"><strong>Beden:</strong> {{ selected_user.beden }}</span>
                         {% endif %}
                     </div>
                 </div>
@@ -645,6 +666,65 @@
                                 <div>
                                     <div class="section-step-line">
                                         <span class="section-step-chip">4</span>
+                                        <div class="section-card-title">Sağlık ve ölçü bilgileri</div>
+                                    </div>
+                                    <div class="section-card-note">Kan grubu ve KKD planlamasında kullanılacak temel ölçü bilgileri kontrollü alanlarla tutulur.</div>
+                                </div>
+                            </div>
+
+                            <div class="editor-form-grid">
+                                <div class="form-group full">
+                                    <label>Kan Grubu</label>
+                                    <div class="inline-field-grid">
+                                        <select name="kan_grubu_harf" class="form-control">
+                                            <option value="">Harf seçin</option>
+                                            {% for option in blood_type_letter_options %}
+                                            <option value="{{ option }}" {% if selected_user.kan_grubu_harf == option %}selected{% endif %}>{{ option }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <select name="kan_grubu_rh" class="form-control">
+                                            <option value="">Rh seçin</option>
+                                            {% for option in rh_factor_options %}
+                                            <option value="{{ option }}" {% if selected_user.kan_grubu_rh_normalized == option %}selected{% endif %}>{{ option }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Boy (cm)</label>
+                                    <input type="number" name="boy_cm" value="{{ selected_user.boy_cm or '' }}" class="form-control" min="90" max="260" inputmode="numeric">
+                                </div>
+                                <div class="form-group">
+                                    <label>Kilo (kg)</label>
+                                    <input type="number" name="kilo_kg" value="{{ selected_user.kilo_kg or '' }}" class="form-control" min="30" max="250" inputmode="numeric">
+                                </div>
+                                <div class="form-group">
+                                    <label>Ayak Numarası</label>
+                                    {% set selected_shoe_size = '{:g}'.format(selected_user.ayak_numarasi) if selected_user.ayak_numarasi is not none else '' %}
+                                    <select name="ayak_numarasi" class="form-control">
+                                        <option value="">Seçin</option>
+                                        {% for option in shoe_size_options %}
+                                        <option value="{{ option }}" {% if selected_shoe_size == option %}selected{% endif %}>{{ option }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Beden</label>
+                                    <select name="beden" class="form-control">
+                                        <option value="">Seçin</option>
+                                        {% for option in body_size_options %}
+                                        <option value="{{ option }}" {% if selected_user.beden == option %}selected{% endif %}>{{ option }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="section-card">
+                            <div class="section-card-head">
+                                <div>
+                                    <div class="section-step-line">
+                                        <span class="section-step-chip">5</span>
                                         <div class="section-card-title">Override özeti</div>
                                     </div>
                                     <div class="section-card-note">Rolün varsayılan matrisine göre bu kullanıcıya eklenen ve özellikle geri çekilen izinleri kısa özet kartları halinde gösterir.</div>
@@ -695,7 +775,7 @@
                             <div class="section-card-head">
                                 <div>
                                     <div class="section-step-line">
-                                        <span class="section-step-chip">5</span>
+                                        <span class="section-step-chip">6</span>
                                         <div class="section-card-title">Yetki blokları</div>
                                     </div>
                                     <div class="section-card-note">İzin verilenler ve geri çekilenler aynı akış içinde ama ayrı bloklarda düzenlenir; kategori bazlı akordiyon yapısı korunur.</div>
@@ -850,22 +930,32 @@
                         </div>
                         <div class="form-group">
                             <label>Rol</label>
-                            <select name="rol" class="form-control">
-                                {% for role in role_options %}
-                                <option value="{{ role.key }}">{{ role.label }}</option>
+                            <select name="rol" class="form-control" data-create-role-select>
+                                {% for role in create_role_options %}
+                                <option value="{{ role.key }}" {% if create_default_role == role.key %}selected{% endif %}>{{ role.label }}</option>
                                 {% endfor %}
                             </select>
+                            {% if create_lock_to_airport %}
+                            <div class="role-select-help">
+                                <span>Bu görünümde yeni kullanıcılar yalnızca Ekip Üyesi rolüyle oluşturulur.</span>
+                            </div>
+                            {% endif %}
                         </div>
                         <div class="form-group full">
                             <label>Havalimanı</label>
-                            <select name="h_id" class="form-control">
+                            <select name="h_id" class="form-control" data-create-airport-select>
+                                {% if not create_lock_to_airport %}
                                 <option value="">Global</option>
+                                {% endif %}
                                 {% for h in havalimanlari %}
-                                <option value="{{ h.id }}">{{ h.kodu }} - {{ h.ad }}</option>
+                                <option value="{{ h.id }}" {% if create_default_airport_id == h.id|string %}selected{% endif %}>{{ h.kodu }} - {{ h.ad }}</option>
                                 {% endfor %}
                             </select>
+                            {% if create_lock_to_airport %}
+                            <div class="form-help-inline">Bu görünümde kullanıcı yalnızca kendi havalimanınız kapsamına eklenir.</div>
+                            {% endif %}
                         </div>
-                        {% if current_user.is_sahip %}
+                        {% if create_can_manage_phone %}
                         <div class="form-group full">
                             <label>Telefon Numarası</label>
                             <input type="text" name="telefon_numarasi" class="form-control phone-input" placeholder="+90 5__ ___ __ __" inputmode="numeric" autocomplete="tel" data-phone-input maxlength="17">
@@ -873,6 +963,49 @@
                             <div class="field-feedback" data-field-feedback></div>
                         </div>
                         {% endif %}
+                        <div class="form-group full">
+                            <label>Kan Grubu</label>
+                            <div class="inline-field-grid">
+                                <select name="kan_grubu_harf" class="form-control">
+                                    <option value="">Harf seçin</option>
+                                    {% for option in blood_type_letter_options %}
+                                            <option value="{{ option }}">{{ option }}</option>
+                                    {% endfor %}
+                                </select>
+                                <select name="kan_grubu_rh" class="form-control">
+                                    <option value="">Rh seçin</option>
+                                    {% for option in rh_factor_options %}
+                                    <option value="{{ option }}">{{ option }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Boy (cm)</label>
+                            <input type="number" name="boy_cm" class="form-control" min="90" max="260" inputmode="numeric">
+                        </div>
+                        <div class="form-group">
+                            <label>Kilo (kg)</label>
+                            <input type="number" name="kilo_kg" class="form-control" min="30" max="250" inputmode="numeric">
+                        </div>
+                        <div class="form-group">
+                            <label>Ayak Numarası</label>
+                            <select name="ayak_numarasi" class="form-control">
+                                <option value="">Seçin</option>
+                                {% for option in shoe_size_options %}
+                                <option value="{{ option }}">{{ option }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Beden</label>
+                            <select name="beden" class="form-control">
+                                <option value="">Seçin</option>
+                                {% for option in body_size_options %}
+                                <option value="{{ option }}">{{ option }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                     </div>
                     <div class="editor-actions" style="margin-top:16px;">
                         <button type="button" class="btn btn-secondary" data-close-new-user-panel>Formu kapat</button>

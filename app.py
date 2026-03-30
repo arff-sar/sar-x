@@ -377,6 +377,7 @@ def _ensure_runtime_schema_compatibility(app):
         "resolved": "ALTER TABLE islem_log ADD COLUMN resolved BOOLEAN DEFAULT 0",
         "resolution_note": "ALTER TABLE islem_log ADD COLUMN resolution_note TEXT",
         "ip_address": "ALTER TABLE islem_log ADD COLUMN ip_address VARCHAR(45)",
+        "havalimani_id": "ALTER TABLE islem_log ADD COLUMN havalimani_id INTEGER",
     }
     added_columns = []
     for column_name, ddl in required_columns.items():
@@ -387,6 +388,37 @@ def _ensure_runtime_schema_compatibility(app):
     if added_columns:
         db.session.commit()
         app.logger.warning("Legacy sqlite şeması güncellendi: islem_log alanları eklendi: %s", ", ".join(added_columns))
+
+    if not table_exists("ppe_record"):
+        return
+
+    ppe_columns = _sqlite_column_names("ppe_record")
+    required_ppe_columns = {
+        "category": "ALTER TABLE ppe_record ADD COLUMN category VARCHAR(80)",
+        "subcategory": "ALTER TABLE ppe_record ADD COLUMN subcategory VARCHAR(120)",
+        "brand": "ALTER TABLE ppe_record ADD COLUMN brand VARCHAR(120)",
+        "model_name": "ALTER TABLE ppe_record ADD COLUMN model_name VARCHAR(120)",
+        "serial_no": "ALTER TABLE ppe_record ADD COLUMN serial_no VARCHAR(120)",
+        "apparel_size": "ALTER TABLE ppe_record ADD COLUMN apparel_size VARCHAR(16)",
+        "shoe_size": "ALTER TABLE ppe_record ADD COLUMN shoe_size VARCHAR(16)",
+        "production_date": "ALTER TABLE ppe_record ADD COLUMN production_date DATE",
+        "expiry_date": "ALTER TABLE ppe_record ADD COLUMN expiry_date DATE",
+        "physical_condition": "ALTER TABLE ppe_record ADD COLUMN physical_condition VARCHAR(30) DEFAULT 'iyi'",
+        "is_active": "ALTER TABLE ppe_record ADD COLUMN is_active BOOLEAN DEFAULT 1",
+        "manufacturer_url": "ALTER TABLE ppe_record ADD COLUMN manufacturer_url VARCHAR(500)",
+        "signed_document_key": "ALTER TABLE ppe_record ADD COLUMN signed_document_key VARCHAR(255)",
+        "signed_document_url": "ALTER TABLE ppe_record ADD COLUMN signed_document_url VARCHAR(500)",
+        "signed_document_name": "ALTER TABLE ppe_record ADD COLUMN signed_document_name VARCHAR(255)",
+    }
+    added_ppe_columns = []
+    for column_name, ddl in required_ppe_columns.items():
+        if column_name in ppe_columns:
+            continue
+        db.session.execute(text(ddl))
+        added_ppe_columns.append(column_name)
+    if added_ppe_columns:
+        db.session.commit()
+        app.logger.warning("Legacy sqlite şeması güncellendi: ppe_record alanları eklendi: %s", ", ".join(added_ppe_columns))
 
 
 CRITICAL_RUNTIME_TABLES = (

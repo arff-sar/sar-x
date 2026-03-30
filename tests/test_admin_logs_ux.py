@@ -1,7 +1,9 @@
 from sqlalchemy.dialects import postgresql
 
+from decorators import update_user_permission_overrides
 from extensions import db
 from models import IslemLog
+from routes.admin.logs import _format_timestamp_label
 from tests.factories import HavalimaniFactory, KullaniciFactory
 
 
@@ -190,6 +192,72 @@ def test_user_filter_renders_selected_user_without_crashing(client, app):
     assert "Kullanıcı: " in html
 
 
+def test_team_lead_only_sees_own_airport_logs_and_filter_options(client, app):
+    with app.app_context():
+        own_airport = HavalimaniFactory(ad="Dalaman Havalimanı", kodu="DLM")
+        other_airport = HavalimaniFactory(ad="Trabzon Havalimanı", kodu="TZX")
+        team_lead = KullaniciFactory(
+            rol="ekip_sorumlusu",
+            is_deleted=False,
+            kullanici_adi="dlm-logs@sarx.com",
+            havalimani=own_airport,
+        )
+        own_user = KullaniciFactory(
+            rol="ekip_uyesi",
+            is_deleted=False,
+            kullanici_adi="dlm-staff@sarx.com",
+            havalimani=own_airport,
+        )
+        other_user = KullaniciFactory(
+            rol="ekip_uyesi",
+            is_deleted=False,
+            kullanici_adi="tzx-staff@sarx.com",
+            havalimani=other_airport,
+        )
+        db.session.add_all([own_airport, other_airport, team_lead, own_user, other_user])
+        db.session.flush()
+        update_user_permission_overrides(team_lead.id, ["logs.view"], [])
+        db.session.add_all(
+            [
+                IslemLog(
+                    kullanici_id=own_user.id,
+                    havalimani_id=None,
+                    islem_tipi="Envanter",
+                    detay="Kendi havalimanı envanter güncellemesi.",
+                    outcome="success",
+                ),
+                IslemLog(
+                    kullanici_id=other_user.id,
+                    havalimani_id=None,
+                    islem_tipi="Bakım",
+                    detay="Diğer havalimanı bakım kaydı.",
+                    outcome="success",
+                ),
+                IslemLog(
+                    kullanici_id=None,
+                    havalimani_id=own_airport.id,
+                    islem_tipi="Rapor",
+                    detay="Havalimanı bazlı sistem raporu.",
+                    outcome="success",
+                ),
+            ]
+        )
+        db.session.commit()
+        team_lead_id = team_lead.id
+
+    _login(client, team_lead_id)
+    response = client.get("/islem-loglari")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Kendi havalimanı envanter güncellemesi." in html
+    assert "Havalimanı bazlı sistem raporu." in html
+    assert "Diğer havalimanı bakım kaydı." not in html
+    assert 'value="Bakım"' not in html
+    assert "dlm-staff@sarx.com" not in html
+    assert "tzx-staff@sarx.com" not in html
+
+
 def test_distinct_filter_queries_stay_postgresql_safe(app):
     with app.app_context():
         event_type_sql = str(
@@ -207,3 +275,50 @@ def test_distinct_filter_queries_stay_postgresql_safe(app):
 
     assert "ORDER BY lower(" not in event_type_sql
     assert "ORDER BY lower(" not in target_model_sql
+
+
+def test_logs_timestamp_formatter_supports_string_values():
+    assert _format_timestamp_label("2026-03-30 10:45:12") == "30.03.2026 10:45:12"
+
+
+def test_logs_resolve_actor_name_from_email_when_fk_is_missing(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Kars Havalimanı", kodu="KSY")
+        owner = KullaniciFactory(
+            rol="sahip",
+            is_deleted=False,
+            kullanici_adi="actor-email@sarx.com",
+            tam_ad="Actor Email Kullanıcısı",
+            havalimani=airport,
+        )
+        db.session.add_all([airport, owner])
+        db.session.flush()
+        db.session.add_all(
+            [
+                IslemLog(
+                    kullanici_id=None,
+                    user_email=owner.kullanici_adi,
+                    islem_tipi="Giriş",
+                    event_key="auth.login",
+                    detay="Email fallback ile giriş kaydı.",
+                    outcome="success",
+                ),
+                IslemLog(
+                    kullanici_id=None,
+                    islem_tipi="Sistem",
+                    detay="Tamamen sistem kaydı.",
+                    outcome="info",
+                ),
+            ]
+        )
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+    response = client.get("/islem-loglari")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Actor Email Kullanıcısı" in html
+    assert "Tamamen sistem kaydı." in html
+    assert "Sistem" in html

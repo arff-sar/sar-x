@@ -66,6 +66,12 @@ class Kullanici(db.Model, UserMixin, TimestampMixin, SoftDeleteMixin):
     rol = db.Column(db.String(20), nullable=False, default='personel', index=True) 
     havalimani_id = db.Column(db.Integer, db.ForeignKey('havalimani.id'), nullable=True, index=True)
     telefon_numarasi = db.Column(db.String(32))
+    kan_grubu_harf = db.Column(db.String(4))
+    kan_grubu_rh = db.Column(db.String(4))
+    boy_cm = db.Column(db.Integer)
+    kilo_kg = db.Column(db.Integer)
+    ayak_numarasi = db.Column(db.Float)
+    beden = db.Column(db.String(8))
     
     sertifika_tarihi = db.Column(db.Date)
     uzmanlik_alani = db.Column(db.String(100))
@@ -126,6 +132,34 @@ class Kullanici(db.Model, UserMixin, TimestampMixin, SoftDeleteMixin):
 
     def sifre_kontrol(self, sifre):
         return check_password_hash(self.sifre_hash, sifre)
+
+    @property
+    def kan_grubu(self):
+        letter = str(self.kan_grubu_harf or "").strip()
+        rh = self.kan_grubu_rh_display
+        if not letter and not rh:
+            return ""
+        if letter and rh:
+            return f"{letter} {rh}"
+        return letter or rh
+
+    @property
+    def kan_grubu_rh_normalized(self):
+        raw_value = str(self.kan_grubu_rh or "").strip()
+        if raw_value in {"+", "Rh+"}:
+            return "+"
+        if raw_value in {"-", "Rh-"}:
+            return "-"
+        return raw_value
+
+    @property
+    def kan_grubu_rh_display(self):
+        normalized = self.kan_grubu_rh_normalized
+        if normalized == "+":
+            return "Rh+"
+        if normalized == "-":
+            return "Rh-"
+        return normalized
 
 class Kutu(db.Model, TimestampMixin, SoftDeleteMixin):
     __tablename__ = 'kutu'
@@ -193,6 +227,7 @@ class IslemLog(db.Model):
     __tablename__ = 'islem_log'
     id = db.Column(db.Integer, primary_key=True)
     kullanici_id = db.Column(db.Integer, db.ForeignKey('kullanici.id'), nullable=True, index=True)
+    havalimani_id = db.Column(db.Integer, db.ForeignKey('havalimani.id'), nullable=True, index=True)
     islem_tipi = db.Column(db.String(50), nullable=False)
     event_key = db.Column(db.String(120), index=True)
     detay = db.Column(db.Text)
@@ -220,6 +255,7 @@ class IslemLog(db.Model):
     zaman = db.Column(db.DateTime, default=get_tr_now, index=True)
 
     yapan_kullanici = db.relationship('Kullanici', backref='loglar')
+    havalimani = db.relationship('Havalimani', foreign_keys=[havalimani_id], lazy=True)
 
     @property
     def created_at(self):
@@ -1122,15 +1158,30 @@ class PPERecord(db.Model, TimestampMixin, SoftDeleteMixin):
     user_id = db.Column(db.Integer, db.ForeignKey('kullanici.id'), nullable=False, index=True)
     airport_id = db.Column(db.Integer, db.ForeignKey('havalimani.id'), nullable=False, index=True)
     assignment_id = db.Column(db.Integer, db.ForeignKey('assignment_record.id'), nullable=True, index=True)
+    category = db.Column(db.String(80), index=True)
+    subcategory = db.Column(db.String(120), index=True)
     item_name = db.Column(db.String(160), nullable=False)
+    brand = db.Column(db.String(120))
+    model_name = db.Column(db.String(120))
+    serial_no = db.Column(db.String(120))
     brand_model = db.Column(db.String(160))
+    apparel_size = db.Column(db.String(16))
+    shoe_size = db.Column(db.String(16))
     size_info = db.Column(db.String(80))
     delivered_at = db.Column(db.Date, default=lambda: get_tr_now().date(), nullable=False, index=True)
+    production_date = db.Column(db.Date)
+    expiry_date = db.Column(db.Date, index=True)
     quantity = db.Column(db.Integer, default=1, nullable=False)
     status = db.Column(db.String(30), default='aktif', nullable=False, index=True)
+    physical_condition = db.Column(db.String(30), default='iyi', nullable=False, index=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
+    manufacturer_url = db.Column(db.String(500))
     description = db.Column(db.Text)
     photo_storage_key = db.Column(db.String(255))
     photo_url = db.Column(db.String(500))
+    signed_document_key = db.Column(db.String(255))
+    signed_document_url = db.Column(db.String(500))
+    signed_document_name = db.Column(db.String(255))
     created_by_id = db.Column(db.Integer, db.ForeignKey('kullanici.id'), nullable=True, index=True)
 
     user = db.relationship('Kullanici', foreign_keys=[user_id], backref='ppe_records', lazy=True)
@@ -1144,6 +1195,19 @@ class PPERecord(db.Model, TimestampMixin, SoftDeleteMixin):
         cascade='all, delete-orphan',
         order_by='PPERecordEvent.created_at.desc()',
     )
+
+    @property
+    def brand_model_display(self):
+        combined = " ".join(part for part in [self.brand, self.model_name] if part).strip()
+        return combined or (self.brand_model or "")
+
+    @property
+    def size_display(self):
+        if self.shoe_size:
+            return self.shoe_size
+        if self.apparel_size:
+            return self.apparel_size
+        return self.size_info or ""
 
 
 class PPERecordEvent(db.Model, TimestampMixin):

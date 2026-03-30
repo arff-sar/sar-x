@@ -63,6 +63,36 @@ def _can_publish():
     return has_permission("homepage.publish")
 
 
+OWNER_ALLOWED_CONTENT_VIEW_ENDPOINTS = {
+    "content.homepage_dashboard",
+    "content.homepage_slider_list",
+    "content.homepage_section_list",
+    "content.homepage_announcements_list",
+    "content.homepage_documents_list",
+    "content.homepage_stats_list",
+    "content.homepage_quicklinks_list",
+    "content.content_preview",
+    "content.media_library",
+}
+
+
+@content_bp.before_request
+def _restrict_content_mutations_to_owner():
+    endpoint = (request.endpoint or "").strip()
+    if not endpoint.startswith("content."):
+        return None
+    if endpoint in OWNER_ALLOWED_CONTENT_VIEW_ENDPOINTS and request.method == "GET":
+        return None
+    if endpoint == "content.content_preview":
+        return None
+    if not current_user.is_authenticated:
+        return None
+    if endpoint.startswith("content.homepage_") or endpoint.startswith("content.media_"):
+        if not getattr(current_user, "is_sahip", False):
+            abort(403)
+    return None
+
+
 def _resolve_status_from_form(default):
     status = (request.form.get("workflow_status") or "").strip().lower()
     if status not in ALLOWED_WORKFLOW_STATUSES:

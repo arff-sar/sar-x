@@ -65,6 +65,35 @@ def test_fresh_database_can_upgrade_with_migrations(app, monkeypatch):
         }
     assert "resolved" in islem_log_columns
     assert "resolution_note" in islem_log_columns
+    assert "havalimani_id" in islem_log_columns
+
+    with sqlite3.connect(db_path) as connection:
+        kullanici_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(kullanici)").fetchall()
+        }
+        ppe_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(ppe_record)").fetchall()
+        }
+    assert {"kan_grubu_harf", "kan_grubu_rh", "boy_cm", "kilo_kg", "ayak_numarasi", "beden"} <= kullanici_columns
+    assert {
+        "category",
+        "subcategory",
+        "brand",
+        "model_name",
+        "serial_no",
+        "apparel_size",
+        "shoe_size",
+        "production_date",
+        "expiry_date",
+        "physical_condition",
+        "is_active",
+        "manufacturer_url",
+        "signed_document_key",
+        "signed_document_url",
+        "signed_document_name",
+    } <= ppe_columns
 
     with sqlite3.connect(db_path) as connection:
         havalimani_columns = {
@@ -136,4 +165,4 @@ def test_drifted_database_recovers_missing_havalimani_drive_folder_column(app):
 
     assert "drive_folder_id" in havalimani_columns
     assert "ix_havalimani_drive_folder_id" in havalimani_indexes
-    assert current_revision == "cfd5e1cc9bd2"
+    assert current_revision == "7b9e1a2c4d8f"

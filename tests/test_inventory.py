@@ -1,5 +1,9 @@
 import pytest
 import io
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from openpyxl import load_workbook
 from tests.factories import (
     EquipmentTemplateFactory,
     InventoryAssetFactory,
@@ -11,7 +15,7 @@ from tests.factories import (
 from extensions import db 
 from datetime import date
 
-from models import InventoryAsset, Malzeme # ✅ Sorgular için ekledik
+from models import InventoryAsset, Malzeme, PPERecord # ✅ Sorgular için ekledik
 
 # 1. YETKİ KONTROLÜ: Giriş yapmayan kullanıcı envanteri göremez
 def test_envanter_access_required_login(client):
@@ -141,6 +145,356 @@ def test_asset_qr_image_endpoint_returns_png(client, app):
     response = client.get(f"/api/qr-img/asset/{asset.id}")
     assert response.status_code == 200
     assert response.mimetype == "image/png"
+
+
+def test_kkd_page_renders_catalog_and_keeps_pool_outside_general_inventory(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Antalya Havalimanı", kodu="AYT")
+        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-owner@sarx.com")
+        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="KKD Personeli")
+        db.session.add_all([airport, owner, recipient])
+        db.session.flush()
+        record = PPERecord(
+            user_id=recipient.id,
+            airport_id=airport.id,
+            category="Baş ve Yüz Koruması",
+            subcategory="Baret",
+            item_name="Operasyon Bareti",
+            quantity=1,
+            status="aktif",
+            physical_condition="iyi",
+            is_active=True,
+            created_by_id=owner.id,
+        )
+        db.session.add(record)
+        db.session.commit()
+        owner_id = owner.id
+        recipient_id = recipient.id
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(owner_id)
+        sess["_fresh"] = True
+
+    response = client.get(f"/kkd?user_id={recipient_id}")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Personel Bazlı KKD Akışı" in html
+    assert "Baş ve Yüz Koruması" in html
+    assert "Baret" in html
+    assert "Haberleşme Ekipmanı" not in html
+    assert "Operasyon Bareti" in html
+
+    inventory_html = client.get("/envanter").data.decode("utf-8")
+    assert "Operasyon Bareti" not in inventory_html
+
+
+def test_kkd_personnel_flow_starts_compact_until_selection(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Esenboğa Havalimanı", kodu="ESB")
+        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-compact@sarx.com")
+        first_user = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Birinci Personel")
+        second_user = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="İkinci Personel")
+        db.session.add_all([airport, owner, first_user, second_user])
+        db.session.flush()
+        db.session.add_all(
+            [
+                PPERecord(
+                    user_id=first_user.id,
+                    airport_id=airport.id,
+                    category="Baş ve Yüz Koruması",
+                    subcategory="Baret",
+                    item_name="Birinci Baret",
+                    quantity=1,
+                    status="aktif",
+                    physical_condition="iyi",
+                    is_active=True,
+                    created_by_id=owner.id,
+                ),
+                PPERecord(
+                    user_id=second_user.id,
+                    airport_id=airport.id,
+                    category="Ayak Koruması",
+                    subcategory="Çizme",
+                    item_name="İkinci Çizme",
+                    quantity=1,
+                    status="aktif",
+                    physical_condition="iyi",
+                    is_active=True,
+                    created_by_id=owner.id,
+                ),
+            ]
+        )
+        db.session.commit()
+        owner_id = owner.id
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(owner_id)
+        sess["_fresh"] = True
+
+    response = client.get("/kkd")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert 'id="ppeSelectionShell"' in html
+    assert "max-height:min(58vh, 700px);" in html
+    assert html.count('class="ppe-user-accordion" open') == 0
+
+
+def test_kkd_personnel_selection_opens_only_selected_accordion(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Adana Havalimanı", kodu="ADA")
+        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-selected@sarx.com")
+        selected_person = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Seçili KKD Personeli")
+        other_person = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Kapalı KKD Personeli")
+        db.session.add_all([airport, owner, selected_person, other_person])
+        db.session.flush()
+        selected_record = PPERecord(
+            user_id=selected_person.id,
+            airport_id=airport.id,
+            category="Baş ve Yüz Koruması",
+            subcategory="Vizör",
+            item_name="Seçili Vizör",
+            quantity=1,
+            status="aktif",
+            physical_condition="hasarli",
+            is_active=True,
+            created_by_id=owner.id,
+            signed_document_url="https://example.com/ada.pdf",
+        )
+        other_record = PPERecord(
+            user_id=other_person.id,
+            airport_id=airport.id,
+            category="Vücut Koruması",
+            subcategory="Yağmurluk",
+            item_name="Kapalı Yağmurluk",
+            quantity=1,
+            status="aktif",
+            physical_condition="iyi",
+            is_active=True,
+            created_by_id=owner.id,
+        )
+        db.session.add_all([selected_record, other_record])
+        db.session.commit()
+        owner_id = owner.id
+        selected_user_id = selected_person.id
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(owner_id)
+        sess["_fresh"] = True
+
+    response = client.get(f"/kkd?user_id={selected_user_id}")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert html.count('class="ppe-user-accordion" open') == 1
+    assert "Seçili Vizör" in html
+    assert "İmzalı PDF" in html
+    assert "Hasarlı" in html
+
+
+def test_kkd_create_validates_manufacturer_url_and_size_rules(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        airport = HavalimaniFactory(ad="İzmir Havalimanı", kodu="ADB")
+        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-create@sarx.com")
+        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="URL Test Personeli")
+        db.session.add_all([airport, owner, recipient])
+        db.session.commit()
+        owner_id = owner.id
+        recipient_id = recipient.id
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(owner_id)
+        sess["_fresh"] = True
+
+    invalid_response = client.post(
+        "/kkd",
+        data={
+            "user_id": recipient_id,
+            "category": "Ayak Koruması",
+            "subcategory": "Çelik Burunlu İş Botu",
+            "item_name": "Bot",
+            "manufacturer_url": "gecersiz-link",
+            "physical_condition": "iyi",
+            "is_active": "1",
+        },
+        follow_redirects=True,
+    )
+    invalid_html = invalid_response.data.decode("utf-8")
+    assert invalid_response.status_code == 200
+    assert "Üretici sayfası için geçerli bir bağlantı girin." in invalid_html
+
+    size_response = client.post(
+        "/kkd",
+        data={
+            "user_id": recipient_id,
+            "category": "Ayak Koruması",
+            "subcategory": "Çelik Burunlu İş Botu",
+            "item_name": "Bot",
+            "manufacturer_url": "https://example.com/bot",
+            "physical_condition": "iyi",
+            "is_active": "1",
+        },
+        follow_redirects=True,
+    )
+    assert "geçerli bir ayakkabı numarası" in size_response.data.decode("utf-8")
+
+    valid_response = client.post(
+        "/kkd",
+        data={
+            "user_id": recipient_id,
+            "category": "Ayak Koruması",
+            "subcategory": "Çelik Burunlu İş Botu",
+            "item_name": "Bot",
+            "shoe_size": "42",
+            "manufacturer_url": "https://example.com/bot",
+            "physical_condition": "iyi",
+            "is_active": "1",
+        },
+        follow_redirects=True,
+    )
+    assert valid_response.status_code == 200
+    assert "KKD kaydı oluşturuldu." in valid_response.data.decode("utf-8")
+    with app.app_context():
+        assert PPERecord.query.filter_by(item_name="Bot", shoe_size="42").first() is not None
+
+
+def test_kkd_excel_template_and_import_flow(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Muğla Dalaman Havalimanı", kodu="DLM")
+        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-excel@sarx.com")
+        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Excel Personeli")
+        db.session.add_all([airport, owner, recipient])
+        db.session.commit()
+        owner_id = owner.id
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(owner_id)
+        sess["_fresh"] = True
+
+    template_response = client.get("/kkd/excel-sablon")
+    assert template_response.status_code == 200
+    workbook = load_workbook(io.BytesIO(template_response.data))
+    assert workbook.sheetnames == ["VERI_GIRISI", "LISTELER", "YARDIM"]
+    assert workbook["VERI_GIRISI"]["A1"].value == "havalimani"
+
+    payload = io.BytesIO(template_response.data)
+    workbook = load_workbook(payload)
+    sheet = workbook["VERI_GIRISI"]
+    sheet.append([
+        "DLM - Muğla Dalaman Havalimanı",
+        "Excel Personeli",
+        "Vücut Koruması",
+        "Reflektif Yelek",
+        "Reflektif Yelek A",
+        "MarkaX",
+        "ModelY",
+        "SERI-01",
+        "L",
+        "",
+        "2026-03-30",
+        "2026-01-01",
+        "2026-12-31",
+        1,
+        "İyi",
+        "Evet",
+        "https://example.com/yelek",
+    ])
+    sheet.append([
+        "DLM - Muğla Dalaman Havalimanı",
+        "Excel Personeli",
+        "Ayak Koruması",
+        "Çizme",
+        "Bozuk Satır",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "2026-03-30",
+        "",
+        "",
+        1,
+        "İyi",
+        "Evet",
+        "not-a-url",
+    ])
+    out = io.BytesIO()
+    workbook.save(out)
+    out.seek(0)
+
+    response = client.post(
+        "/kkd/excel-yukle",
+        data={"excel_file": (out, "kkd-import.xlsx")},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    html = response.data.decode("utf-8")
+    assert response.status_code == 200
+    assert "1 KKD satırı içe aktarıldı." in html
+    assert "1 satır doğrulama hatası nedeniyle alınmadı." in html
+    assert "KKD Excel Hata Raporu" in html
+    with app.app_context():
+        assert PPERecord.query.filter_by(item_name="Reflektif Yelek A").first() is not None
+
+
+def test_kkd_signed_document_upload_uses_pdf_only_folder_standard(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Antalya Havalimanı", kodu="AYT")
+        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-pdf@sarx.com")
+        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Belge Alan")
+        db.session.add_all([airport, owner, recipient])
+        db.session.flush()
+        record = PPERecord(
+            user_id=recipient.id,
+            airport_id=airport.id,
+            category="Baş ve Yüz Koruması",
+            subcategory="Baret",
+            item_name="Belge Bareti",
+            quantity=1,
+            status="aktif",
+            physical_condition="iyi",
+            is_active=True,
+            created_by_id=owner.id,
+        )
+        db.session.add(record)
+        db.session.commit()
+        owner_id = owner.id
+        record_id = record.id
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(owner_id)
+        sess["_fresh"] = True
+
+    with patch("routes.inventory.get_storage_adapter") as mocked_storage:
+        mocked_storage.return_value.save_upload.return_value = SimpleNamespace(
+            storage_key="AYT/zimmet/Belge_Alan/kkd_belge_alan_zimmet_20260330010101.pdf",
+            public_url="https://example.com/uploads/AYT/zimmet/Belge_Alan/kkd_belge_alan_zimmet_20260330010101.pdf",
+        )
+        response = client.post(
+            f"/kkd/{record_id}/signed-document",
+            data={"signed_document": (io.BytesIO(b"%PDF-1.4 ppe"), "signed.pdf", "application/pdf")},
+            content_type="multipart/form-data",
+            follow_redirects=True,
+        )
+
+    assert response.status_code == 200
+    assert "İmzalı KKD zimmet PDF" in response.data.decode("utf-8")
+    upload_kwargs = mocked_storage.return_value.save_upload.call_args.kwargs
+    assert upload_kwargs["folder"] == "AYT/zimmet/Belge_Alan"
+    assert upload_kwargs["filename"].startswith("kkd_belge_alan_zimmet_")
+    assert upload_kwargs["filename"].endswith(".pdf")
+
+    reject_response = client.post(
+        f"/kkd/{record_id}/signed-document",
+        data={"signed_document": (io.BytesIO(b"png"), "signed.png", "image/png")},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert "Dosya uzantısı desteklenmiyor." in reject_response.data.decode("utf-8")
 
 
 def test_asset_qr_image_payload_uses_detail_url_even_when_legacy_qr_code_exists(client, app, monkeypatch):

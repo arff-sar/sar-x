@@ -5,14 +5,37 @@ from models import Malzeme, Kullanici, Havalimani
 from . import admin_bp
 from decorators import permission_required
 
+
+def _archive_query_in_scope(model):
+    query = model.query.filter(model.is_deleted.is_(True))
+    if current_user.is_sahip:
+        return query
+    airport_id = getattr(current_user, "havalimani_id", None)
+    if hasattr(model, "havalimani_id"):
+        return query.filter(model.havalimani_id == airport_id)
+    if model is Havalimani:
+        return query.filter(Havalimani.id == airport_id)
+    return query.filter(False)
+
+
+def _record_in_archive_scope(record):
+    if current_user.is_sahip:
+        return True
+    airport_id = getattr(current_user, "havalimani_id", None)
+    if hasattr(record, "havalimani_id"):
+        return getattr(record, "havalimani_id", None) == airport_id
+    if isinstance(record, Havalimani):
+        return record.id == airport_id
+    return False
+
 @admin_bp.route('/arsiv')
 @login_required
 @permission_required('archive.manage')
 def arsiv_listesi():
     # SQLite uyumluluğu için .is_(True) kullanarak verileri zorla çekiyoruz
-    silinen_malzemeler = Malzeme.query.filter(Malzeme.is_deleted.is_(True)).all()
-    silinen_kullanicilar = Kullanici.query.filter(Kullanici.is_deleted.is_(True)).all()
-    silinen_havalimanlari = Havalimani.query.filter(Havalimani.is_deleted.is_(True)).all()
+    silinen_malzemeler = _archive_query_in_scope(Malzeme).all()
+    silinen_kullanicilar = _archive_query_in_scope(Kullanici).all()
+    silinen_havalimanlari = _archive_query_in_scope(Havalimani).all()
     
     return render_template('admin/archive.html',
                            malzemeler=silinen_malzemeler,
@@ -47,6 +70,8 @@ def arsiv_islem():
     kayit = db.session.get(model, int(kayit_id))
     
     if kayit:
+        if not _record_in_archive_scope(kayit):
+            abort(403)
         if islem_tipi == 'geri_yukle':
             # Soft Delete'i geri al
             kayit.is_deleted = False

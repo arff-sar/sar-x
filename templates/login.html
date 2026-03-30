@@ -524,6 +524,10 @@
             text-transform: uppercase;
             caret-color: var(--orange);
             text-align: center;
+            overflow: hidden;
+            text-overflow: clip;
+            text-size-adjust: 100%;
+            -webkit-text-size-adjust: 100%;
         }
 
         .captcha-input:focus,
@@ -787,9 +791,12 @@
             .captcha-visual,
             .captcha-refresh,
             .captcha-input-shell { min-height: 42px; height: 42px; }
+            .captcha-canvas-container { display: flex; align-items: center; justify-content: center; }
+            .captcha-visual { height: 100%; object-fit: contain; }
             .captcha-refresh { width: 42px; min-width: 42px; }
             .captcha-input-shell { padding: 0 10px; width: 100%; min-width: 0; overflow: hidden; }
-            .captcha-input { font-size: 15px !important; letter-spacing: .05em; line-height: 42px; }
+            .captcha-input { font-size: 15px !important; letter-spacing: .05em; line-height: 1; min-height: 0; height: 100%; }
+            .captcha-input { max-inline-size: 100%; }
             .account-actions-row { gap: 8px; margin: 2px 0 8px; }
             .remember-option { padding: 4px 8px; min-height: 40px; border-radius: 10px; }
             .forgot-password-link { min-height: 40px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface2); padding: 0 10px; }
@@ -814,6 +821,9 @@
             .captcha-refresh { width: 100%; min-width: 0; }
             .captcha-input-shell { min-height: 44px; height: 44px; }
             .captcha-input { font-size: 14.5px !important; letter-spacing: .04em; }
+            .captcha-input { line-height: 1; }
+            .captcha-canvas-container,
+            .captcha-input-shell { overflow: hidden; }
         }
 
         @media (max-height: 860px) {
