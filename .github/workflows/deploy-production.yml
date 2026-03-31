@@ -91,6 +91,7 @@ jobs:
           : "${DATABASE_URL_EXPECTED_USERNAME:?Missing production variable DATABASE_URL_EXPECTED_USERNAME}"
           : "${DATABASE_URL_EXPECTED_DB_NAME:?Missing production variable DATABASE_URL_EXPECTED_DB_NAME}"
           : "${GCS_BUCKET_NAME:?Missing production variable GCS_BUCKET_NAME}"
+          : "${REDIS_URL:?Missing production variable REDIS_URL}"
           : "${PUBLIC_BASE_URL:?Missing production variable PUBLIC_BASE_URL}"
           : "${MAIL_USERNAME:?Missing production variable MAIL_USERNAME}"
           : "${MAIL_FROM_EMAIL:?Missing production variable MAIL_FROM_EMAIL}"
