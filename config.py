@@ -50,12 +50,18 @@ class BaseConfig:
     AUTH_LOCKOUT_MINUTES = int(os.getenv("AUTH_LOCKOUT_MINUTES", "15"))
     LOGIN_RATE_LIMIT = os.getenv("LOGIN_RATE_LIMIT", "5 per minute")
     RESET_RATE_LIMIT = os.getenv("RESET_RATE_LIMIT", "3 per minute")
+    PASSKEY_CHALLENGE_TTL_SECONDS = int(os.getenv("PASSKEY_CHALLENGE_TTL_SECONDS", "180"))
     PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS = int(os.getenv("PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS", "3600"))
     PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL")
     PASSWORD_RESET_BASE_URL = os.getenv("PASSWORD_RESET_BASE_URL") or PUBLIC_BASE_URL
     CRITICAL_POST_RATE_LIMIT = os.getenv("CRITICAL_POST_RATE_LIMIT", "20 per minute")
     HOMEPAGE_EDITOR_CAN_PUBLISH = _bool_env("HOMEPAGE_EDITOR_CAN_PUBLISH", True)
     ROLE_SWITCH_ALLOWED_USERS = os.getenv("ROLE_SWITCH_ALLOWED_USERS", os.getenv("ROLE_SWITCH_ALLOWED_EMAIL", "mehmetcinocevi@gmail.com"))
+    PASSKEY_ENABLED = _bool_env("PASSKEY_ENABLED", False)
+    PASSKEY_RP_ID = os.getenv("PASSKEY_RP_ID", "")
+    PASSKEY_RP_NAME = os.getenv("PASSKEY_RP_NAME", "SAR-X ARFF")
+    PASSKEY_ORIGIN = os.getenv("PASSKEY_ORIGIN", "")
+    PASSKEY_ALLOWED_ORIGINS = os.getenv("PASSKEY_ALLOWED_ORIGINS", "")
 
     # Upload/file security
     ALLOWED_UPLOAD_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "gif", "webp", "doc", "docx", "xls", "xlsx"}

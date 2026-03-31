@@ -148,6 +148,49 @@ def _log_production_runtime_risks(app):
         )
 
 
+def _is_local_passkey_host(host):
+    normalized = str(host or "").strip().lower()
+    return normalized in {"localhost", "127.0.0.1", "::1", "[::1]"} or normalized.endswith(".localhost")
+
+
+def _validate_passkey_runtime_config(app, *, selected_env):
+    if not app.config.get("PASSKEY_ENABLED"):
+        return
+
+    rp_id = str(app.config.get("PASSKEY_RP_ID") or "").strip().lower()
+    raw_origins = []
+    for key in ("PASSKEY_ALLOWED_ORIGINS", "PASSKEY_ORIGIN"):
+        raw_value = app.config.get(key)
+        if not raw_value:
+            continue
+        raw_origins.extend(part.strip().rstrip("/") for part in str(raw_value).split(",") if part.strip())
+
+    if selected_env == "production":
+        if not rp_id:
+            raise RuntimeError(
+                "PASSKEY_ENABLED açıksa production ortamında PASSKEY_RP_ID zorunludur."
+            )
+        if not raw_origins:
+            raise RuntimeError(
+                "PASSKEY_ENABLED açıksa production ortamında PASSKEY_ORIGIN veya "
+                "PASSKEY_ALLOWED_ORIGINS zorunludur."
+            )
+
+    if not raw_origins:
+        return
+
+    for origin in raw_origins:
+        parsed = urlsplit(origin)
+        scheme = str(parsed.scheme or "").strip().lower()
+        host = str(parsed.hostname or "").strip().lower()
+        if scheme not in {"http", "https"} or not host:
+            raise RuntimeError("Passkey origin ayarı geçersiz.")
+        if scheme != "https" and not _is_local_passkey_host(host):
+            raise RuntimeError("Passkey origin ayarı production rollout için güvenli değil.")
+        if rp_id and not (host == rp_id or host.endswith(f".{rp_id}")):
+            raise RuntimeError("Passkey origin host değeri PASSKEY_RP_ID ile uyumlu değil.")
+
+
 def _apply_runtime_env_overrides(app):
     # SECRET_KEY değerini her create_app çağrısında çalışma zamanı env'den al.
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")
@@ -182,6 +225,10 @@ def _apply_runtime_env_overrides(app):
         "GCS_CACHE_CONTROL",
         "SESSION_COOKIE_SAMESITE",
         "REMEMBER_COOKIE_SAMESITE",
+        "PASSKEY_RP_ID",
+        "PASSKEY_RP_NAME",
+        "PASSKEY_ORIGIN",
+        "PASSKEY_ALLOWED_ORIGINS",
     ]
     for key in direct_keys:
         value = os.getenv(key)
@@ -192,6 +239,7 @@ def _apply_runtime_env_overrides(app):
     int_keys = {
         "MAIL_PORT": 587,
         "PERMANENT_SESSION_LIFETIME_MINUTES": 120,
+        "PASSKEY_CHALLENGE_TTL_SECONDS": 180,
         "MAX_CONTENT_LENGTH": 16 * 1024 * 1024,
         "MAX_FORM_MEMORY_SIZE": 2 * 1024 * 1024,
         "MAX_FORM_PARTS": 200,
@@ -226,6 +274,7 @@ def _apply_runtime_env_overrides(app):
         "DEMO_TOOLS_ENABLED",
         "GCS_MAKE_UPLOADS_PUBLIC",
         "ALLOW_CLOUD_RUN_WEB_SCHEDULER",
+        "PASSKEY_ENABLED",
     ]
     for key in bool_keys:
         parsed = _bool_env(key)
@@ -489,6 +538,8 @@ def create_app(config_name=None):
                 "REDIS_URL tanımlı değil. Development ortamında memory rate-limit storage ile devam ediliyor."
             )
 
+    _validate_passkey_runtime_config(app, selected_env=selected_env)
+
     db.init_app(app)
     migrate.init_app(app, db)
     login_manager.init_app(app)
@@ -595,6 +646,13 @@ def create_app(config_name=None):
             "site_contact_note": public_contact_note or demo_contact_note,
             "homepage_demo_contact_note": demo_contact_note,
         }
+        passkey_shared = {
+            "passkey_enabled": bool(app.config.get("PASSKEY_ENABLED")),
+            "passkey_login_begin_url": url_for("auth.login_passkey_begin"),
+            "passkey_login_finish_url": url_for("auth.login_passkey_finish"),
+            "passkey_register_begin_url": url_for("auth.passkey_register_begin"),
+            "passkey_register_finish_url": url_for("auth.passkey_register_finish"),
+        }
 
         if current_user.is_authenticated:
             rol_etiketleri = get_role_labels()
@@ -643,6 +701,7 @@ def create_app(config_name=None):
                 "unread_notifications": unread_notifications,
                 "unread_notification_count": unread_notification_count,
                 **shared_context,
+                **passkey_shared,
             }
         return {
             "rol": None,
@@ -663,6 +722,7 @@ def create_app(config_name=None):
             "unread_notifications": [],
             "unread_notification_count": 0,
             **shared_context,
+            **passkey_shared,
         }
 
     app.register_blueprint(auth_bp)

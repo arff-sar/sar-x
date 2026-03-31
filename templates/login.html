@@ -671,6 +671,32 @@
             box-shadow: 0 12px 30px rgba(249,115,22,.32);
         }
 
+        .login-btn-passkey {
+            width: 100%;
+            margin-top: 8px;
+            min-height: 44px;
+            border-radius: var(--r);
+            border: 1px solid rgba(15,45,74,.14);
+            background: var(--surface2);
+            color: var(--navy);
+            font-family: var(--sans);
+            font-size: 14px;
+            font-weight: 800;
+            cursor: pointer;
+            transition: background .16s ease, border-color .16s ease, transform .12s ease;
+        }
+
+        .login-btn-passkey:hover {
+            background: var(--blue-light);
+            border-color: rgba(37,99,235,.24);
+            transform: translateY(-1px);
+        }
+
+        .login-btn-passkey.is-loading {
+            opacity: .72;
+            cursor: wait;
+        }
+
         .login-footer {
             margin-top: 14px;
             padding: 12px 13px;
@@ -1022,6 +1048,16 @@
                 </div>
 
                 <button type="submit" class="login-btn-submit">Sisteme Giriş Yap</button>
+                {% if passkey_enabled %}
+                <button
+                    type="button"
+                    class="login-btn-passkey"
+                    id="passkeyLoginButton"
+                    hidden
+                >
+                    Biyometrik / Passkey ile Giriş
+                </button>
+                {% endif %}
             </form>
 
             <div class="login-footer">
@@ -1388,6 +1424,18 @@
             startTimer();
         })();
     </script>
+    {% if passkey_enabled %}
+    <script src="{{ url_for('static', filename='passkey.js') }}"></script>
+    <script>
+        window.SARXPasskey.initLogin({
+            buttonId: 'passkeyLoginButton',
+            beginUrl: '{{ passkey_login_begin_url }}',
+            finishUrl: '{{ passkey_login_finish_url }}',
+            captchaInputId: 'captchaAnswer',
+            captchaTokenId: 'captchaTokenField'
+        });
+    </script>
+    {% endif %}
 
 </body>
 </html>

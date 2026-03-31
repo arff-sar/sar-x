@@ -1,3 +1,4 @@
+import json
 import hashlib
 import smtplib
 import re
@@ -18,7 +19,7 @@ from captcha_helper import (
     validate_login_captcha,
 )
 from error_handling import capture_error, flash_safe_error
-from models import AuthLockout, Kullanici, get_tr_now
+from models import AuthLockout, Kullanici, PasskeyCredential, get_tr_now
 from extensions import audit_log, db, limiter, log_kaydet
 from decorators import (
     can_use_role_switch,
@@ -27,6 +28,20 @@ from decorators import (
     get_role_switch_options,
     role_home_endpoint,
     set_role_override,
+)
+from passkey_helper import (
+    PasskeyError,
+    b64url_decode,
+    b64url_encode,
+    consume_authentication_state,
+    consume_registration_state,
+    create_challenge,
+    is_passkey_enabled,
+    resolve_rp_id,
+    store_authentication_state,
+    store_registration_state,
+    validate_registration_response,
+    verify_authentication_response,
 )
 
 auth_bp = Blueprint('auth', __name__)
@@ -87,6 +102,24 @@ def _clear_auth_cookies(response):
         domain=current_app.config.get("REMEMBER_COOKIE_DOMAIN"),
     )
     return response
+
+
+def _require_passkey_feature():
+    if not is_passkey_enabled():
+        abort(404)
+
+
+def _passkey_json_error(message="Biyometrik giriş şu an tamamlanamadı.", status_code=400):
+    response = jsonify({"status": "error", "message": message})
+    return response, status_code
+
+
+def _passkey_success_redirect_url(user):
+    return url_for(role_home_endpoint(user))
+
+
+def _passkey_remember_value(payload):
+    return bool((payload or {}).get("remember_me"))
 
 def gizli_sifreyi_getir():
     # 1) Secret Manager erişimi yoksa/kapalıysa env üzerinden devam et.
@@ -210,7 +243,6 @@ def _get_password_reset_base_url():
 
     script_root = (request.script_root or "").strip("/")
     path_prefix = f"/{script_root}" if script_root else ""
-
     forwarded_host = (
         (request.headers.get("X-Forwarded-Host") or "")
         or (request.headers.get("X-Forwarded-Server") or "")
@@ -416,8 +448,256 @@ def login():
 
         audit_log("auth.login", outcome="failed", username=kullanici_adi, ip=_client_ip())
         return _render_login_page(force_new=True)
-        
+	        
     return _render_login_page(force_new=True)
+
+
+@auth_bp.route("/passkey/register/begin", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+def passkey_register_begin():
+    _require_passkey_feature()
+
+    try:
+        rp_id = resolve_rp_id()
+        challenge = create_challenge()
+        store_registration_state(challenge=challenge, user_id=current_user.id)
+    except PasskeyError:
+        audit_log("auth.passkey.register.begin", outcome="blocked", user_id=current_user.id, ip=_client_ip())
+        return _passkey_json_error("Passkey ayarları şu an tamamlanamadı.", 503)
+
+    exclude_credentials = []
+    for credential in current_user.passkey_credentials:
+        transports = []
+        if credential.transports_json:
+            try:
+                transports = json.loads(credential.transports_json)
+            except Exception:
+                transports = []
+        exclude_credentials.append(
+            {
+                "id": credential.credential_id,
+                "type": "public-key",
+                "transports": transports if isinstance(transports, list) else [],
+            }
+        )
+
+    return jsonify(
+        {
+            "status": "success",
+            "public_key": {
+                "challenge": challenge,
+                "rp": {
+                    "id": rp_id,
+                    "name": current_app.config.get("PASSKEY_RP_NAME", "SAR-X ARFF"),
+                },
+                "user": {
+                    "id": b64url_encode(str(current_user.id).encode("utf-8")),
+                    "name": current_user.kullanici_adi,
+                    "displayName": current_user.tam_ad or current_user.kullanici_adi,
+                },
+                "pubKeyCredParams": [
+                    {"type": "public-key", "alg": -7},
+                    {"type": "public-key", "alg": -257},
+                ],
+                "timeout": 60000,
+                "attestation": "none",
+                "excludeCredentials": exclude_credentials,
+                "authenticatorSelection": {
+                    "residentKey": "required",
+                    "requireResidentKey": True,
+                    "userVerification": "required",
+                },
+            },
+        }
+    )
+
+
+@auth_bp.route("/passkey/register/finish", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+def passkey_register_finish():
+    _require_passkey_feature()
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        state = consume_registration_state()
+        if int(state.get("user_id") or 0) != int(current_user.id):
+            raise PasskeyError("Passkey oturumu kullanıcı ile eşleşmiyor.")
+        verified = validate_registration_response(
+            payload,
+            expected_challenge=str(state.get("challenge") or ""),
+            expected_rp_id=str(state.get("rp_id") or ""),
+        )
+    except PasskeyError:
+        audit_log("auth.passkey.register.finish", outcome="failed", user_id=current_user.id, ip=_client_ip())
+        return _passkey_json_error("Biyometrik giriş bu cihaz için etkinleştirilemedi.", 400)
+
+    existing = PasskeyCredential.query.filter_by(credential_id=verified["credential_id"]).first()
+    if existing:
+        if existing.user_id == current_user.id:
+            audit_log("auth.passkey.register.finish", outcome="duplicate", user_id=current_user.id, ip=_client_ip())
+            return jsonify({"status": "success", "message": "Bu cihaz zaten biyometrik giriş için kayıtlı."})
+        audit_log("auth.passkey.register.finish", outcome="conflict", user_id=current_user.id, ip=_client_ip())
+        return _passkey_json_error("Bu passkey başka bir hesap için kayıtlı.", 409)
+
+    credential = PasskeyCredential(
+        user_id=current_user.id,
+        credential_id=verified["credential_id"],
+        public_key=verified["public_key"],
+        algorithm=verified["algorithm"],
+        sign_count=verified["sign_count"],
+        transports_json=json.dumps(verified["transports"], ensure_ascii=True),
+        backup_eligible=verified["backup_eligible"],
+        backup_state=verified["backup_state"],
+    )
+    db.session.add(credential)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        audit_log("auth.passkey.register.finish", outcome="error", user_id=current_user.id, ip=_client_ip())
+        return _passkey_json_error("Biyometrik giriş bu cihaz için etkinleştirilemedi.", 500)
+
+    log_kaydet("Güvenlik", f"{current_user.kullanici_adi} için yeni bir passkey kaydedildi.", event_key="auth.passkey.register", outcome="success")
+    audit_log("auth.passkey.register.finish", outcome="success", user_id=current_user.id, ip=_client_ip())
+    return jsonify({"status": "success", "message": "Biyometrik giriş bu cihaz için etkinleştirildi."})
+
+
+@auth_bp.route("/login/passkey/begin", methods=["POST"])
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+def login_passkey_begin():
+    _require_passkey_feature()
+    if current_user.is_authenticated:
+        return jsonify({"status": "success", "redirect_url": _passkey_success_redirect_url(current_user)})
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        challenge = create_challenge()
+        store_authentication_state(challenge=challenge, remember_me=_passkey_remember_value(payload))
+    except PasskeyError:
+        audit_log("auth.passkey.login.begin", outcome="blocked", ip=_client_ip())
+        return _passkey_json_error("Passkey ayarları şu an tamamlanamadı.", 503)
+
+    return jsonify(
+        {
+            "status": "success",
+            "public_key": {
+                "challenge": challenge,
+                "rpId": resolve_rp_id(),
+                "timeout": 60000,
+                "userVerification": "required",
+                "allowCredentials": [],
+            },
+        }
+    )
+
+
+@auth_bp.route("/login/passkey/finish", methods=["POST"])
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+def login_passkey_finish():
+    _require_passkey_feature()
+    if current_user.is_authenticated:
+        return jsonify({"status": "success", "redirect_url": _passkey_success_redirect_url(current_user)})
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        state = consume_authentication_state()
+        credential_id = b64url_encode(b64url_decode(payload.get("rawId")))
+    except PasskeyError:
+        audit_log("auth.passkey.login.finish", outcome="failed", ip=_client_ip())
+        return _passkey_json_error("Biyometrik giriş doğrulanamadı.", 400)
+
+    credential = PasskeyCredential.query.filter_by(credential_id=credential_id).first()
+    user = credential.user if credential and credential.user and not credential.user.is_deleted else None
+    identifier_source = user.kullanici_adi if user else credential_id
+    identifier = _auth_identifier(identifier_source)
+
+    try:
+        lock_record = _get_lock_record(identifier)
+    except Exception:
+        db.session.rollback()
+        lock_record = None
+
+    if _is_locked(lock_record):
+        now = get_tr_now().replace(tzinfo=None)
+        remaining = max(int((lock_record.locked_until - now).total_seconds() // 60), 1)
+        audit_log("auth.passkey.login.finish", outcome="locked", username=getattr(user, "kullanici_adi", ""), ip=_client_ip())
+        return _passkey_json_error(
+            f"Çok fazla başarısız giriş denemesi tespit edildi. Lütfen {remaining} dakika sonra tekrar deneyin.",
+            429,
+        )
+
+    captcha_valid, captcha_state = validate_login_captcha(
+        payload.get("security_verification"),
+        submitted_token=payload.get("security_verification_token"),
+    )
+    if not captcha_valid:
+        try:
+            _register_failed_login(identifier)
+        except Exception:
+            db.session.rollback()
+        invalidate_login_captcha(clear_session=True)
+        event_key = "auth.passkey.login.captcha_failed"
+        if captcha_state == "expired":
+            event_key = "auth.passkey.login.captcha_expired"
+        elif captcha_state in {"stale", "used"}:
+            event_key = "auth.passkey.login.captcha_refresh_required"
+        capture_error(
+            error_code="SAR-X-AUTH-1202",
+            status_code=400,
+            detail=f"Passkey login captcha failed | state={captcha_state or 'unknown'}",
+        )
+        audit_log(event_key, outcome="failed", username=getattr(user, "kullanici_adi", ""), ip=_client_ip())
+        return _passkey_json_error("Güvenlik doğrulaması başarısız oldu.", 400)
+
+    if not credential or not user:
+        try:
+            _register_failed_login(identifier)
+        except Exception:
+            db.session.rollback()
+        audit_log("auth.passkey.login.finish", outcome="unknown_credential", ip=_client_ip())
+        return _passkey_json_error("Biyometrik giriş doğrulanamadı.", 400)
+
+    try:
+        verified = verify_authentication_response(
+            payload,
+            credential_public_key=credential.public_key,
+            expected_challenge=str(state.get("challenge") or ""),
+            stored_sign_count=credential.sign_count,
+            expected_rp_id=str(state.get("rp_id") or ""),
+        )
+    except PasskeyError:
+        try:
+            _register_failed_login(identifier)
+        except Exception:
+            db.session.rollback()
+        audit_log("auth.passkey.login.finish", outcome="failed", user_id=user.id, ip=_client_ip())
+        return _passkey_json_error("Biyometrik giriş doğrulanamadı.", 400)
+
+    credential.sign_count = verified["sign_count"]
+    credential.backup_eligible = verified["backup_eligible"]
+    credential.backup_state = verified["backup_state"]
+    credential.last_used_at = get_tr_now().replace(tzinfo=None)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        audit_log("auth.passkey.login.finish", outcome="error", user_id=user.id, ip=_client_ip())
+        return _passkey_json_error("Biyometrik giriş doğrulanamadı.", 500)
+
+    invalidate_login_captcha(clear_session=True)
+    session.clear()
+    login_user(user, remember=bool(state.get("remember_me")))
+    session.permanent = True
+    try:
+        _reset_failed_login(identifier)
+    except Exception:
+        db.session.rollback()
+
+    log_kaydet("Giriş", f"{user.kullanici_adi} passkey ile sisteme giriş yaptı.")
+    audit_log("auth.passkey.login.finish", outcome="success", user_id=user.id, role=user.rol, ip=_client_ip())
+    return jsonify({"status": "success", "redirect_url": _passkey_success_redirect_url(user)})
 
 
 @auth_bp.route("/login/captcha/refresh", methods=["POST"])

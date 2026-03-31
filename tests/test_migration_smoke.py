@@ -12,6 +12,7 @@ def _build_production_env(db_path):
             "APP_ENV": "production",
             "DATABASE_URL": f"sqlite:///{db_path}",
             "ALLOW_SQLITE_IN_PRODUCTION": "1",
+            "ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION": "1",
             "SECRET_KEY": "test-release-stabilization-secret-key-123456",
         }
     )
@@ -56,6 +57,7 @@ def test_fresh_database_can_upgrade_with_migrations(app, monkeypatch):
     assert "site_ayarlari" in tables
     assert "auth_lockout" in tables
     assert "login_visual_challenge" in tables
+    assert "passkey_credential" in tables
     assert "asset_spare_part_link" in tables
 
     with sqlite3.connect(db_path) as connection:
@@ -165,4 +167,4 @@ def test_drifted_database_recovers_missing_havalimani_drive_folder_column(app):
 
     assert "drive_folder_id" in havalimani_columns
     assert "ix_havalimani_drive_folder_id" in havalimani_indexes
-    assert current_revision == "7b9e1a2c4d8f"
+    assert current_revision == "3f4b2c1d9a7e"

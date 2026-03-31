@@ -34,12 +34,21 @@
   --sans: 'Plus Jakarta Sans', sans-serif; --mono: 'JetBrains Mono', monospace;
   --r: 10px; --r-lg: 14px; --r-xl: 18px;
   --topbar-action-height: 40px;
+  --topbar-base-height: 56px;
+  --safe-area-top: 0px;
+  --safe-area-bottom: 0px;
+  --shell-top-offset: var(--topbar-base-height);
 }
 html, body { height: 100%; font-family: var(--sans); background: var(--bg); color: var(--text); overflow: hidden; }
 body.sidebar-open { overflow: hidden; }
+body[data-display-mode="standalone"] {
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --shell-top-offset: calc(var(--topbar-base-height) + var(--safe-area-top));
+}
 
 /* Layout Structure */
-.app-shell { display: grid; grid-template-columns: 280px 1fr; grid-template-rows: 56px 1fr; height: 100vh; height: 100dvh; overflow: hidden; }
+.app-shell { display: grid; grid-template-columns: 280px 1fr; grid-template-rows: var(--shell-top-offset) 1fr; height: 100vh; height: 100dvh; overflow: hidden; }
 
 /* Topbar Styles */
 .topbar { grid-column: 1 / -1; background: var(--navy); display: flex; align-items: center; padding: 0 24px; gap: 16px; position: sticky; top: 0; z-index: 100; min-width: 0; }
@@ -80,8 +89,8 @@ body.sidebar-open { overflow: hidden; }
 .logout-btn:hover { background: rgba(248, 113, 113, 0.1); color: #f87171;}
 
 /* Sidebar Navigation */
-.sidebar-backdrop { display: none; position: fixed; inset: 56px 0 0 0; background: rgba(15, 23, 42, 0.45); z-index: 80; }
-.sidebar { background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; overscroll-behavior: contain; position: sticky; top: 56px; height: calc(100vh - 56px); height: calc(100dvh - 56px); padding: 14px 10px; gap: 8px; min-width: 0; min-height: 0; }
+.sidebar-backdrop { display: none; position: fixed; inset: var(--shell-top-offset) 0 0 0; background: rgba(15, 23, 42, 0.45); z-index: 80; }
+.sidebar { background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; overscroll-behavior: contain; position: sticky; top: var(--shell-top-offset); height: calc(100vh - var(--shell-top-offset)); height: calc(100dvh - var(--shell-top-offset)); padding: 14px 10px; gap: 8px; min-width: 0; min-height: 0; }
 .sidebar-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-right: 2px; }
 .sidebar-head { padding: 0 6px 6px; }
 .sidebar-kicker { font-size: 11px; font-weight: 800; color: var(--text4); letter-spacing: .08em; text-transform: uppercase; }
@@ -105,12 +114,15 @@ body.sidebar-open { overflow: hidden; }
 .nav-item.active { background: var(--navy); color: #fff; box-shadow: 0 8px 20px rgba(15,45,74,.18); }
 .nav-icon { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; background: #e2e8f0; color: var(--navy); flex-shrink: 0; }
 .nav-item.active .nav-icon { background: rgba(255,255,255,.12); }
-.sidebar-footer { flex: 0 0 auto; padding: 10px 12px 4px; border-top: 1px solid var(--border); background: linear-gradient(180deg, rgba(248,250,252,.55) 0%, rgba(248,250,252,.95) 100%); position: sticky; bottom: 0; z-index: 2; }
+.sidebar-footer { flex: 0 0 auto; padding: 10px 12px calc(4px + var(--safe-area-bottom)); border-top: 1px solid var(--border); background: linear-gradient(180deg, rgba(248,250,252,.55) 0%, rgba(248,250,252,.95) 100%); position: sticky; bottom: 0; z-index: 2; }
 .sidebar-footer-actions { display: grid; gap: 10px; }
 .pwa-banner { background: #f8fafc; border: 1px solid var(--border); border-radius: var(--r); padding: 9px 10px; display: flex; align-items: flex-start; gap: 8px; }
 .pwa-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
 .pwa-text { font-size: 10.5px; color: var(--text3); line-height: 1.4; }
 .pwa-text strong { display: block; font-weight: 700; margin-bottom: 2px; }
+.sidebar-passkey-btn { width: 100%; min-height: 40px; border-radius: 10px; border: 1px solid rgba(15,45,74,.14); background: rgba(239,246,255,.96); color: var(--navy); font-family: var(--sans); font-size: 12px; font-weight: 800; cursor: pointer; }
+.sidebar-passkey-btn:hover { background: #dbeafe; }
+.sidebar-passkey-btn.is-loading { opacity: .72; cursor: wait; }
 .sidebar-logout-form { display: none; }
 .sidebar-logout-btn { width: 100%; min-height: 40px; border-radius: 10px; border: 1px solid rgba(248, 113, 113, 0.24); background: rgba(254, 242, 242, 0.96); color: var(--red); font-family: var(--sans); font-size: 12px; font-weight: 800; cursor: pointer; }
 .sidebar-logout-btn:hover { background: var(--red-light); }
@@ -215,7 +227,7 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
   .app-shell { grid-template-columns: 1fr; }
   .sidebar-toggle { display: inline-flex; align-items: center; justify-content: center; }
   .sidebar-backdrop.is-open { display: block; }
-  .sidebar { display: flex; position: fixed; top: 56px; left: 0; width: min(92vw, 340px); height: calc(100vh - 56px); z-index: 105; transform: translateX(-100%); transition: transform .2s ease; box-shadow: 0 18px 36px rgba(15,23,42,.18); }
+  .sidebar { display: flex; position: fixed; top: var(--shell-top-offset); left: 0; width: min(92vw, 340px); height: calc(100vh - var(--shell-top-offset)); height: calc(100dvh - var(--shell-top-offset)); z-index: 105; transform: translateX(-100%); transition: transform .2s ease; box-shadow: 0 18px 36px rgba(15,23,42,.18); }
   .sidebar.is-open { transform: translateX(0); }
   .search-input { width: 100% !important; }
   .topbar { padding: 8px 10px; gap: 8px; flex-wrap: nowrap; }
@@ -282,7 +294,7 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
 {% block extra_css %}{% endblock %}
 </style>
 </head>
-<body>
+<body data-display-mode="browser">
 
 <div class="app-shell">
 
@@ -416,6 +428,9 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
             Telefona ekleyin, hızlı erişim sağlayın.
           </div>
         </div>
+        {% if passkey_enabled %}
+        <button type="button" class="sidebar-passkey-btn" id="passkeyRegisterButton" hidden>Biyometrik Giriş Ekle</button>
+        {% endif %}
         <form method="POST" action="{{ url_for('auth.logout') }}" class="sidebar-logout-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="sidebar-logout-btn">Çıkış Yap</button>
@@ -461,6 +476,31 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
 </div>
 
 <script>
+    (function () {
+        const standaloneMedia = typeof window.matchMedia === 'function'
+            ? window.matchMedia('(display-mode: standalone)')
+            : null;
+
+        const syncDisplayMode = function () {
+            const isStandalone = Boolean(
+                (standaloneMedia && standaloneMedia.matches) ||
+                window.navigator.standalone === true
+            );
+            document.body.classList.toggle('is-standalone', isStandalone);
+            document.body.setAttribute('data-display-mode', isStandalone ? 'standalone' : 'browser');
+        };
+
+        syncDisplayMode();
+
+        if (standaloneMedia) {
+            if (typeof standaloneMedia.addEventListener === 'function') {
+                standaloneMedia.addEventListener('change', syncDisplayMode);
+            } else if (typeof standaloneMedia.addListener === 'function') {
+                standaloneMedia.addListener(syncDisplayMode);
+            }
+        }
+    })();
+
     (function () {
         const toastStack = document.getElementById('toastStack');
         const scheduleToast = function (toast, delay) {
@@ -743,6 +783,16 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
 
     })();
 </script>
+{% if passkey_enabled %}
+<script src="{{ url_for('static', filename='passkey.js') }}"></script>
+<script>
+    window.SARXPasskey.initRegistration({
+        buttonId: 'passkeyRegisterButton',
+        beginUrl: '{{ passkey_register_begin_url }}',
+        finishUrl: '{{ passkey_register_finish_url }}'
+    });
+</script>
+{% endif %}
 
 {% block extra_js %}{% endblock %}
 

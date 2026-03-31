@@ -88,6 +88,12 @@ class Kullanici(db.Model, UserMixin, TimestampMixin, SoftDeleteMixin):
         backref='created_user',
         lazy=True
     )
+    passkey_credentials = db.relationship(
+        'PasskeyCredential',
+        backref='user',
+        lazy=True,
+        cascade="all, delete-orphan",
+    )
 
     @property
     def is_sahip(self):
@@ -286,6 +292,21 @@ class LoginVisualChallenge(db.Model, TimestampMixin):
     expires_at = db.Column(db.DateTime, nullable=False, index=True)
     invalidated_at = db.Column(db.DateTime, nullable=True, index=True)
     last_rendered_at = db.Column(db.DateTime, nullable=True)
+
+
+class PasskeyCredential(db.Model, TimestampMixin):
+    __tablename__ = "passkey_credential"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("kullanici.id"), nullable=False, index=True)
+    credential_id = db.Column(db.String(255), nullable=False, unique=True, index=True)
+    public_key = db.Column(db.Text, nullable=False)
+    algorithm = db.Column(db.Integer, nullable=False)
+    sign_count = db.Column(db.Integer, nullable=False, default=0)
+    transports_json = db.Column(db.Text, nullable=True)
+    backup_eligible = db.Column(db.Boolean, nullable=False, default=False)
+    backup_state = db.Column(db.Boolean, nullable=False, default=False)
+    last_used_at = db.Column(db.DateTime, nullable=True, index=True)
 
 
 class Role(db.Model, TimestampMixin):
