@@ -10,7 +10,12 @@ def _login(client, user_id):
         session["_fresh"] = True
 
 
+def _set_role_switch_allowed_users(app, *emails):
+    app.config["ROLE_SWITCH_ALLOWED_USERS"] = ",".join(emails)
+
+
 def test_mehmet_user_sees_role_switch_entrypoint(client, app):
+    _set_role_switch_allowed_users(app, "mehmetcinocevi@gmail.com")
     with app.app_context():
         user = KullaniciFactory(
             rol="sahip",
@@ -71,6 +76,7 @@ def test_non_allow_list_owner_cannot_switch_role(client, app):
 
 
 def test_mehmet_user_can_switch_role_and_session_persists(client, app):
+    _set_role_switch_allowed_users(app, "mehmetcinocevi@gmail.com")
     with app.app_context():
         user = KullaniciFactory(
             rol="sahip",
@@ -104,6 +110,7 @@ def test_mehmet_user_can_switch_role_and_session_persists(client, app):
 
 
 def test_mehmet_user_can_switch_roles_multiple_times_without_logout(client, app):
+    _set_role_switch_allowed_users(app, "mehmetcinocevi@gmail.com")
     with app.app_context():
         user = KullaniciFactory(
             rol="sahip",
@@ -151,6 +158,7 @@ def test_mehmet_user_can_switch_roles_multiple_times_without_logout(client, app)
 
 
 def test_mehmet_user_can_clear_role_override(client, app):
+    _set_role_switch_allowed_users(app, "mehmetcinocevi@gmail.com")
     with app.app_context():
         user = KullaniciFactory(
             rol="sahip",
@@ -176,6 +184,7 @@ def test_mehmet_user_can_clear_role_override(client, app):
 
 
 def test_role_switch_rejects_unsupported_roles(client, app):
+    _set_role_switch_allowed_users(app, "mehmetcinocevi@gmail.com")
     with app.app_context():
         user = KullaniciFactory(
             rol="sahip",
@@ -198,6 +207,7 @@ def test_role_switch_rejects_unsupported_roles(client, app):
 
 
 def test_role_switch_page_lists_active_custom_roles_from_db(client, app):
+    _set_role_switch_allowed_users(app, "mehmetcinocevi@gmail.com")
     with app.app_context():
         user = KullaniciFactory(
             rol="sahip",
@@ -273,6 +283,7 @@ def test_non_privileged_user_does_not_see_role_switch_entrypoint(client, app):
 
 
 def test_role_switch_override_is_cleared_on_logout(client, app):
+    _set_role_switch_allowed_users(app, "mehmetcinocevi@gmail.com")
     with app.app_context():
         user = KullaniciFactory(
             rol="sahip",
@@ -294,6 +305,7 @@ def test_role_switch_override_is_cleared_on_logout(client, app):
 
 
 def test_invalid_or_inactive_role_override_is_sanitized_on_request(client, app):
+    _set_role_switch_allowed_users(app, "mehmetcinocevi@gmail.com")
     with app.app_context():
         user = KullaniciFactory(
             rol="sahip",
@@ -323,6 +335,7 @@ def test_invalid_or_inactive_role_override_is_sanitized_on_request(client, app):
 
 
 def test_control_plane_endpoints_blocked_during_impersonation(client, app):
+    _set_role_switch_allowed_users(app, "mehmetcinocevi@gmail.com")
     with app.app_context():
         user = KullaniciFactory(
             rol="sahip",
@@ -341,6 +354,7 @@ def test_control_plane_endpoints_blocked_during_impersonation(client, app):
 
 
 def test_settings_control_plane_endpoints_blocked_during_impersonation(client, app):
+    _set_role_switch_allowed_users(app, "mehmetcinocevi@gmail.com")
     with app.app_context():
         user = KullaniciFactory(
             rol="sahip",
@@ -359,6 +373,7 @@ def test_settings_control_plane_endpoints_blocked_during_impersonation(client, a
 
 
 def test_role_switch_audit_payload_tracks_real_and_effective_roles(client, app, monkeypatch):
+    _set_role_switch_allowed_users(app, "mehmetcinocevi@gmail.com")
     events = []
 
     def _fake_audit(event, outcome="success", **context):
@@ -390,6 +405,7 @@ def test_role_switch_audit_payload_tracks_real_and_effective_roles(client, app, 
 
 
 def test_allow_list_user_can_open_role_switch_page(client, app):
+    _set_role_switch_allowed_users(app, "mehmetcinocevi@gmail.com")
     with app.app_context():
         user = KullaniciFactory(
             rol="sahip",

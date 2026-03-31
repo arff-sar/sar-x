@@ -30,7 +30,6 @@ CORE_ROLE_KEYS = {
     CANONICAL_ROLE_TEAM_MEMBER,
     CANONICAL_ROLE_ADMIN,
 }
-ROLE_SWITCH_ALLOWED_EMAIL = "mehmetcinocevi@gmail.com"
 ROLE_SWITCH_SESSION_KEY = "temporary_role_override"
 
 ROLE_ALIASES = {
@@ -645,9 +644,9 @@ def _normalize_user_identifier(raw_value):
 
 
 def _role_switch_allow_list():
-    configured = ROLE_SWITCH_ALLOWED_EMAIL
+    configured = ""
     if has_app_context():
-        configured = current_app.config.get("ROLE_SWITCH_ALLOWED_USERS", ROLE_SWITCH_ALLOWED_EMAIL)
+        configured = current_app.config.get("ROLE_SWITCH_ALLOWED_USERS", "")
     if isinstance(configured, (list, tuple, set)):
         raw_items = configured
     else:

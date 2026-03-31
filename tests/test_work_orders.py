@@ -58,6 +58,85 @@ def test_work_order_can_be_opened_and_closed(client, app):
     assert history is not None
 
 
+def test_work_orders_page_filter_toolbar_and_type_labels_are_localized(client, app):
+    airport = HavalimaniFactory(kodu="ESB")
+    owner = KullaniciFactory(rol="sahip", havalimani=airport)
+    template = EquipmentTemplateFactory(name="Yangın Söndürme Seti")
+    asset = InventoryAssetFactory(
+        equipment_template=template,
+        airport=airport,
+        serial_no="WO-TR-1",
+        qr_code="WO-TR-QR-1",
+    )
+    work_order = WorkOrder(
+        work_order_no="WO-TR-LABEL-1",
+        asset=asset,
+        maintenance_type="bakim",
+        work_order_type="emergency",
+        description="Yerelleştirme testi",
+        created_user=owner,
+        assigned_user=owner,
+        status="acik",
+        priority="kritik",
+    )
+    db.session.add_all([airport, owner, template, asset, work_order])
+    db.session.commit()
+    _login(client, owner)
+
+    response = client.get("/bakim/is-emirleri?work_order_type=emergency")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert 'class="work-order-filter-form"' in html
+    assert 'class="work-order-filter-actions"' in html
+    assert "İş Emri Tipi" in html
+    assert "value=\"emergency\" selected" in html
+    assert ">ÖNLEYİCİ<" in html
+    assert ">ACİL<" in html
+    assert ">KALİBRASYON<" in html
+    assert ">MUAYENE<" in html
+    assert ">DÜZELTİCİ<" in html
+    assert "<th>İŞ TİPİ</th>" in html
+    assert ">KRİTİK<" in html
+    assert ">KRITIK<" not in html
+    assert "WO Tipi" not in html
+    assert ">EMERGENCY<" not in html
+
+
+def test_work_order_detail_uses_turkish_uppercase_for_visual_labels(client, app):
+    airport = HavalimaniFactory(kodu="ADB")
+    owner = KullaniciFactory(rol="sahip", havalimani=airport)
+    template = EquipmentTemplateFactory(name="Ölçüm Cihazı")
+    asset = InventoryAssetFactory(
+        equipment_template=template,
+        airport=airport,
+        serial_no="WO-DET-TR-1",
+        qr_code="WO-DET-TR-QR-1",
+    )
+    work_order = WorkOrder(
+        work_order_no="WO-DET-TR-1",
+        asset=asset,
+        maintenance_type="bakim",
+        work_order_type="inspection",
+        source_type="is_emri",
+        description="Türkçe upper görünüm testi",
+        created_user=owner,
+        assigned_user=owner,
+        status="acik",
+        priority="kritik",
+    )
+    db.session.add_all([airport, owner, template, asset, work_order])
+    db.session.commit()
+    _login(client, owner)
+
+    response = client.get(f"/bakim/is-emri/{work_order.id}")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "KRİTİK" in html
+    assert "KRITIK" not in html
+
+
 def test_next_maintenance_date_is_calculated_after_closure(client, app):
     today = get_tr_now().date()
     airport = HavalimaniFactory(kodu="ADB")

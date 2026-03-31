@@ -286,6 +286,35 @@ def test_airport_manager_can_upload_zip_tatbikat_document(client, app, monkeypat
     assert "ZIP Tatbikat Paketi" in response.data.decode("utf-8")
 
 
+def test_airport_manager_can_upload_zip_tatbikat_document_with_octet_stream_mime(client, app, monkeypatch):
+    fake_drive = _FakeDriveService()
+    monkeypatch.setattr("routes.inventory.get_drill_drive_service", lambda: fake_drive)
+
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Van", kodu="VAN")
+        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        db.session.add_all([airport, manager])
+        db.session.commit()
+        manager_id = manager.id
+        airport_id = airport.id
+
+    _login(client, manager_id)
+    response = client.post(
+        "/tatbikatlar/yukle",
+        data={
+            "airport_id": airport_id,
+            "title": "Octet Stream ZIP",
+            "drill_date": "2026-03-23",
+            "document": (io.BytesIO(b"PK\x03\x04zip"), "tatbikat.zip", "application/octet-stream"),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Octet Stream ZIP" in response.data.decode("utf-8")
+
+
 def test_airport_manager_can_upload_rar_tatbikat_document(client, app, monkeypatch):
     fake_drive = _FakeDriveService()
     monkeypatch.setattr("routes.inventory.get_drill_drive_service", lambda: fake_drive)
@@ -344,6 +373,32 @@ def test_airport_manager_can_upload_7z_tatbikat_document(client, app, monkeypatc
     assert response.status_code == 200
     assert "7Z Tatbikat Paketi" in response.data.decode("utf-8")
     assert fake_drive.upload_calls[-1]["filename"] == "25.03.2026_tatbikat.7z"
+
+
+def test_tatbikat_upload_rejects_octet_stream_when_archive_signature_is_invalid(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Rize", kodu="RZV")
+        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        db.session.add_all([airport, manager])
+        db.session.commit()
+        manager_id = manager.id
+        airport_id = airport.id
+
+    _login(client, manager_id)
+    response = client.post(
+        "/tatbikatlar/yukle",
+        data={
+            "airport_id": airport_id,
+            "title": "Sahte ZIP",
+            "drill_date": "2026-03-26",
+            "document": (io.BytesIO(b"not-an-archive"), "tatbikat.zip", "application/octet-stream"),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Arşiv dosyası türü doğrulanamadı. RAR, ZIP veya 7Z yükleyin." in response.data.decode("utf-8")
 
 
 def test_tatbikat_upload_rejects_pdf_extension(client, app):

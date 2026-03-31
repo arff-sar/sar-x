@@ -32,6 +32,7 @@ class BaseConfig:
     REMEMBER_COOKIE_HTTPONLY = True
     REMEMBER_COOKIE_SECURE = _bool_env("REMEMBER_COOKIE_SECURE", False)
     REMEMBER_COOKIE_SAMESITE = os.getenv("REMEMBER_COOKIE_SAMESITE", "Lax")
+    REMEMBER_COOKIE_DURATION = timedelta(days=int(os.getenv("REMEMBER_COOKIE_DURATION_DAYS", "7")))
     PERMANENT_SESSION_LIFETIME = timedelta(minutes=int(os.getenv("PERMANENT_SESSION_LIFETIME_MINUTES", "120")))
 
     # Request limits
@@ -41,7 +42,7 @@ class BaseConfig:
 
     # Rate limiting
     REDIS_URL = os.getenv("REDIS_URL")
-    RATELIMIT_STORAGE_URI = REDIS_URL or "memory://"
+    RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI") or REDIS_URL or "memory://"
     RATELIMIT_DEFAULT = os.getenv("RATELIMIT_DEFAULT", "120 per hour")
     RATELIMIT_HEADERS_ENABLED = True
 
@@ -56,7 +57,7 @@ class BaseConfig:
     PASSWORD_RESET_BASE_URL = os.getenv("PASSWORD_RESET_BASE_URL") or PUBLIC_BASE_URL
     CRITICAL_POST_RATE_LIMIT = os.getenv("CRITICAL_POST_RATE_LIMIT", "20 per minute")
     HOMEPAGE_EDITOR_CAN_PUBLISH = _bool_env("HOMEPAGE_EDITOR_CAN_PUBLISH", True)
-    ROLE_SWITCH_ALLOWED_USERS = os.getenv("ROLE_SWITCH_ALLOWED_USERS", os.getenv("ROLE_SWITCH_ALLOWED_EMAIL", "mehmetcinocevi@gmail.com"))
+    ROLE_SWITCH_ALLOWED_USERS = os.getenv("ROLE_SWITCH_ALLOWED_USERS") or os.getenv("ROLE_SWITCH_ALLOWED_EMAIL", "mehmetcinocevi@gmail.com")
     PASSKEY_ENABLED = _bool_env("PASSKEY_ENABLED", False)
     PASSKEY_RP_ID = os.getenv("PASSKEY_RP_ID", "")
     PASSKEY_RP_NAME = os.getenv("PASSKEY_RP_NAME", "SAR-X ARFF")
@@ -87,6 +88,7 @@ class BaseConfig:
     # Scheduler/runtime
     ENABLE_SCHEDULER = _bool_env("ENABLE_SCHEDULER", False)
     ALLOW_CLOUD_RUN_WEB_SCHEDULER = _bool_env("ALLOW_CLOUD_RUN_WEB_SCHEDULER", False)
+    ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION = _bool_env("ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION", False)
     AUTO_CREATE_TABLES = _bool_env("AUTO_CREATE_TABLES", False)
     ALLOW_SQLITE_IN_PRODUCTION = _bool_env("ALLOW_SQLITE_IN_PRODUCTION", False)
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

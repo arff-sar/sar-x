@@ -42,7 +42,11 @@ def test_dashboard_page_contains_mobile_compaction_rules(client, app):
     assert response.status_code == 200
     assert 'class="dashboard-actions"' in html
     assert 'class="dashboard-sections"' in html
+    assert '<body data-display-mode="browser">' in html
     assert "sarx.sidebar.open-group" in html
+    assert "window.matchMedia('(display-mode: standalone)')" in html
+    assert "window.navigator.standalone === true" in html
+    assert "document.body.classList.toggle('is-standalone', isStandalone);" in html
     assert "if (mobileSidebarMedia.matches)" in html
     assert ".quick-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));" in html
     assert "@media (max-width: 420px)" in html

@@ -375,7 +375,7 @@
                 {% set panel_id = 'inventory-row-' ~ loop.index %}
                 {% set linked_asset = m.linked_asset %}
                 {% set maintenance_label = maintenance_label_tr(m.gelecek_bakim_tarihi, today=today) %}
-                <tr class="inventory-summary-row" data-search-text="{{ (m.ad ~ ' ' ~ (m.seri_no or '') ~ ' ' ~ (m.havalimani.kodu if m.havalimani else '') ~ ' ' ~ (linked_asset.asset_code if linked_asset else ''))|lower }}">
+                <tr class="inventory-summary-row" data-search-text="{{ m.ad ~ ' ' ~ (m.seri_no or '') ~ ' ' ~ (m.havalimani.kodu if m.havalimani else '') ~ ' ' ~ (linked_asset.asset_code if linked_asset else '') }}">
                     <td class="col-no" data-label="Sıra"><strong>{{ loop.index }}</strong></td>
                     <td class="col-material" data-label="Malzeme">{{ m.ad }}</td>
                     <td class="col-airport" data-label="Birim" title="{{ m.havalimani.ad if m.havalimani else 'Bilinmiyor' }}">
@@ -488,17 +488,34 @@
 </div>
 
 <script>
+function normalizeLookupText(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    const translated = text
+        .replace(/[ıİI]/g, 'i')
+        .replace(/[şŞ]/g, 's')
+        .replace(/[ğĞ]/g, 'g')
+        .replace(/[üÜ]/g, 'u')
+        .replace(/[öÖ]/g, 'o')
+        .replace(/[çÇ]/g, 'c');
+    const lowered = translated.toLowerCase();
+    const normalized = typeof lowered.normalize === 'function'
+        ? lowered.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+        : lowered;
+    return normalized.trim();
+}
+
 function filterInventory() {
     const input = document.getElementById('inventorySearch');
-    const filter = (input.value || '').toLowerCase();
+    const filter = normalizeLookupText(input.value || '');
     const rows = document.querySelectorAll('#inventoryTable tbody tr.inventory-summary-row');
     const detailDisplayValue = window.matchMedia('(max-width: 900px)').matches ? 'block' : 'table-row';
 
     rows.forEach(function (summaryRow) {
-        const text = (summaryRow.getAttribute('data-search-text') || '').toLowerCase();
+        const text = normalizeLookupText(summaryRow.getAttribute('data-search-text') || '');
         const panelId = summaryRow.querySelector('[data-accordion-target]')?.getAttribute('data-accordion-target');
         const detailRow = panelId ? document.getElementById(panelId) : null;
-        const matched = text.indexOf(filter) > -1;
+        const matched = !filter || text.indexOf(filter) > -1;
 
         summaryRow.style.display = matched ? '' : 'none';
         if (detailRow) {

@@ -12,10 +12,21 @@ from tests.factories import (
     HavalimaniFactory,
     KutuFactory,
 )
-from extensions import db 
+from extensions import db, safe_display_filename
 from datetime import date
 
-from models import InventoryAsset, Malzeme, PPERecord # ✅ Sorgular için ekledik
+from models import AssignmentRecord, AssignmentRecipient, InventoryAsset, Malzeme, PPERecord # ✅ Sorgular için ekledik
+
+
+def test_safe_display_filename_preserves_turkish_names_for_visible_downloads():
+    assert safe_display_filename("Şule Işık.pdf", fallback="fallback.pdf", default_extension=".pdf") == "Şule Işık.pdf"
+    assert safe_display_filename("Çağrı Göğüş Formu.pdf", fallback="fallback.pdf", default_extension=".pdf") == "Çağrı Göğüş Formu.pdf"
+    assert safe_display_filename("İzmir Çiğli Zimmet.pdf", fallback="fallback.pdf", default_extension=".pdf") == "İzmir Çiğli Zimmet.pdf"
+
+
+def test_safe_display_filename_uses_secure_legacy_fallback_for_path_like_values():
+    assert safe_display_filename("AYT/zimmet/Belge_Alan/kkd_belge.pdf", fallback="ZMT-001.pdf", default_extension=".pdf") == "kkd_belge.pdf"
+    assert safe_display_filename("", fallback="ZMT-001.pdf", default_extension=".pdf") == "ZMT-001.pdf"
 
 # 1. YETKİ KONTROLÜ: Giriş yapmayan kullanıcı envanteri göremez
 def test_envanter_access_required_login(client):
@@ -293,6 +304,27 @@ def test_kkd_personnel_selection_opens_only_selected_accordion(client, app):
     assert "Hasarlı" in html
 
 
+def test_inventory_excel_upload_rejects_fake_xlsx_payload(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="inventory-fake-xlsx@sarx.com")
+    db.session.add(owner)
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(owner.id)
+        sess["_fresh"] = True
+
+    response = client.post(
+        "/malzeme-ekle/excel-yukle",
+        data={"excel_file": (io.BytesIO(b"not-a-real-xlsx"), "import.xlsx")},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Excel dosyası okunamadı." in response.data.decode("utf-8")
+
+
 def test_kkd_create_validates_manufacturer_url_and_size_rules(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
@@ -476,7 +508,7 @@ def test_kkd_signed_document_upload_uses_pdf_only_folder_standard(client, app):
         )
         response = client.post(
             f"/kkd/{record_id}/signed-document",
-            data={"signed_document": (io.BytesIO(b"%PDF-1.4 ppe"), "signed.pdf", "application/pdf")},
+            data={"signed_document": (io.BytesIO(b"%PDF-1.4 ppe"), "Çağrı Göğüş Formu.pdf", "application/pdf")},
             content_type="multipart/form-data",
             follow_redirects=True,
         )
@@ -487,6 +519,10 @@ def test_kkd_signed_document_upload_uses_pdf_only_folder_standard(client, app):
     assert upload_kwargs["folder"] == "AYT/zimmet/Belge_Alan"
     assert upload_kwargs["filename"].startswith("kkd_belge_alan_zimmet_")
     assert upload_kwargs["filename"].endswith(".pdf")
+    with app.app_context():
+        stored = db.session.get(PPERecord, record_id)
+        assert stored is not None
+        assert stored.signed_document_name == "Çağrı Göğüş Formu.pdf"
 
     reject_response = client.post(
         f"/kkd/{record_id}/signed-document",
@@ -495,6 +531,294 @@ def test_kkd_signed_document_upload_uses_pdf_only_folder_standard(client, app):
         follow_redirects=True,
     )
     assert "Dosya uzantısı desteklenmiyor." in reject_response.data.decode("utf-8")
+
+
+def test_kkd_excel_upload_rejects_fake_xlsx_payload(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="kkd-fake-xlsx@sarx.com")
+    db.session.add(owner)
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(owner.id)
+        sess["_fresh"] = True
+
+    response = client.post(
+        "/kkd/excel-yukle",
+        data={"excel_file": (io.BytesIO(b"not-a-real-xlsx"), "kkd-import.xlsx")},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "KKD Excel dosyası okunamadı." in response.data.decode("utf-8")
+
+
+def test_kkd_signed_document_download_streams_pdf_for_manager_scope_user(client, app, tmp_path):
+    pdf_bytes = b"%PDF-1.4 ppe-manager"
+    app.config["STORAGE_BACKEND"] = "local"
+    app.config["LOCAL_UPLOAD_ROOT"] = str(tmp_path)
+
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Antalya Havalimanı", kodu="AYT")
+        manager = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-manager@sarx.com")
+        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="KKD Alan")
+        db.session.add_all([airport, manager, recipient])
+        db.session.flush()
+        record = PPERecord(
+            user_id=recipient.id,
+            airport_id=airport.id,
+            category="Baş ve Yüz Koruması",
+            subcategory="Baret",
+            item_name="İmzalı Baret",
+            quantity=1,
+            status="aktif",
+            physical_condition="iyi",
+            is_active=True,
+            created_by_id=manager.id,
+            signed_document_key="AYT/zimmet/KKD_Alan/kkd_manager.pdf",
+            signed_document_url="/static/uploads/AYT/zimmet/KKD_Alan/kkd_manager.pdf",
+            signed_document_name="kkd_manager.pdf",
+        )
+        db.session.add(record)
+        db.session.commit()
+        manager_id = manager.id
+        record_id = record.id
+
+    target_path = tmp_path / "AYT" / "zimmet" / "KKD_Alan" / "kkd_manager.pdf"
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_bytes(pdf_bytes)
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(manager_id)
+        sess["_fresh"] = True
+
+    response = client.get(f"/kkd/{record_id}/signed-document/download")
+
+    assert response.status_code == 200
+    assert response.data == pdf_bytes
+    assert response.mimetype == "application/pdf"
+    assert "attachment;" in response.headers.get("Content-Disposition", "")
+    assert "kkd_manager.pdf" in response.headers.get("Content-Disposition", "")
+    assert response.headers.get("Location") is None
+    assert response.headers.get("Cache-Control") == "no-store, no-cache, must-revalidate, max-age=0, private"
+
+
+def test_kkd_signed_document_download_uses_person_scope_and_local_public_url_fallback(client, app, tmp_path):
+    pdf_bytes = b"%PDF-1.4 ppe-person"
+    app.config["STORAGE_BACKEND"] = "local"
+    app.config["LOCAL_UPLOAD_ROOT"] = str(tmp_path)
+
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Adana Havalimanı", kodu="ADA")
+        manager = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-owner@sarx.com")
+        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="KKD Belge Sahibi")
+        db.session.add_all([airport, manager, recipient])
+        db.session.flush()
+        record = PPERecord(
+            user_id=recipient.id,
+            airport_id=airport.id,
+            category="Baş ve Yüz Koruması",
+            subcategory="Vizör",
+            item_name="İmzalı Vizör",
+            quantity=1,
+            status="aktif",
+            physical_condition="iyi",
+            is_active=True,
+            created_by_id=manager.id,
+            signed_document_key=None,
+            signed_document_url="/static/uploads/ADA/zimmet/KKD_Belge_Sahibi/kkd_person.pdf",
+            signed_document_name="kkd_person.pdf",
+        )
+        db.session.add(record)
+        db.session.commit()
+        recipient_id = recipient.id
+        record_id = record.id
+
+    target_path = tmp_path / "ADA" / "zimmet" / "KKD_Belge_Sahibi" / "kkd_person.pdf"
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_bytes(pdf_bytes)
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(recipient_id)
+        sess["_fresh"] = True
+
+    response = client.get(f"/kkd/{record_id}/signed-document/download")
+
+    assert response.status_code == 200
+    assert response.data == pdf_bytes
+    assert response.mimetype == "application/pdf"
+    assert "kkd_person.pdf" in response.headers.get("Content-Disposition", "")
+
+
+def test_kkd_signed_document_download_denies_unrelated_user(client, app, tmp_path):
+    app.config["STORAGE_BACKEND"] = "local"
+    app.config["LOCAL_UPLOAD_ROOT"] = str(tmp_path)
+
+    with app.app_context():
+        airport = HavalimaniFactory(ad="İzmir Havalimanı", kodu="ADB")
+        manager = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-manager-2@sarx.com")
+        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Yetkili KKD")
+        unrelated = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Yetkisiz KKD")
+        db.session.add_all([airport, manager, recipient, unrelated])
+        db.session.flush()
+        record = PPERecord(
+            user_id=recipient.id,
+            airport_id=airport.id,
+            category="Vücut Koruması",
+            subcategory="Reflektif Yelek",
+            item_name="İmzalı Yelek",
+            quantity=1,
+            status="aktif",
+            physical_condition="iyi",
+            is_active=True,
+            created_by_id=manager.id,
+            signed_document_key="ADB/zimmet/Yetkili_KKD/kkd_deny.pdf",
+            signed_document_url="/static/uploads/ADB/zimmet/Yetkili_KKD/kkd_deny.pdf",
+            signed_document_name="kkd_deny.pdf",
+        )
+        db.session.add(record)
+        db.session.commit()
+        unrelated_id = unrelated.id
+        record_id = record.id
+
+    target_path = tmp_path / "ADB" / "zimmet" / "Yetkili_KKD" / "kkd_deny.pdf"
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_bytes(b"%PDF-1.4 ppe-deny")
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(unrelated_id)
+        sess["_fresh"] = True
+
+    response = client.get(f"/kkd/{record_id}/signed-document/download")
+
+    assert response.status_code == 404
+
+
+def test_assignment_signed_document_download_streams_pdf_for_airport_scope_user(client, app, tmp_path):
+    pdf_bytes = b"%PDF-1.4 assignment-owner"
+    app.config["STORAGE_BACKEND"] = "local"
+    app.config["LOCAL_UPLOAD_ROOT"] = str(tmp_path)
+
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Antalya Havalimanı", kodu="AYT")
+        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="zimmet-owner@sarx.com")
+        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Belge Alan")
+        db.session.add_all([airport, owner, recipient])
+        db.session.flush()
+        assignment = AssignmentRecord(
+            assignment_no="ZMT-OWNER-001",
+            airport_id=airport.id,
+            created_by_id=owner.id,
+            signed_document_key="AYT/zimmet/Belge_Alan/zimmet_owner.pdf",
+            signed_document_url="/static/uploads/AYT/zimmet/Belge_Alan/zimmet_owner.pdf",
+            signed_document_name="zimmet_owner.pdf",
+        )
+        db.session.add(assignment)
+        db.session.flush()
+        db.session.add(AssignmentRecipient(assignment_id=assignment.id, user_id=recipient.id))
+        db.session.commit()
+        assignment_id = assignment.id
+        owner_id = owner.id
+
+    target_path = tmp_path / "AYT" / "zimmet" / "Belge_Alan" / "zimmet_owner.pdf"
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_bytes(pdf_bytes)
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(owner_id)
+        sess["_fresh"] = True
+
+    response = client.get(f"/zimmetler/{assignment_id}/signed-document/download")
+
+    assert response.status_code == 200
+    assert response.data == pdf_bytes
+    assert response.mimetype == "application/pdf"
+    assert "attachment;" in response.headers.get("Content-Disposition", "")
+    assert "zimmet_owner.pdf" in response.headers.get("Content-Disposition", "")
+    assert response.headers.get("Location") is None
+    assert response.headers.get("Cache-Control") == "no-store, no-cache, must-revalidate, max-age=0, private"
+
+
+def test_assignment_signed_document_download_uses_recipient_scope_and_local_public_url_fallback(client, app, tmp_path):
+    pdf_bytes = b"%PDF-1.4 assignment-recipient"
+    app.config["STORAGE_BACKEND"] = "local"
+    app.config["LOCAL_UPLOAD_ROOT"] = str(tmp_path)
+
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Adana Havalimanı", kodu="ADA")
+        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="zimmet-manager@sarx.com")
+        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Belge Alıcısı")
+        db.session.add_all([airport, owner, recipient])
+        db.session.flush()
+        assignment = AssignmentRecord(
+            assignment_no="ZMT-RECIPIENT-001",
+            airport_id=airport.id,
+            created_by_id=owner.id,
+            signed_document_key=None,
+            signed_document_url="/static/uploads/ADA/zimmet/Belge_Alicisi/zimmet_recipient.pdf",
+            signed_document_name="zimmet_recipient.pdf",
+        )
+        db.session.add(assignment)
+        db.session.flush()
+        db.session.add(AssignmentRecipient(assignment_id=assignment.id, user_id=recipient.id))
+        db.session.commit()
+        assignment_id = assignment.id
+        recipient_id = recipient.id
+
+    target_path = tmp_path / "ADA" / "zimmet" / "Belge_Alicisi" / "zimmet_recipient.pdf"
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_bytes(pdf_bytes)
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(recipient_id)
+        sess["_fresh"] = True
+
+    response = client.get(f"/zimmetler/{assignment_id}/signed-document/download")
+
+    assert response.status_code == 200
+    assert response.data == pdf_bytes
+    assert response.mimetype == "application/pdf"
+    assert "zimmet_recipient.pdf" in response.headers.get("Content-Disposition", "")
+
+
+def test_assignment_signed_document_download_denies_unrelated_user(client, app, tmp_path):
+    app.config["STORAGE_BACKEND"] = "local"
+    app.config["LOCAL_UPLOAD_ROOT"] = str(tmp_path)
+
+    with app.app_context():
+        airport = HavalimaniFactory(ad="İzmir Havalimanı", kodu="ADB")
+        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="zimmet-owner-2@sarx.com")
+        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Yetkili Personel")
+        unrelated = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Yetkisiz Personel")
+        db.session.add_all([airport, owner, recipient, unrelated])
+        db.session.flush()
+        assignment = AssignmentRecord(
+            assignment_no="ZMT-DENY-001",
+            airport_id=airport.id,
+            created_by_id=owner.id,
+            signed_document_key="ADB/zimmet/Yetkili_Personel/zimmet_deny.pdf",
+            signed_document_url="/static/uploads/ADB/zimmet/Yetkili_Personel/zimmet_deny.pdf",
+            signed_document_name="zimmet_deny.pdf",
+        )
+        db.session.add(assignment)
+        db.session.flush()
+        db.session.add(AssignmentRecipient(assignment_id=assignment.id, user_id=recipient.id))
+        db.session.commit()
+        assignment_id = assignment.id
+        unrelated_id = unrelated.id
+
+    target_path = tmp_path / "ADB" / "zimmet" / "Yetkili_Personel" / "zimmet_deny.pdf"
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_bytes(b"%PDF-1.4 assignment-deny")
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(unrelated_id)
+        sess["_fresh"] = True
+
+    response = client.get(f"/zimmetler/{assignment_id}/signed-document/download")
+
+    assert response.status_code == 404
 
 
 def test_asset_qr_image_payload_uses_detail_url_even_when_legacy_qr_code_exists(client, app, monkeypatch):
@@ -570,8 +894,15 @@ def test_bakim_kaydet_success(client, app):
 # 7. RAPORLAMA: Excel ve PDF çıktıları (Kapsam Artırıcı)
 def test_export_routes(client, app):
     user = KullaniciFactory(rol="sahip")
-    m = MalzemeFactory()
-    db.session.add_all([user, m])
+    airport = HavalimaniFactory(kodu="ERZ", ad="Erzurum Havalimanı")
+    box = KutuFactory(kodu="ERZ-SAR-01", havalimani=airport)
+    m = MalzemeFactory(
+        ad="Export Test Malzemesi",
+        havalimani=airport,
+        kutu=box,
+        seri_no="EXP-001",
+    )
+    db.session.add_all([user, airport, box, m])
     db.session.commit()
 
     with client.session_transaction() as sess:
@@ -582,6 +913,10 @@ def test_export_routes(client, app):
     excel_res = client.get('/envanter/excel')
     assert excel_res.status_code == 200
     assert excel_res.mimetype == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    workbook = load_workbook(io.BytesIO(excel_res.data))
+    rows = list(workbook.active.iter_rows(values_only=True))
+    assert rows[0] == ("Birim", "Kutu", "Malzeme Adı", "Seri No", "Durum", "Son Bakım", "Gelecek Bakım")
+    assert ("ERZ", "ERZ-SAR-01", "Export Test Malzemesi", "EXP-001", m.durum, "-", "-") in rows[1:]
 
     # PDF Testi
     pdf_res = client.get('/envanter/pdf')

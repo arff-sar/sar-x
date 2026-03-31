@@ -52,7 +52,13 @@ self.addEventListener('fetch', (event) => {
 // --- OFFLINE SYNC (BACKGROUND SYNC) BÖLÜMÜ ---
 
 async function getDB() {
-    return await idb.openDB('SAR_Offline_DB', 1);
+    return await idb.openDB('SAR_Offline_DB', 2, {
+        upgrade(db) {
+            if (!db.objectStoreNames.contains('bekleyen_bakimlar')) {
+                db.createObjectStore('bekleyen_bakimlar', { keyPath: 'id', autoIncrement: true });
+            }
+        },
+    });
 }
 
 // Cihaz internete bağlandığında işletim sistemi tarafından tetiklenir

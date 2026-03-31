@@ -2,6 +2,7 @@ import io
 import base64
 import json
 import mimetypes
+import zipfile
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 from datetime import datetime, timedelta
@@ -23,13 +24,16 @@ from extensions import (
     create_approval_request,
     create_notification,
     create_notification_once,
+    compact_log_detail,
     db,
     guvenli_metin,
     is_allowed_file,
     is_allowed_mime,
     limiter,
     log_kaydet,
+    safe_display_filename,
     secure_upload_filename,
+    shorten_external_reference,
 )
 from models import (
     ApprovalRequest,
@@ -99,6 +103,7 @@ from services.inventory_excel_service import (
 )
 from services.inventory_template_service import form_label_map
 from services.qr_service import assign_asset_qr
+from services.text_normalization_service import turkish_contains, turkish_equals
 
 
 inventory_bp = Blueprint("inventory", __name__)
@@ -341,6 +346,41 @@ def _drill_file_size(upload):
     return int(size or 0)
 
 
+def _detect_drill_archive_signature(upload):
+    stream = getattr(upload, "stream", None)
+    if stream is None:
+        return None
+
+    try:
+        position = stream.tell()
+    except Exception:
+        position = None
+
+    try:
+        if position is not None:
+            stream.seek(0)
+        header = stream.read(8) or b""
+    except Exception:
+        header = b""
+    finally:
+        try:
+            if position is not None:
+                stream.seek(position)
+            else:
+                stream.seek(0)
+        except Exception:
+            pass
+
+    zip_signatures = (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")
+    if any(header.startswith(signature) for signature in zip_signatures):
+        return "zip"
+    if header.startswith(b"Rar!\x1a\x07\x00") or header.startswith(b"Rar!\x1a\x07\x01\x00"):
+        return "rar"
+    if header.startswith(b"7z\xbc\xaf\x27\x1c"):
+        return "7z"
+    return None
+
+
 def _validate_drill_upload(upload):
     if not upload or not upload.filename:
         return None, None, "Yüklenecek dosya seçilmedi."
@@ -349,6 +389,7 @@ def _validate_drill_upload(upload):
         return None, None, "Dosya adı güvenli hale getirilemedi."
     if not is_allowed_file(safe_name, DRILL_ALLOWED_EXTENSIONS):
         return None, None, "Sadece RAR, ZIP veya 7Z arşiv dosyası yükleyebilirsiniz."
+    extension = safe_name.rsplit(".", 1)[1].lower()
 
     file_size = _drill_file_size(upload)
     if file_size <= 0:
@@ -360,6 +401,9 @@ def _validate_drill_upload(upload):
 
     mime_type = getattr(upload, "mimetype", None) or mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
     if not any(mime_type.startswith(prefix) for prefix in DRILL_ALLOWED_MIME_TYPES):
+        return None, None, "Arşiv dosyası türü doğrulanamadı. RAR, ZIP veya 7Z yükleyin."
+    detected_archive_type = _detect_drill_archive_signature(upload)
+    if detected_archive_type != extension:
         return None, None, "Arşiv dosyası türü doğrulanamadı. RAR, ZIP veya 7Z yükleyin."
     return safe_name, mime_type, None
 
@@ -566,6 +610,36 @@ def _validate_upload(upload, allowed_extensions, allowed_mime_prefixes):
     if not is_allowed_mime(safe_name, allowed_mime_prefixes=allowed_mime_prefixes, upload=upload):
         return None, "Dosya türü desteklenmiyor."
     return safe_name, None
+
+
+def _is_valid_xlsx_workbook(upload):
+    stream = getattr(upload, "stream", None)
+    if stream is None:
+        return False
+
+    try:
+        position = stream.tell()
+    except Exception:
+        position = None
+
+    try:
+        if position is not None:
+            stream.seek(0)
+        with zipfile.ZipFile(stream) as workbook_archive:
+            names = set(workbook_archive.namelist())
+    except Exception:
+        return False
+    finally:
+        try:
+            if position is not None:
+                stream.seek(position)
+            else:
+                stream.seek(0)
+        except Exception:
+            pass
+
+    required_entries = {"[Content_Types].xml", "_rels/.rels", "xl/workbook.xml"}
+    return required_entries.issubset(names)
 
 
 def _pdf_link_callback(uri, _rel):
@@ -1855,14 +1929,15 @@ def envanter():
     )
     if _can_view_all_operational_scope() and selected_airport:
         query = query.filter(Malzeme.havalimani_id == selected_airport)
-    if selected_category:
-        query = (
-            query.join(Malzeme.linked_asset)
-            .join(InventoryAsset.equipment_template)
-            .filter(sa.func.lower(EquipmentTemplate.category) == selected_category.lower())
-        )
-
     malzemeler = query.order_by(Malzeme.created_at.desc()).all()
+    if selected_category:
+        malzemeler = [
+            malzeme
+            for malzeme in malzemeler
+            if malzeme.linked_asset
+            and malzeme.linked_asset.equipment_template
+            and turkish_equals(malzeme.linked_asset.equipment_template.category, selected_category)
+        ]
     malzemeler = [
         malzeme
         for malzeme in malzemeler
@@ -2108,6 +2183,9 @@ def malzeme_excel_yukle():
     if not safe_name.lower().endswith(".xlsx"):
         flash("Sadece .xlsx formatı desteklenir.", "danger")
         return redirect(url_for("inventory.malzeme_ekle"))
+    if not _is_valid_xlsx_workbook(upload):
+        flash("Excel dosyası okunamadı.", "danger")
+        return redirect(url_for("inventory.malzeme_ekle"))
 
     try:
         rows = parse_inventory_workbook(upload)
@@ -2226,10 +2304,17 @@ def envanter_kategori_ekle():
         flash("Kategori adı zorunludur.", "danger")
         return redirect(url_for("inventory.malzeme_ekle"))
 
-    exists = InventoryCategory.query.filter(
-        InventoryCategory.is_deleted.is_(False),
-        sa.func.lower(InventoryCategory.name) == sa.func.lower(name),
-    ).first()
+    normalized_name = normalize_lookup(name)
+    exists = next(
+        (
+            item
+            for item in InventoryCategory.query.filter(
+                InventoryCategory.is_deleted.is_(False)
+            ).all()
+            if normalize_lookup(item.name) == normalized_name
+        ),
+        None,
+    )
     if exists:
         flash("Bu kategori zaten mevcut.", "warning")
         return redirect(url_for("inventory.malzeme_ekle"))
@@ -2475,7 +2560,10 @@ def bakim_kaydet(id):
 @login_required
 @permission_required("inventory.export")
 def envanter_excel():
-    malzemeler = havalimani_filtreli_sorgu(Malzeme).all()
+    malzemeler = havalimani_filtreli_sorgu(Malzeme).options(
+        joinedload(Malzeme.havalimani),
+        joinedload(Malzeme.kutu),
+    ).all()
     if len(malzemeler) > int(current_app.config.get("MAX_EXPORT_ROWS", 10000)):
         abort(413)
     data = [
@@ -2543,7 +2631,10 @@ def malzeme_sil(id):
 @login_required
 @permission_required("inventory.export")
 def envanter_pdf():
-    malzemeler = havalimani_filtreli_sorgu(Malzeme).all()
+    malzemeler = havalimani_filtreli_sorgu(Malzeme).options(
+        joinedload(Malzeme.havalimani),
+        joinedload(Malzeme.kutu),
+    ).all()
     if len(malzemeler) > int(current_app.config.get("MAX_EXPORT_ROWS", 10000)):
         abort(413)
     html = render_template("pdf_sablonu.html", malzemeler=malzemeler, tarih=datetime.now(TR_TZ))
@@ -2777,11 +2868,17 @@ def zimmet_imzali_belge_yukle(assignment_id):
         return redirect(url_for("inventory.zimmet_detay", assignment_id=assignment.id))
 
     filename = _assignment_signed_document_filename(assignment)
+    display_name = safe_display_filename(
+        getattr(upload, "filename", "") or filename,
+        fallback=filename,
+        default_extension=".pdf",
+        max_length=180,
+    )
     folder = _assignment_signed_document_folder(assignment)
     stored = get_storage_adapter().save_upload(upload, folder=folder, filename=filename)
     assignment.signed_document_key = stored.storage_key
     assignment.signed_document_url = stored.public_url
-    assignment.signed_document_name = filename
+    assignment.signed_document_name = display_name
     _append_assignment_history(assignment, "signed_upload", "İmzalı belge yüklendi.")
     db.session.commit()
 
@@ -2801,10 +2898,43 @@ def zimmet_imzali_belge_yukle(assignment_id):
 @permission_required("assignment.view")
 def zimmet_imzali_belge_indir(assignment_id):
     assignment = _assignment_scope().filter(AssignmentRecord.id == assignment_id).first_or_404()
-    if not assignment.signed_document_url:
+    storage_adapter = get_storage_adapter()
+    storage_key = (assignment.signed_document_key or "").strip()
+    if not storage_key and assignment.signed_document_url:
+        storage_key = storage_adapter.storage_key_from_public_url(assignment.signed_document_url) or ""
+    if not storage_key:
         flash("Bu zimmet için yüklü imzalı belge bulunmuyor.", "warning")
         return redirect(url_for("inventory.zimmet_detay", assignment_id=assignment.id))
-    return redirect(assignment.signed_document_url)
+    try:
+        signed_document = storage_adapter.read_bytes(storage_key)
+    except FileNotFoundError:
+        current_app.logger.warning(
+            "Zimmet imzali belge bulunamadi | assignment_id=%s storage_key=%s",
+            assignment.id,
+            storage_key,
+        )
+        flash("Bu zimmet için yüklü imzalı belgeye erişilemiyor.", "warning")
+        return redirect(url_for("inventory.zimmet_detay", assignment_id=assignment.id))
+    except Exception:
+        current_app.logger.exception(
+            "Zimmet imzali belge indirilirken hata olustu | assignment_id=%s storage_key=%s",
+            assignment.id,
+            storage_key,
+        )
+        flash("Bu zimmet için yüklü imzalı belgeye erişilemiyor.", "warning")
+        return redirect(url_for("inventory.zimmet_detay", assignment_id=assignment.id))
+    download_name = safe_display_filename(
+        assignment.signed_document_name,
+        fallback=f"{assignment.assignment_no}.pdf",
+        default_extension=".pdf",
+        max_length=180,
+    )
+    return send_file(
+        io.BytesIO(signed_document),
+        download_name=download_name,
+        as_attachment=True,
+        mimetype="application/pdf",
+    )
 
 
 @inventory_bp.route("/zimmetler/<int:assignment_id>/iade", methods=["POST"])
@@ -3315,11 +3445,17 @@ def kkd_signed_document_upload(record_id):
     airport_label = getattr(getattr(record, "airport", None), "kodu", "") or getattr(getattr(record, "airport", None), "ad", "") or "global"
     person_label = getattr(getattr(record, "user", None), "tam_ad", "") or "personel"
     filename = _signed_document_filename_for_person(person_label)
+    display_name = safe_display_filename(
+        getattr(upload, "filename", "") or filename,
+        fallback=filename,
+        default_extension=".pdf",
+        max_length=180,
+    )
     folder = _signed_document_folder_for_person(airport_label, person_label)
     stored = get_storage_adapter().save_upload(upload, folder=folder, filename=filename)
     record.signed_document_key = stored.storage_key
     record.signed_document_url = stored.public_url
-    record.signed_document_name = filename
+    record.signed_document_name = display_name
     db.session.add(
         PPERecordEvent(
             ppe_record_id=record.id,
@@ -3339,10 +3475,43 @@ def kkd_signed_document_upload(record_id):
 @permission_required("ppe.view")
 def kkd_signed_document_download(record_id):
     record = _ppe_scope().filter(PPERecord.id == record_id).first_or_404()
-    if not record.signed_document_url:
+    storage_adapter = get_storage_adapter()
+    storage_key = (record.signed_document_key or "").strip()
+    if not storage_key and record.signed_document_url:
+        storage_key = storage_adapter.storage_key_from_public_url(record.signed_document_url) or ""
+    if not storage_key:
         flash("Bu KKD kaydı için yüklü imzalı PDF bulunmuyor.", "warning")
         return redirect(url_for("inventory.kkd_listesi", user_id=record.user_id if has_permission("ppe.manage") else None))
-    return redirect(record.signed_document_url)
+    try:
+        signed_document = storage_adapter.read_bytes(storage_key)
+    except FileNotFoundError:
+        current_app.logger.warning(
+            "KKD imzali belge bulunamadi | record_id=%s storage_key=%s",
+            record.id,
+            storage_key,
+        )
+        flash("Bu KKD kaydı için yüklü imzalı PDF'e erişilemiyor.", "warning")
+        return redirect(url_for("inventory.kkd_listesi", user_id=record.user_id if has_permission("ppe.manage") else None))
+    except Exception:
+        current_app.logger.exception(
+            "KKD imzali belge indirilirken hata olustu | record_id=%s storage_key=%s",
+            record.id,
+            storage_key,
+        )
+        flash("Bu KKD kaydı için yüklü imzalı PDF'e erişilemiyor.", "warning")
+        return redirect(url_for("inventory.kkd_listesi", user_id=record.user_id if has_permission("ppe.manage") else None))
+    download_name = safe_display_filename(
+        record.signed_document_name,
+        fallback="kkd_imzali_belge.pdf",
+        default_extension=".pdf",
+        max_length=180,
+    )
+    return send_file(
+        io.BytesIO(signed_document),
+        download_name=download_name,
+        as_attachment=True,
+        mimetype="application/pdf",
+    )
 
 
 @inventory_bp.route("/kkd/excel-sablon")
@@ -3372,6 +3541,9 @@ def kkd_excel_yukle():
     safe_name = secure_upload_filename(upload.filename or "")
     if not safe_name.lower().endswith(".xlsx"):
         flash("Sadece .xlsx formatı desteklenir.", "danger")
+        return redirect(url_for("inventory.kkd_listesi"))
+    if not _is_valid_xlsx_workbook(upload):
+        flash("KKD Excel dosyası okunamadı.", "danger")
         return redirect(url_for("inventory.kkd_listesi"))
 
     try:
@@ -3637,7 +3809,7 @@ def tatbikat_yukle():
         db.session.commit()
     except GoogleDriveError as exc:
         db.session.rollback()
-        current_app.logger.warning("Tatbikat belgesi Drive'a yuklenemedi: %s", exc)
+        current_app.logger.warning("Tatbikat belgesi Drive'a yuklenemedi: %s", compact_log_detail(exc, limit=160))
         flash("Tatbikat belgesi Google Drive'a yüklenemedi.", "danger")
         return redirect(url_for("inventory.tatbikat_listesi", airport_id=airport_id))
     except Exception:
@@ -3653,7 +3825,7 @@ def tatbikat_yukle():
 
     log_kaydet(
         "Tatbikat",
-        f"Tatbikat belgesi yüklendi: {record.baslik}",
+        f"Tatbikat belgesi yüklendi: {compact_log_detail(record.baslik, limit=80)}",
         event_key="drill.upload",
         target_model="TatbikatBelgesi",
         target_id=record.id,
@@ -3684,7 +3856,10 @@ def tatbikat_indir(document_id):
     try:
         payload = get_drill_drive_service().download_file(document.drive_file_id)
     except GoogleDriveError:
-        current_app.logger.warning("Tatbikat belgesi indirilemedi: %s", document.drive_file_id)
+        current_app.logger.warning(
+            "Tatbikat belgesi indirilemedi: %s",
+            shorten_external_reference(document.drive_file_id),
+        )
         flash("Tatbikat belgesine şu an erişilemiyor.", "danger")
         return redirect(url_for("inventory.tatbikat_detay", document_id=document.id))
 
@@ -3704,7 +3879,10 @@ def tatbikat_goruntule(document_id):
     try:
         payload = get_drill_drive_service().download_file(document.drive_file_id)
     except GoogleDriveError:
-        current_app.logger.warning("Tatbikat belgesi goruntulenemedi: %s", document.drive_file_id)
+        current_app.logger.warning(
+            "Tatbikat belgesi goruntulenemedi: %s",
+            shorten_external_reference(document.drive_file_id),
+        )
         flash("Tatbikat belgesine şu an erişilemiyor.", "danger")
         return redirect(url_for("inventory.tatbikat_detay", document_id=document.id))
 
@@ -3729,7 +3907,10 @@ def tatbikat_sil(document_id):
     try:
         get_drill_drive_service().delete_file(document.drive_file_id)
     except GoogleDriveError:
-        current_app.logger.warning("Tatbikat belgesi Drive'dan silinemedi: %s", document.drive_file_id)
+        current_app.logger.warning(
+            "Tatbikat belgesi Drive'dan silinemedi: %s",
+            shorten_external_reference(document.drive_file_id),
+        )
         flash("Tatbikat belgesi Google Drive'dan silinemedi.", "danger")
         return redirect(url_for("inventory.tatbikat_detay", document_id=document.id))
 
@@ -3737,7 +3918,7 @@ def tatbikat_sil(document_id):
     db.session.commit()
     log_kaydet(
         "Tatbikat",
-        f"Tatbikat belgesi silindi: {document.baslik}",
+        f"Tatbikat belgesi silindi: {compact_log_detail(document.baslik, limit=80)}",
         event_key="drill.delete",
         target_model="TatbikatBelgesi",
         target_id=document.id,
@@ -3763,7 +3944,7 @@ def google_drive_oauth_callback():
     try:
         token_payload = get_drill_drive_service().exchange_authorization_code(code)
     except GoogleDriveError as exc:
-        current_app.logger.warning("Google Drive OAuth callback başarısız: %s", exc)
+        current_app.logger.warning("Google Drive OAuth callback başarısız: %s", compact_log_detail(exc, limit=160))
         flash("Google Drive yetkilendirmesi alınamadı.", "danger")
         return _redirect_after_google_oauth()
 
@@ -4226,10 +4407,12 @@ def kutular():
     query = _box_scope()
     if selected_airport:
         query = query.filter(Kutu.havalimani_id == selected_airport)
-    if selected_brand:
-        query = query.filter(Kutu.marka.ilike(f"%{selected_brand}%"))
-
     kutular_listesi = query.order_by(Kutu.kodu.asc()).all()
+    if selected_brand:
+        kutular_listesi = [
+            box for box in kutular_listesi
+            if turkish_contains(box.marka, selected_brand)
+        ]
     manageable_box_ids = {box.id for box in kutular_listesi if _can_manage_box_airport(box.havalimani_id)}
     can_create_box = bool(has_permission("inventory.create") and (current_user.is_sahip or current_user.is_airport_manager))
     return render_template(

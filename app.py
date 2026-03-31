@@ -51,6 +51,29 @@ from extensions import table_exists
 load_dotenv()
 
 
+def _normalize_config_name(value):
+    return str(value or "").strip().lower()
+
+
+def _resolve_runtime_config_name(config_name=None):
+    explicit_name = _normalize_config_name(config_name)
+    runtime_name = _normalize_config_name(os.getenv("APP_ENV") or os.getenv("FLASK_ENV"))
+    selected_name = explicit_name or runtime_name
+    if selected_name:
+        if selected_name not in config_by_name:
+            raise RuntimeError(
+                "Geçersiz uygulama ortamı tanımı. "
+                "APP_ENV/FLASK_ENV veya create_app(config_name) değeri "
+                "'development', 'testing' veya 'production' olmalıdır."
+            )
+        return selected_name
+
+    if os.getenv("FLASK_RUN_FROM_CLI"):
+        return "development"
+
+    return "production"
+
+
 def _configure_logging(app):
     log_level = getattr(logging, str(app.config.get("LOG_LEVEL", "INFO")).upper(), logging.INFO)
     formatter = logging.Formatter(
@@ -214,6 +237,7 @@ def _apply_runtime_env_overrides(app):
         "MAIL_PASSWORD_SECRET_VERSION",
         "SMTP_PASSWORD",
         "REDIS_URL",
+        "RATELIMIT_STORAGE_URI",
         "LOG_LEVEL",
         "STORAGE_BACKEND",
         "LOCAL_UPLOAD_ROOT",
@@ -238,6 +262,7 @@ def _apply_runtime_env_overrides(app):
 
     int_keys = {
         "MAIL_PORT": 587,
+        "REMEMBER_COOKIE_DURATION_DAYS": 7,
         "PERMANENT_SESSION_LIFETIME_MINUTES": 120,
         "PASSKEY_CHALLENGE_TTL_SECONDS": 180,
         "MAX_CONTENT_LENGTH": 16 * 1024 * 1024,
@@ -258,6 +283,10 @@ def _apply_runtime_env_overrides(app):
             from datetime import timedelta
 
             app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=parsed)
+        elif env_key == "REMEMBER_COOKIE_DURATION_DAYS":
+            from datetime import timedelta
+
+            app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=parsed)
         else:
             app.config[env_key] = parsed
 
@@ -274,6 +303,7 @@ def _apply_runtime_env_overrides(app):
         "DEMO_TOOLS_ENABLED",
         "GCS_MAKE_UPLOADS_PUBLIC",
         "ALLOW_CLOUD_RUN_WEB_SCHEDULER",
+        "ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION",
         "PASSKEY_ENABLED",
     ]
     for key in bool_keys:
@@ -281,7 +311,9 @@ def _apply_runtime_env_overrides(app):
         if parsed is not None:
             app.config[key] = parsed
 
-    if app.config.get("REDIS_URL"):
+    if app.config.get("RATELIMIT_STORAGE_URI"):
+        app.config["RATELIMIT_STORAGE_URI"] = app.config.get("RATELIMIT_STORAGE_URI")
+    elif app.config.get("REDIS_URL"):
         app.config["RATELIMIT_STORAGE_URI"] = app.config.get("REDIS_URL")
 
 
@@ -492,13 +524,8 @@ def _site_settings_seed_ready():
 def create_app(config_name=None):
     app = Flask(__name__)
 
-    selected_env = (
-        config_name
-        or os.getenv("APP_ENV")
-        or os.getenv("FLASK_ENV")
-        or "development"
-    ).lower()
-    config_class = config_by_name.get(selected_env, DevelopmentConfig)
+    selected_env = _resolve_runtime_config_name(config_name)
+    config_class = config_by_name[selected_env]
     app.config.from_object(config_class)
     _apply_runtime_env_overrides(app)
 
@@ -530,9 +557,17 @@ def create_app(config_name=None):
     rate_limit_storage = str(app.config.get("RATELIMIT_STORAGE_URI", ""))
     if rate_limit_storage.startswith("memory://"):
         if selected_env == "production":
-            app.logger.warning(
-                "Production ortamında REDIS_URL tanımlı değil; rate-limit storage memory:// fallback ile çalışıyor. Çoklu instance ortamında brute-force ve oran sınırlama koruması zayıflayabilir."
-            )
+            if app.config.get("ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION"):
+                app.logger.warning(
+                    "Production ortamında rate-limit storage memory:// olarak açık override ile çalışıyor. "
+                    "Bu yapı tek-instance/smoke senaryoları dışında önerilmez."
+                )
+            else:
+                raise RuntimeError(
+                    "Production ortamında memory:// rate-limit storage kullanılamaz. "
+                    "REDIS_URL veya RATELIMIT_STORAGE_URI tanımlayın; "
+                    "zorunlu tek-instance/smoke senaryosu için ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION=1 kullanın."
+                )
         elif selected_env != "testing":
             app.logger.warning(
                 "REDIS_URL tanımlı değil. Development ortamında memory rate-limit storage ile devam ediliyor."
@@ -1338,7 +1373,7 @@ def create_app(config_name=None):
 
 
 if __name__ == "__main__":
-    app = create_app()
+    app = create_app(os.getenv("APP_ENV") or os.getenv("FLASK_ENV") or "development")
     app.run(
         host="0.0.0.0",
         port=int(os.getenv("PORT", "8080")),

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% macro tr_upper(value) -%}{{ ((value or '')|replace('i', 'İ')|replace('ı', 'I')|upper) }}{%- endmacro %}
 {% block title %}Bakım Paneli{% endblock %}
 
 {% block body %}
@@ -87,8 +88,8 @@
                     {% for order in open_orders[:10] %}
                     <tr>
                         <td><a href="{{ url_for('maintenance.is_emri_detay', work_order_id=order.id) }}">{{ order.work_order_no }}</a></td>
-                        <td>{{ order.status|replace('_',' ')|upper }}</td>
-                        <td>{{ order.priority|upper }}</td>
+                        <td>{{ tr_upper(order.status|replace('_',' ')) }}</td>
+                        <td>{{ tr_upper(order.priority) }}</td>
                     </tr>
                     {% else %}
                     <tr><td colspan="3" style="text-align:center; color:var(--text3);">Açık iş emri bulunmuyor.</td></tr>

@@ -243,17 +243,16 @@ def _get_password_reset_base_url():
 
     script_root = (request.script_root or "").strip("/")
     path_prefix = f"/{script_root}" if script_root else ""
-    forwarded_host = (
-        (request.headers.get("X-Forwarded-Host") or "")
-        or (request.headers.get("X-Forwarded-Server") or "")
-    ).split(",")[0].strip()
-    if forwarded_host:
-        forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip()
-        scheme = forwarded_proto or request.scheme or "https"
-        return f"{scheme}://{forwarded_host}{path_prefix}/"
 
-    return f"{request.host_url.rstrip('/')}{path_prefix}/"
+    host = (request.host or "").split(":", 1)[0].strip().lower()
+    local_hosts = {"localhost", "127.0.0.1", "::1", "[::1]"}
+    if host in local_hosts or host.endswith(".localhost"):
+        return f"{request.host_url.rstrip('/')}{path_prefix}/"
 
+    raise RuntimeError(
+        "PASSWORD_RESET_BASE_URL veya PUBLIC_BASE_URL tanımlı değil; "
+        "güvenli şifre sıfırlama bağlantısı üretilemedi."
+    )
 
 def _build_password_reset_link(token):
     reset_path = url_for('auth.sifre_yenile', token=token)

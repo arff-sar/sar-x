@@ -36,3 +36,21 @@ def normalize_lookup_key(value):
     normalized = unicodedata.normalize("NFKD", translated)
     return "".join(ch for ch in normalized if not unicodedata.combining(ch)).strip()
 
+
+def turkish_equals(left, right):
+    return normalize_lookup_key(left) == normalize_lookup_key(right)
+
+
+def turkish_contains(haystack, needle):
+    normalized_needle = normalize_lookup_key(needle)
+    if not normalized_needle:
+        return True
+    return normalized_needle in normalize_lookup_key(haystack)
+
+
+def turkish_contains_all(haystack, needle):
+    normalized_terms = normalize_lookup_key(needle).split()
+    if not normalized_terms:
+        return True
+    normalized_haystack = normalize_lookup_key(haystack)
+    return all(term in normalized_haystack for term in normalized_terms)

@@ -15,6 +15,7 @@ from models import (
     WorkOrder,
     get_tr_now,
 )
+from services.text_normalization_service import turkish_equals
 from demo_data import apply_platform_demo_scope, demo_record_ids, platform_demo_is_active
 
 OPEN_WORK_ORDER_STATUSES = {"acik", "atandi", "islemde", "beklemede_parca", "beklemede_onay"}
@@ -92,8 +93,8 @@ def filter_options(user):
     }
 
 
-def build_dashboard_kpis(user, filters):
-    snapshot = build_operational_snapshot(user, filters)
+def build_dashboard_kpis(user, filters, snapshot=None):
+    snapshot = snapshot or build_operational_snapshot(user, filters)
     kpis = {
         "total_assets": _kpi_item("Toplam Ekipman", snapshot["totals"]["total_assets"], snapshot["trends"]["total_assets"], "BİRİM"),
         "faulty_assets": _kpi_item("Arızalı Malzeme", snapshot["totals"]["faulty_assets"], snapshot["trends"]["faulty_assets"], "ARIZA"),
@@ -440,7 +441,7 @@ def _asset_rows(user, filters):
     if filters.get("category"):
         rows = [
             row for row in rows
-            if row.equipment_template and (row.equipment_template.category or "").lower() == filters["category"].lower()
+            if row.equipment_template and turkish_equals(row.equipment_template.category, filters["category"])
         ]
     if filters.get("maintenance_state"):
         rows = [row for row in rows if (row.maintenance_state or "") == filters["maintenance_state"]]
@@ -473,7 +474,7 @@ def _work_order_rows(user, filters):
     if filters.get("category"):
         rows = [
             row for row in rows
-            if row.asset and row.asset.equipment_template and (row.asset.equipment_template.category or "").lower() == filters["category"].lower()
+            if row.asset and row.asset.equipment_template and turkish_equals(row.asset.equipment_template.category, filters["category"])
         ]
     if filters.get("work_order_type"):
         rows = [row for row in rows if row.work_order_type == filters["work_order_type"]]

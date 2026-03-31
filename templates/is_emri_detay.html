@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% macro tr_upper(value) -%}{{ ((value or '')|replace('i', 'İ')|replace('ı', 'I')|upper) }}{%- endmacro %}
 {% block title %}{% if mode == 'create' %}Yeni İş Emri{% else %}İş Emri Detayı{% endif %}{% endblock %}
 
 {% block extra_css %}
@@ -49,7 +50,7 @@
                 <label>İş Emri Tipi</label>
                 <select name="work_order_type" class="form-control" required>
                     {% for wo_type in work_order_types %}
-                    <option value="{{ wo_type }}">{{ wo_type|replace('_',' ')|upper }}</option>
+                    <option value="{{ wo_type }}">{{ tr_upper(wo_type|replace('_',' ')) }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -57,7 +58,7 @@
                 <label>Kaynak Tipi</label>
                 <select name="source_type" class="form-control">
                     {% for source in source_types %}
-                    <option value="{{ source }}">{{ source|replace('_',' ')|upper }}</option>
+                    <option value="{{ source }}">{{ tr_upper(source|replace('_',' ')) }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -65,7 +66,7 @@
                 <label>Öncelik</label>
                 <select name="priority" class="form-control">
                     {% for p in priorities %}
-                    <option value="{{ p }}">{{ p|upper }}</option>
+                    <option value="{{ p }}">{{ tr_upper(p) }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -120,7 +121,7 @@
         <div class="page-meta">
             <span>{{ order.asset.equipment_template.name if order.asset and order.asset.equipment_template else '-' }}</span>
             <div class="meta-dot" style="width:3px; height:3px; background: var(--text4); border-radius:50%;"></div>
-            <span>Durum: {{ status_label(order.status)|upper }}</span>
+            <span>Durum: {{ tr_upper(status_label(order.status)) }}</span>
         </div>
     </div>
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -136,12 +137,12 @@
         <div class="panel-header"><div class="panel-title">İş Emri Bilgileri</div></div>
         <div class="panel-body">
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-                <div><strong>Tür:</strong> {{ order.maintenance_type|replace('_',' ')|upper }}</div>
-                <div><strong>WO Tipi:</strong> {{ order.work_order_type|replace('_',' ')|upper }}</div>
-                <div><strong>Öncelik:</strong> {{ order.priority|upper }}</div>
+                <div><strong>Tür:</strong> {{ tr_upper(order.maintenance_type|replace('_',' ')) }}</div>
+                <div><strong>WO Tipi:</strong> {{ tr_upper(order.work_order_type|replace('_',' ')) }}</div>
+                <div><strong>Öncelik:</strong> {{ tr_upper(order.priority) }}</div>
                 <div><strong>Açılış:</strong> {{ order.opened_at.strftime('%d.%m.%Y %H:%M') if order.opened_at else '-' }}</div>
                 <div><strong>Hedef:</strong> {{ order.target_date.strftime('%d.%m.%Y') if order.target_date else '-' }}</div>
-                <div><strong>Kaynak:</strong> {{ order.source_type|replace('_',' ')|upper }}</div>
+                <div><strong>Kaynak:</strong> {{ tr_upper(order.source_type|replace('_',' ')) }}</div>
                 <div><strong>Atanan:</strong> {{ order.assigned_user.tam_ad if order.assigned_user else '-' }}</div>
                 <div><strong>Oluşturan:</strong> {{ order.created_user.tam_ad if order.created_user else '-' }}</div>
                 <div><strong>SLA:</strong> {{ order.sla_target_at.strftime('%d.%m.%Y %H:%M') if order.sla_target_at else '-' }}</div>
@@ -174,7 +175,7 @@
                 <label>Durum</label>
                 <select class="form-control" name="status">
                     {% for status in statuses %}
-                    <option value="{{ status }}" {% if order.status == status %}selected{% endif %}>{{ status_label(status)|upper }}</option>
+                    <option value="{{ status }}" {% if order.status == status %}selected{% endif %}>{{ tr_upper(status_label(status)) }}</option>
                     {% endfor %}
                 </select>
                 <label>Atanan Kullanıcı</label>

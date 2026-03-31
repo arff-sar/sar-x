@@ -6,7 +6,7 @@ from extensions import db
 from models import EquipmentTemplate, InventoryAsset, InventoryBulkImportJob, InventoryCategory
 from services.inventory_bulk_import_service import parse_flexible_bool
 from services.inventory_excel_service import build_inventory_template_workbook
-from services.text_normalization_service import turkish_upper
+from services.text_normalization_service import normalize_lookup_key, turkish_upper
 from tests.factories import (
     EquipmentTemplateFactory,
     HavalimaniFactory,
@@ -473,9 +473,39 @@ def test_central_template_create_permission(client, app):
     assert EquipmentTemplate.query.filter_by(name="Yetkisiz Şablon").first() is None
 
 
+def test_category_create_blocks_turkish_variant_duplicates(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    owner = KullaniciFactory(rol="sahip", is_deleted=False)
+    category = InventoryCategory(name="Özel Kategori", is_active=True, is_deleted=False, created_by_user_id=owner.id)
+    db.session.add_all([owner, category])
+    db.session.commit()
+
+    _login(client, owner)
+    response = client.post(
+        "/envanter/kategori-ekle",
+        data={"name": "Ozel Kategori", "description": "varyant"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Bu kategori zaten mevcut." in response.data.decode("utf-8")
+    with app.app_context():
+        assert InventoryCategory.query.filter_by(is_deleted=False).count() == 1
+
 
 def test_turkish_upper_helper_and_bool_normalizer():
     assert turkish_upper("ibrahim çelik") == "İBRAHİM ÇELİK"
     assert turkish_upper("ışık şahin") == "IŞIK ŞAHİN"
     assert parse_flexible_bool("x") is True
     assert parse_flexible_bool("0") is False
+
+
+def test_lookup_normalizer_matches_turkish_character_variants():
+    assert normalize_lookup_key("İzmir") == normalize_lookup_key("izmir") == normalize_lookup_key("İZMİR")
+    assert normalize_lookup_key("İzmir") == normalize_lookup_key("Izmir") == normalize_lookup_key("ızmir")
+    assert normalize_lookup_key("Işık") == normalize_lookup_key("ışık") == normalize_lookup_key("ISIK")
+    assert normalize_lookup_key("Şule") == normalize_lookup_key("sule")
+    assert normalize_lookup_key("Çağrı") == normalize_lookup_key("cagri")
+    assert normalize_lookup_key("Öztürk") == normalize_lookup_key("ozturk")
+    assert normalize_lookup_key("Ünal") == normalize_lookup_key("unal")
+    assert normalize_lookup_key("Çelik") == normalize_lookup_key("celik")

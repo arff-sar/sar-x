@@ -494,7 +494,7 @@
                                     data-choice-label="{{ user.tam_ad }}"
                                     data-choice-meta-primary="{{ rol_etiketleri.get(user.rol, user.rol) }} • {{ user.havalimani.ad if user.havalimani else 'Global erişim' }}"
                                     data-choice-meta-secondary="{{ user.havalimani.ad if user.havalimani else 'Global erişim' }}"
-                                    data-filter-text="{{ (user.tam_ad ~ ' ' ~ (rol_etiketleri.get(user.rol, user.rol)) ~ ' ' ~ (user.havalimani.ad if user.havalimani else 'global'))|lower }}"
+                                    data-filter-text="{{ user.tam_ad ~ ' ' ~ (rol_etiketleri.get(user.rol, user.rol)) ~ ' ' ~ (user.havalimani.ad if user.havalimani else 'global') }}"
                                 >
                                     <input type="checkbox" name="recipient_ids" value="{{ user.id }}" {% if selected_recipient == user.id %}checked{% endif %}>
                                     <div class="choice-body">
@@ -569,7 +569,7 @@
                                     data-choice-label="{{ item.ad }}"
                                     data-choice-meta-primary="{{ item.linked_asset.asset_code if item.linked_asset and item.linked_asset.asset_code else ('Seri No: ' ~ (item.seri_no or 'Yok')) }}"
                                     data-choice-meta-secondary="{{ item.havalimani.ad if item.havalimani else 'Global' }} • Stok {{ item.stok_miktari or 0 }}"
-                                    data-filter-text="{{ (item.ad ~ ' ' ~ (item.seri_no or '') ~ ' ' ~ (item.havalimani.ad if item.havalimani else '') ~ ' ' ~ (item.linked_asset.equipment_template.name if item.linked_asset and item.linked_asset.equipment_template else ''))|lower }}"
+                                    data-filter-text="{{ item.ad ~ ' ' ~ (item.seri_no or '') ~ ' ' ~ (item.havalimani.ad if item.havalimani else '') ~ ' ' ~ (item.linked_asset.equipment_template.name if item.linked_asset and item.linked_asset.equipment_template else '') }}"
                                 >
                                     <input type="checkbox" name="item_ids" value="{{ item.id }}">
                                     <div class="choice-body">
@@ -631,6 +631,23 @@
       if (window.showToast) {
         window.showToast({ type: type, message: message });
       }
+    };
+
+    const normalizeLookupText = function (value) {
+      const text = String(value || '').trim();
+      if (!text) return '';
+      const translated = text
+        .replace(/[ıİI]/g, 'i')
+        .replace(/[şŞ]/g, 's')
+        .replace(/[ğĞ]/g, 'g')
+        .replace(/[üÜ]/g, 'u')
+        .replace(/[öÖ]/g, 'o')
+        .replace(/[çÇ]/g, 'c');
+      const lowered = translated.toLowerCase();
+      const normalized = typeof lowered.normalize === 'function'
+        ? lowered.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+        : lowered;
+      return normalized.trim();
     };
 
     const updateSelectionPanel = function (config) {
@@ -735,10 +752,10 @@
         }
       };
       const applyFilter = function () {
-        const needle = input ? input.value.trim().toLowerCase() : '';
+        const needle = input ? normalizeLookupText(input.value) : '';
         visibleCount = 0;
         cards.forEach(function (card) {
-          const haystack = (card.getAttribute('data-filter-text') || '').toLowerCase();
+          const haystack = normalizeLookupText(card.getAttribute('data-filter-text') || '');
           const shouldShow = !needle || haystack.indexOf(needle) !== -1;
           card.hidden = !shouldShow;
           if (shouldShow) visibleCount += 1;

@@ -95,4 +95,4 @@ def test_auth_helpers_password_reset_branches(app):
             "X-Forwarded-Proto": "https",
         },
     ):
-        assert auth_module._get_password_reset_base_url() == "https://sarx.example.com/"
+        assert auth_module._get_password_reset_base_url() == "http://localhost/"

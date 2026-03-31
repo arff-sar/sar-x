@@ -303,4 +303,5 @@ def test_service_worker_skips_login_and_captcha_requests(client):
     assert "if (event.request.mode === 'navigate')" in body
     assert "ASSETS_TO_CACHE" in body
     assert "'/manifest.json'" in body
+    assert "createObjectStore('bekleyen_bakimlar'" in body
     assert "  '/'," not in body

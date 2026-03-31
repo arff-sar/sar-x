@@ -6,7 +6,7 @@ import pandas as pd
 from flask import current_app, render_template, request, redirect, send_file, session, url_for, flash, abort
 from flask_login import login_required, current_user
 from openpyxl import Workbook
-from sqlalchemy import func, or_
+from sqlalchemy import func
 
 from extensions import (
     audit_log,
@@ -41,6 +41,7 @@ from decorators import (
     permission_required,
     update_user_permission_overrides,
 )
+from services.text_normalization_service import normalize_lookup_key, turkish_contains_all
 
 
 GLOBAL_ROLES = {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}
@@ -89,6 +90,19 @@ def _visible_users_query(actor):
 
 def _normalize_search_term(raw_value):
     return " ".join((guvenli_metin(raw_value or "")).split())
+
+
+def _user_matches_search(user, raw_search):
+    haystack = " ".join(
+        str(field or "")
+        for field in [
+            getattr(user, "tam_ad", ""),
+            getattr(user, "kullanici_adi", ""),
+            getattr(getattr(user, "havalimani", None), "ad", ""),
+            getattr(getattr(user, "havalimani", None), "kodu", ""),
+        ]
+    )
+    return turkish_contains_all(haystack, raw_search)
 
 
 def _normalize_user_email(raw_value):
@@ -152,6 +166,10 @@ def _create_role_options_for_actor(actor, role_options):
     if get_effective_role(actor) == CANONICAL_ROLE_TEAM_LEAD:
         return [role for role in role_options if role["key"] == CANONICAL_ROLE_TEAM_MEMBER]
     return role_options
+
+
+def _assignable_role_options_for_actor(actor, role_options):
+    return [role for role in role_options if can_assign_role(actor, role["key"])]
 
 
 def _can_manage_user_phone_on_create(actor):
@@ -252,10 +270,10 @@ def _resolve_airport_for_import(actor, airport_text, role_key, visible_airports)
 
     lookup = {}
     for airport in visible_airports:
-        lookup[str(airport.id).lower()] = airport
-        lookup[(airport.kodu or "").strip().lower()] = airport
-        lookup[(airport.ad or "").strip().lower()] = airport
-    airport = lookup.get(cleaned.lower())
+        lookup[normalize_lookup_key(airport.id)] = airport
+        lookup[normalize_lookup_key(airport.kodu)] = airport
+        lookup[normalize_lookup_key(airport.ad)] = airport
+    airport = lookup.get(normalize_lookup_key(cleaned))
     if not airport:
         return None, "Havalimanı değeri görünür kapsamınızda bulunamadı."
     if not actor.is_sahip and airport.id != actor.havalimani_id:
@@ -372,6 +390,7 @@ def kullanicilar():
         for role_key in expand_role_keys(role["key"]):
             role_filter_lookup[role_key] = role["key"]
     valid_role_keys = {role["key"] for role in role_options}
+    assignable_role_options = _assignable_role_options_for_actor(current_user, role_options)
     search_term = _normalize_search_term(request.args.get("q"))
     selected_role_key = role_filter_lookup.get((request.args.get("role") or "").strip(), "")
     selected_airport_key = (request.args.get("airport_id") or "").strip()
@@ -383,6 +402,9 @@ def kullanicilar():
     valid_status_keys = {item["key"] for item in STATUS_OPTIONS}
     if selected_status_key not in valid_status_keys:
         selected_status_key = "active"
+    selected_bulk_airport_key = (request.args.get("bulk_airport_id") or "").strip()
+    if selected_bulk_airport_key not in valid_airport_keys:
+        selected_bulk_airport_key = ""
     selected_role_label = get_role_labels().get(selected_role_key, "") if selected_role_key else ""
     if selected_airport_key == "global":
         selected_airport_label = "Global erişim"
@@ -394,6 +416,10 @@ def kullanicilar():
     selected_status_label = next(
         (item["label"] for item in STATUS_OPTIONS if item["key"] == selected_status_key),
         STATUS_OPTIONS[0]["label"],
+    )
+    selected_bulk_airport_label = next(
+        (item.ad for item in havalimanlari if str(item.id) == selected_bulk_airport_key),
+        "",
     )
     has_active_filters = bool(
         search_term
@@ -412,16 +438,6 @@ def kullanicilar():
         filtered_query = filtered_query.filter(Kullanici.havalimani_id.is_(None))
     elif selected_airport_key:
         filtered_query = filtered_query.filter(Kullanici.havalimani_id == int(selected_airport_key))
-    if search_term:
-        search_value = f"%{search_term.lower()}%"
-        filtered_query = filtered_query.filter(
-            or_(
-                func.lower(Kullanici.tam_ad).like(search_value),
-                func.lower(Kullanici.kullanici_adi).like(search_value),
-                func.lower(func.coalesce(Havalimani.ad, "")).like(search_value),
-                func.lower(func.coalesce(Havalimani.kodu, "")).like(search_value),
-            )
-        )
     if selected_role_key:
         filtered_query = filtered_query.filter(Kullanici.rol.in_(sorted(expand_role_keys(selected_role_key))))
 
@@ -429,6 +445,8 @@ def kullanicilar():
         func.lower(Kullanici.tam_ad).asc(),
         func.lower(Kullanici.kullanici_adi).asc(),
     ).all()
+    if search_term:
+        liste = [item for item in liste if _user_matches_search(item, search_term)]
     filter_result_count = len(liste)
     selected_user_id = request.args.get("user_id", type=int)
     selected_user = None
@@ -445,17 +463,32 @@ def kullanicilar():
     selected_override_deny = set()
     selected_effective_permissions = set()
     selected_user_effective_role = ""
+    bulk_airport_staff = []
     if selected_user:
         overrides = get_user_permission_overrides(selected_user)
         selected_override_allow = overrides["allow"]
         selected_override_deny = overrides["deny"]
         selected_effective_permissions = get_effective_permissions(selected_user)
         selected_user_effective_role = get_effective_role(selected_user)
+    elif selected_bulk_airport_key:
+        bulk_airport_staff = (
+            _visible_users_query(current_user)
+            .filter(
+                Kullanici.is_deleted.is_(False),
+                Kullanici.havalimani_id == int(selected_bulk_airport_key),
+            )
+            .order_by(
+                func.lower(Kullanici.tam_ad).asc(),
+                func.lower(Kullanici.kullanici_adi).asc(),
+            )
+            .all()
+        )
 
     create_role_options = _create_role_options_for_actor(current_user, role_options)
     create_default_role = create_role_options[0]["key"] if create_role_options else ""
     create_lock_to_airport = get_effective_role(current_user) == CANONICAL_ROLE_TEAM_LEAD
     create_default_airport_id = str(current_user.havalimani_id or "") if create_lock_to_airport else ""
+    can_edit_role_scope_permissions = bool(current_user.is_sahip)
 
     return render_template(
         'admin/kullanicilar.html',
@@ -488,12 +521,109 @@ def kullanicilar():
         create_default_role=create_default_role,
         create_lock_to_airport=create_lock_to_airport,
         create_default_airport_id=create_default_airport_id,
+        can_edit_role_scope_permissions=can_edit_role_scope_permissions,
+        assignable_role_options=assignable_role_options,
+        selected_bulk_airport_key=selected_bulk_airport_key,
+        selected_bulk_airport_label=selected_bulk_airport_label,
+        bulk_airport_staff=bulk_airport_staff,
         create_can_manage_phone=_can_manage_user_phone_on_create(current_user),
         create_is_impersonation=is_impersonation_mode(current_user),
         bulk_import_preview=bulk_import_preview,
         can_download_user_template=has_permission("users.template.download"),
         can_import_users=has_permission("users.import"),
     )
+
+
+@admin_bp.route('/kullanicilar/toplu-yetki-guncelle', methods=['POST'])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required('users.manage')
+def kullanici_toplu_yetki_guncelle():
+    if not current_user.is_sahip:
+        abort(403)
+
+    selected_bulk_airport_key = (request.form.get("bulk_airport_id") or "").strip()
+    visible_airports = _visible_airports(current_user)
+    airport_lookup = {str(item.id): item for item in visible_airports}
+    selected_airport = airport_lookup.get(selected_bulk_airport_key)
+    if not selected_airport:
+        flash("Toplu düzenleme için geçerli bir havalimanı seçin.", "danger")
+        return redirect(url_for('admin.kullanicilar'))
+
+    selected_user_ids = []
+    for raw_value in request.form.getlist("bulk_user_ids"):
+        try:
+            parsed_id = int(raw_value)
+        except (TypeError, ValueError):
+            continue
+        if parsed_id > 0:
+            selected_user_ids.append(parsed_id)
+    selected_user_ids = sorted(set(selected_user_ids))
+    if not selected_user_ids:
+        flash("Toplu düzenleme için en az bir personel seçin.", "warning")
+        return redirect(url_for('admin.kullanicilar', bulk_airport_id=selected_airport.id))
+
+    role_lookup = {}
+    for role in get_role_options():
+        for role_key in expand_role_keys(role["key"]):
+            role_lookup[role_key] = role["key"]
+    assignable_role_options = _assignable_role_options_for_actor(current_user, get_role_options())
+    assignable_role_keys = {item["key"] for item in assignable_role_options}
+
+    selected_roles = []
+    for submitted in request.form.getlist("bulk_roles"):
+        canonical_role = role_lookup.get((submitted or "").strip(), (submitted or "").strip())
+        if canonical_role in assignable_role_keys and canonical_role not in selected_roles:
+            selected_roles.append(canonical_role)
+
+    if not selected_roles:
+        flash("Toplu düzenleme için en az bir rol seçin.", "warning")
+        return redirect(url_for('admin.kullanicilar', bulk_airport_id=selected_airport.id))
+
+    target_role = selected_roles[0]
+    target_scope_id = None if target_role in GLOBAL_ROLES else selected_airport.id
+    users = (
+        _visible_users_query(current_user)
+        .filter(
+            Kullanici.is_deleted.is_(False),
+            Kullanici.id.in_(selected_user_ids),
+            Kullanici.havalimani_id == selected_airport.id,
+        )
+        .all()
+    )
+
+    updated_count = 0
+    skipped_count = max(0, len(selected_user_ids) - len(users))
+    for user in users:
+        if not actor_can_manage_target(current_user, user):
+            skipped_count += 1
+            continue
+        if user.rol == target_role and user.havalimani_id == target_scope_id:
+            continue
+        user.rol = target_role
+        user.havalimani_id = target_scope_id
+        updated_count += 1
+
+    if updated_count:
+        db.session.commit()
+        log_kaydet(
+            'Güvenlik',
+            f'{updated_count} kullanıcı için toplu rol/kapsam güncellendi ({selected_airport.kodu} -> {target_role}).',
+            event_key='role.assignment.bulk',
+            target_model='Havalimani',
+            target_id=selected_airport.id,
+        )
+
+    role_label = get_role_labels().get(target_role, target_role)
+    if len(selected_roles) > 1:
+        flash(f"Birden fazla rol seçildiği için ilk rol uygulandı: {role_label}.", "info")
+    if updated_count:
+        flash(f"{updated_count} kullanıcı için toplu rol/kapsam güncellendi.", "success")
+    else:
+        flash("Seçili kullanıcılar zaten aynı rol/kapsamda olduğu için değişiklik yapılmadı.", "info")
+    if skipped_count:
+        flash(f"{skipped_count} kullanıcı kapsam/yetki kontrolü nedeniyle atlandı.", "warning")
+    return redirect(url_for('admin.kullanicilar', bulk_airport_id=selected_airport.id))
 
 
 @admin_bp.route('/kullanicilar/template.xlsx')

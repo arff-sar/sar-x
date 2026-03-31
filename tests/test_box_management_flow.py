@@ -159,6 +159,25 @@ def test_inventory_accordion_actions_are_simplified(client, app):
     assert "Hızlı Zimmet" in html
 
 
+def test_box_brand_filter_matches_turkish_character_variants(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="İzmir", kodu="ADB")
+        owner = KullaniciFactory(rol="sahip", is_deleted=False)
+        wanted = KutuFactory(kodu="ADB-SAR-01", havalimani=airport, marka="Öztürk")
+        other = KutuFactory(kodu="ADB-SAR-02", havalimani=airport, marka="Başka Marka")
+        db.session.add_all([airport, owner, wanted, other])
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+    response = client.get("/kutular?marka=ozturk")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "ADB-SAR-01" in html
+    assert "ADB-SAR-02" not in html
+
+
 def test_asset_detail_page_renders_core_inventory_fields(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Erzincan", kodu="ERC")
@@ -220,7 +239,7 @@ def test_box_archive_and_delete_lifecycle(client, app):
 
 def test_box_management_filter_layout_is_aligned_and_location_removed(client, app):
     with app.app_context():
-        airport = HavalimaniFactory(ad="Erzurum", kodu="ERZ")
+        airport = HavalimaniFactory(ad="Erzurum Havalimanı", kodu="ERZ")
         owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False)
         box = KutuFactory(kodu="ERZ-SAR-01", havalimani=airport, marka="Pelican")
         db.session.add_all([airport, owner, box])
@@ -232,9 +251,16 @@ def test_box_management_filter_layout_is_aligned_and_location_removed(client, ap
     html = response.data.decode("utf-8")
 
     assert response.status_code == 200
+    assert html.count("<label>Havalimanı</label>") == 1
+    assert "box-toolbar-row" in html
     assert "box-filter-grid" in html
     assert "box-filter-actions" in html
+    assert "box-create-form" in html
     assert "Filtrele" in html and "Temizle" in html
+    assert "Yeni Kutu Oluştur" in html
+    assert '>İçerik</th>' in html
+    assert '<th>QR</th>' not in html
+    assert 'title="Erzurum Havalimanı"' in html
     assert ">Konum<" not in html
 
 

@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from app import create_app
 from extensions import db
 from tests.factories import KullaniciFactory
@@ -18,6 +20,7 @@ def test_production_config_enables_secure_cookie_flags(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
     monkeypatch.setenv("ALLOW_SQLITE_IN_PRODUCTION", "1")
     monkeypatch.setenv("ENABLE_SCHEDULER", "0")
+    monkeypatch.setenv("ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION", "1")
 
     app = create_app("production")
     assert app.config["SESSION_COOKIE_SECURE"] is True
@@ -26,6 +29,80 @@ def test_production_config_enables_secure_cookie_flags(monkeypatch):
     assert app.config["REMEMBER_COOKIE_SECURE"] is True
     assert app.config["REMEMBER_COOKIE_HTTPONLY"] is True
     assert app.config["REMEMBER_COOKIE_SAMESITE"] == "Lax"
+    assert app.config["REMEMBER_COOKIE_DURATION"] == timedelta(days=7)
+
+
+def test_production_config_allows_remember_cookie_duration_override(monkeypatch):
+    monkeypatch.setenv("SECRET_KEY", "x" * 48)
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+    monkeypatch.setenv("ALLOW_SQLITE_IN_PRODUCTION", "1")
+    monkeypatch.setenv("ENABLE_SCHEDULER", "0")
+    monkeypatch.setenv("REMEMBER_COOKIE_DURATION_DAYS", "3")
+    monkeypatch.setenv("ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION", "1")
+
+    app = create_app("production")
+
+    assert app.config["REMEMBER_COOKIE_DURATION"] == timedelta(days=3)
+
+
+def test_create_app_defaults_to_production_when_env_is_missing(monkeypatch):
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("FLASK_ENV", raising=False)
+    monkeypatch.delenv("FLASK_RUN_FROM_CLI", raising=False)
+    monkeypatch.setenv("SECRET_KEY", "x" * 48)
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+    monkeypatch.setenv("ALLOW_SQLITE_IN_PRODUCTION", "1")
+    monkeypatch.setenv("ENABLE_SCHEDULER", "0")
+    monkeypatch.setenv("ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION", "1")
+
+    app = create_app()
+
+    assert app.config["ENV"] == "production"
+    assert app.config["DEBUG"] is False
+    assert app.config["SESSION_COOKIE_SECURE"] is True
+    assert app.config["REMEMBER_COOKIE_SECURE"] is True
+
+
+def test_create_app_allows_implicit_development_for_flask_cli(monkeypatch):
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("FLASK_ENV", raising=False)
+    monkeypatch.setenv("FLASK_RUN_FROM_CLI", "true")
+    monkeypatch.setenv("SECRET_KEY", "x" * 48)
+
+    app = create_app()
+
+    assert app.config["ENV"] == "development"
+    assert app.config["DEBUG"] is True
+    assert app.config["SESSION_COOKIE_SECURE"] is False
+
+
+def test_create_app_rejects_invalid_env_name(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "prodlike")
+
+    try:
+        try:
+            create_app()
+            assert False, "create_app() invalid APP_ENV değerini reddetmeliydi."
+        except RuntimeError as exc:
+            assert "Geçersiz uygulama ortamı tanımı" in str(exc)
+    finally:
+        monkeypatch.delenv("APP_ENV", raising=False)
+
+
+def test_production_requires_non_memory_rate_limit_storage_by_default(monkeypatch):
+    monkeypatch.setenv("SECRET_KEY", "x" * 48)
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+    monkeypatch.setenv("ALLOW_SQLITE_IN_PRODUCTION", "1")
+    monkeypatch.setenv("ENABLE_SCHEDULER", "0")
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    monkeypatch.delenv("RATELIMIT_STORAGE_URI", raising=False)
+    monkeypatch.delenv("ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION", raising=False)
+
+    try:
+        create_app("production")
+        assert False, "Production ortamında memory:// rate-limit storage reddedilmeliydi."
+    except RuntimeError as exc:
+        assert "memory:// rate-limit storage kullanılamaz" in str(exc)
 
 
 def test_authenticated_dashboard_response_uses_private_no_store_cache_headers(client, app):

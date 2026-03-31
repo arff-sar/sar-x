@@ -5,7 +5,6 @@ from types import SimpleNamespace
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
-from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError
 
 from decorators import has_permission, homepage_editor_required
@@ -34,6 +33,7 @@ from models import (
     MediaAsset,
     get_tr_now,
 )
+from services.text_normalization_service import turkish_contains_all
 
 
 content_bp = Blueprint("content", __name__)
@@ -180,6 +180,24 @@ def _unique_slug(base_slug, announcement_id=None):
             return candidate
         candidate = f"{base_slug}-{index}"
         index += 1
+
+
+def _matches_common_search(item, content_type, raw_search):
+    if content_type == "announcement":
+        fields = [
+            getattr(item, "title", ""),
+            getattr(item, "slug", ""),
+            getattr(item, "summary", ""),
+        ]
+    elif hasattr(item, "description"):
+        fields = [
+            getattr(item, "title", ""),
+            getattr(item, "description", ""),
+        ]
+    else:
+        fields = [getattr(item, "title", "")]
+    combined = " ".join(str(field or "") for field in fields)
+    return turkish_contains_all(combined, raw_search)
 
 
 def _validate_document_path(value):
@@ -432,27 +450,9 @@ def _seo_map_for_announcements(announcements):
 def _apply_common_filters(query, model, content_type):
     search = (request.args.get("q") or "").strip()
     status = (request.args.get("status") or "").strip().lower()
-
-    if search:
-        if content_type == "announcement":
-            query = query.filter(
-                or_(
-                    model.title.ilike(f"%{search}%"),
-                    model.slug.ilike(f"%{search}%"),
-                    model.summary.ilike(f"%{search}%"),
-                )
-            )
-        elif hasattr(model, "description"):
-            query = query.filter(
-                or_(
-                    model.title.ilike(f"%{search}%"),
-                    model.description.ilike(f"%{search}%"),
-                )
-            )
-        else:
-            query = query.filter(model.title.ilike(f"%{search}%"))
-
     records = query.all()
+    if search:
+        records = [item for item in records if _matches_common_search(item, content_type, search)]
     if status in ALLOWED_WORKFLOW_STATUSES:
         records = [item for item in records if _current_workflow_status(content_type, item) == status]
     return records, search, status
@@ -1678,15 +1678,16 @@ def homepage_move_item(content_type, item_id, direction):
 def media_library():
     query = MediaAsset.query.order_by(MediaAsset.created_at.desc())
     search = (request.args.get("q") or "").strip()
+    assets = query.all()
     if search:
-        query = query.filter(
-            or_(
-                MediaAsset.title.ilike(f"%{search}%"),
-                MediaAsset.file_path.ilike(f"%{search}%"),
-                MediaAsset.alt_text.ilike(f"%{search}%"),
+        assets = [
+            asset for asset in assets
+            if turkish_contains_all(
+                " ".join(str(field or "") for field in (asset.title, asset.file_path, asset.alt_text)),
+                search,
             )
-        )
-    assets = query.limit(300).all()
+        ]
+    assets = assets[:300]
     return render_template("admin/media_library.html", assets=assets, search_query=search)
 
 

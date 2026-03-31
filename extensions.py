@@ -1,4 +1,5 @@
 from datetime import datetime
+import re
 
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, current_user
@@ -16,6 +17,7 @@ import pytz
 from flask_executor import Executor
 from flask_migrate import Migrate  # ✅ YENİ: Veri kaybını önleyen göç sistemi
 from werkzeug.utils import secure_filename
+import zipfile
 
 # --- BİLEŞENLERİ BAŞLATMA ---
 db = SQLAlchemy()
@@ -143,10 +145,79 @@ def _safe_request_user_agent():
     if not has_request_context():
         return None
     try:
-        value = request.user_agent.string
-        return value or None
+        return normalize_user_agent(request.user_agent.string)
     except Exception:
         return None
+
+
+def normalize_user_agent(raw_user_agent):
+    value = str(raw_user_agent or "").strip()
+    if not value:
+        return None
+
+    lowered = value.lower()
+
+    browser = "Other"
+    if "edg/" in lowered or "edge/" in lowered:
+        browser = "Edge"
+    elif "opr/" in lowered or "opera" in lowered:
+        browser = "Opera"
+    elif "chrome/" in lowered and "edg/" not in lowered and "opr/" not in lowered:
+        browser = "Chrome"
+    elif "firefox/" in lowered:
+        browser = "Firefox"
+    elif "safari/" in lowered and "chrome/" not in lowered and "chromium/" not in lowered:
+        browser = "Safari"
+    elif "msie" in lowered or "trident/" in lowered:
+        browser = "IE"
+    elif any(bot_token in lowered for bot_token in ("bot", "spider", "crawl", "slurp", "curl/", "wget/")):
+        browser = "Bot"
+
+    operating_system = "Other"
+    if "windows" in lowered:
+        operating_system = "Windows"
+    elif "android" in lowered:
+        operating_system = "Android"
+    elif any(token in lowered for token in ("iphone", "ipad", "cpu os", "ios")):
+        operating_system = "iOS"
+    elif "mac os x" in lowered or "macintosh" in lowered:
+        operating_system = "macOS"
+    elif "linux" in lowered and "android" not in lowered:
+        operating_system = "Linux"
+
+    device_type = "Desktop"
+    if browser == "Bot":
+        device_type = "Bot"
+    elif "ipad" in lowered or "tablet" in lowered:
+        device_type = "Tablet"
+    elif any(token in lowered for token in ("mobile", "iphone", "android")):
+        device_type = "Mobile"
+
+    normalized = f"{browser} | {operating_system} | {device_type}"
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized[:80]
+
+
+def shorten_external_reference(raw_value, *, head=3, tail=6):
+    value = str(raw_value or "").strip()
+    if not value:
+        return ""
+    if len(value) <= head + tail + 3:
+        return value
+    return f"{value[:head]}...{value[-tail:]}"
+
+
+def compact_log_detail(raw_value, *, limit=120):
+    value = str(raw_value or "").strip()
+    if not value:
+        return ""
+    value = re.sub(r"(?i)\b(?:https?|ftp)://[^\s]+", "[url]", value)
+    value = re.sub(r"(?i)\bgs://[^\s]+", "[storage]", value)
+    value = re.sub(r"(?:(?:[A-Za-z]:)?/(?:[^/\s]+/){2,}[^/\s]*)", "[path]", value)
+    value = re.sub(r"\s+", " ", value).strip()
+    if len(value) > limit:
+        value = value[: limit - 3] + "..."
+    return value
 
 
 def _log_timestamp_now():
@@ -410,6 +481,39 @@ def secure_upload_filename(raw_name):
     return sanitized[:180] if sanitized else ""
 
 
+def safe_display_filename(raw_name, fallback="belge.pdf", default_extension=None, max_length=180):
+    """Kullanıcıya gösterilecek/indirilecek dosya adını güvenli şekilde hazırlar."""
+    fallback_name = str(fallback or "").strip() or "belge.pdf"
+    candidate = str(raw_name or "").strip()
+    candidate = candidate.replace("\\", "/").rsplit("/", 1)[-1]
+    candidate = re.sub(r"[\x00-\x1f\x7f]+", " ", candidate)
+    candidate = re.sub(r"\s+", " ", candidate).strip().strip(".")
+
+    if not candidate:
+        candidate = fallback_name.replace("\\", "/").rsplit("/", 1)[-1].strip() or "belge.pdf"
+
+    ext = None
+    if default_extension:
+        ext = str(default_extension).strip()
+        if ext and not ext.startswith("."):
+            ext = f".{ext}"
+    if ext and not candidate.lower().endswith(ext.lower()):
+        candidate = f"{candidate}{ext}"
+
+    if len(candidate) > max_length:
+        stem, dot, suffix = candidate.rpartition(".")
+        if dot:
+            keep = max(1, max_length - len(suffix) - 1)
+            candidate = f"{stem[:keep].rstrip()}.{suffix}"
+        else:
+            candidate = candidate[:max_length].rstrip()
+
+    candidate = candidate.lstrip(".").strip()
+    if not candidate:
+        candidate = (fallback_name[:max_length] or "belge.pdf").lstrip(".").strip() or "belge.pdf"
+    return candidate
+
+
 def is_allowed_file(filename, allowed_extensions):
     if not filename or "." not in filename:
         return False
@@ -466,3 +570,32 @@ def is_allowed_mime(filename, allowed_mime_prefixes=None, upload=None):
     if not allowed_mime_prefixes:
         allowed_mime_prefixes = ("application/pdf", "image/", "text/")
     return any(guessed_mime.startswith(prefix) for prefix in allowed_mime_prefixes)
+
+
+def is_valid_xlsx_workbook_upload(upload):
+    stream = getattr(upload, "stream", None)
+    if stream is None:
+        return False
+
+    try:
+        position = stream.tell()
+    except Exception:
+        position = None
+
+    try:
+        stream.seek(0)
+        with zipfile.ZipFile(stream) as workbook_zip:
+            members = set(workbook_zip.namelist())
+    except Exception:
+        return False
+    finally:
+        try:
+            if position is not None:
+                stream.seek(position)
+            else:
+                stream.seek(0)
+        except Exception:
+            pass
+
+    required_members = {"[Content_Types].xml", "_rels/.rels", "xl/workbook.xml"}
+    return required_members.issubset(members)

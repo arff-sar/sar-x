@@ -379,7 +379,7 @@ def test_signed_assignment_document_upload_flow_stays_working(client, app):
         response = client.post(
             f"/zimmetler/{assignment_id}/signed-document",
             data={
-                "signed_document": (io.BytesIO(b"%PDF-1.4 test belge"), "zimmet-imzali.pdf"),
+                "signed_document": (io.BytesIO(b"%PDF-1.4 test belge"), "Şule Işık.pdf"),
             },
             content_type="multipart/form-data",
             follow_redirects=True,
@@ -401,7 +401,7 @@ def test_signed_assignment_document_upload_flow_stays_working(client, app):
         stored = db.session.get(AssignmentRecord, assignment_id)
         assert stored.signed_document_key == "AYT/zimmet/Belge_Alan/kkd_belge_alan_zimmet_20260320010101.pdf"
         assert stored.signed_document_url == "https://example.com/uploads/AYT/zimmet/Belge_Alan/kkd_belge_alan_zimmet_20260320010101.pdf"
-        assert stored.signed_document_name == upload_call["filename"]
+        assert stored.signed_document_name == "Şule Işık.pdf"
 
 
 def test_signed_assignment_document_upload_rejects_invalid_signature(client, app):

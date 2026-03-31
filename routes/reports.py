@@ -31,7 +31,7 @@ def index():
         report_key = "inventory"
 
     snapshot = build_operational_snapshot(current_user, filters)
-    dashboard_kpis = build_dashboard_kpis(current_user, filters)
+    dashboard_kpis = build_dashboard_kpis(current_user, filters, snapshot=snapshot)
     report_data = build_report_dataset(current_user, report_key, filters)
 
     log_kaydet("Rapor", f"Rapor görüntülendi: {report_key}", event_key="reports.view", target_model=report_key)

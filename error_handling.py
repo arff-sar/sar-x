@@ -10,7 +10,7 @@ from itsdangerous import BadSignature, SignatureExpired
 from sqlalchemy.exc import DBAPIError, OperationalError, ProgrammingError, SQLAlchemyError
 from werkzeug.exceptions import HTTPException
 
-from extensions import log_kaydet
+from extensions import log_kaydet, normalize_user_agent
 
 
 @dataclass(frozen=True)
@@ -205,6 +205,9 @@ _SECRET_PATTERNS = [
     (re.compile(r"(?i)(mysql://[^:\s]+:)([^@/\s]+)@"), r"\1***@"),
     (re.compile(r"(?i)(reset[_-]?token=)([^&\s]+)"), r"\1***"),
 ]
+_URL_PATTERN = re.compile(r"(?i)\b(?:https?|ftp)://[^\s]+")
+_GS_URL_PATTERN = re.compile(r"(?i)\bgs://[^\s]+")
+_PATH_PATTERN = re.compile(r"(?:(?:[A-Za-z]:)?/(?:[^/\s]+/){2,}[^/\s]*)")
 
 
 def get_error_spec(error_code):
@@ -222,6 +225,38 @@ def mask_sensitive_text(raw_value, limit=1800):
     if len(cleaned) > limit:
         return cleaned[: limit - 3] + "..."
     return cleaned
+
+
+def _truncate_text(value, limit):
+    text = str(value or "").strip()
+    if len(text) > limit:
+        return text[: limit - 3] + "..."
+    return text
+
+
+def _sanitize_error_excerpt(raw_value, *, limit=240, single_line=True):
+    cleaned = mask_sensitive_text(raw_value, limit=max(limit * 4, limit))
+    cleaned = _URL_PATTERN.sub("[url]", cleaned)
+    cleaned = _GS_URL_PATTERN.sub("[storage]", cleaned)
+    cleaned = _PATH_PATTERN.sub("[path]", cleaned)
+    if single_line:
+        cleaned = cleaned.splitlines()[0] if cleaned else ""
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return _truncate_text(cleaned, limit)
+
+
+def _traceback_frame_summary(exception, max_frames=3):
+    source = getattr(exception, "original_exception", None) or exception
+    if source is None or getattr(source, "__traceback__", None) is None:
+        return ""
+    try:
+        frames = traceback.extract_tb(source.__traceback__)
+    except Exception:
+        return ""
+    frame_names = [str(frame.name or "").strip() for frame in frames if str(frame.name or "").strip()]
+    if not frame_names:
+        return ""
+    return " > ".join(frame_names[-max_frames:])
 
 
 def _request_id():
@@ -252,7 +287,7 @@ def _request_ip():
 
 def _request_user_agent():
     try:
-        return (request.user_agent.string or "")[:200]
+        return normalize_user_agent(request.user_agent.string)
     except Exception:
         return ""
 
@@ -338,11 +373,19 @@ def _traceback_summary(exception):
     source = getattr(exception, "original_exception", None) or exception
     if source is None:
         return ""
-    try:
-        rendered = "".join(traceback.format_exception(type(source), source, source.__traceback__))
-    except Exception:
-        rendered = str(source)
-    return mask_sensitive_text(rendered, limit=4000)
+    exception_type = type(source).__name__
+    message = _sanitize_error_excerpt(str(source), limit=220, single_line=True)
+    frame_summary = _traceback_frame_summary(source)
+    parts = []
+    if frame_summary:
+        parts.append(f"frames={frame_summary}")
+    if exception_type and message:
+        parts.append(f"{exception_type}: {message}")
+    elif exception_type:
+        parts.append(exception_type)
+    elif message:
+        parts.append(message)
+    return _truncate_text(" | ".join(parts), 400)
 
 
 def format_user_error_message(error_code):
@@ -363,7 +406,7 @@ def capture_error(exception=None, error_code=None, status_code=None, commit=True
     spec = get_error_spec(resolved_code)
     source = getattr(exception, "original_exception", None) or exception
     exception_type = type(source).__name__ if source is not None else ""
-    exception_message = mask_sensitive_text(str(source), limit=800) if source is not None else ""
+    exception_message = _sanitize_error_excerpt(str(source), limit=240, single_line=True) if source is not None else ""
     trace_summary = _traceback_summary(source)
     detail_text = detail or f"{spec.user_message} | Hata kodu: {spec.error_code}"
 

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlparse
 
 from flask import current_app
 
@@ -17,6 +17,12 @@ class BaseStorageAdapter:
 
     def save_upload(self, upload, folder, filename):
         raise NotImplementedError
+
+    def read_bytes(self, storage_key):
+        raise NotImplementedError
+
+    def storage_key_from_public_url(self, public_url):
+        return None
 
 
 def _build_storage_key(folder, filename):
@@ -52,6 +58,26 @@ class LocalStorageAdapter(BaseStorageAdapter):
             public_url=public_url,
             absolute_path=str(target_path),
         )
+
+    def _path_for_storage_key(self, storage_key):
+        root = self._root().resolve()
+        target_path = (root / str(storage_key or "")).resolve()
+        try:
+            target_path.relative_to(root)
+        except ValueError as exc:
+            raise FileNotFoundError("Geçersiz storage key.") from exc
+        return target_path
+
+    def read_bytes(self, storage_key):
+        return self._path_for_storage_key(storage_key).read_bytes()
+
+    def storage_key_from_public_url(self, public_url):
+        parsed = urlparse(str(public_url or "").strip())
+        candidate = parsed.path if parsed.scheme or parsed.netloc else str(public_url or "").strip()
+        prefix = f"{self._public_prefix()}/"
+        if candidate.startswith(prefix):
+            return unquote(candidate[len(prefix):])
+        return None
 
 
 class GCSStorageAdapter(BaseStorageAdapter):
@@ -122,6 +148,29 @@ class GCSStorageAdapter(BaseStorageAdapter):
             public_url=self._public_url(storage_key),
             absolute_path=f"gs://{bucket_name}/{storage_key}",
         )
+
+    def read_bytes(self, storage_key):
+        bucket_name = self._bucket_name()
+        if not bucket_name:
+            raise RuntimeError("GCS storage backend aktif ancak GCS_BUCKET_NAME tanımlı değil.")
+        blob = self._client().bucket(bucket_name).blob(storage_key)
+        return blob.download_as_bytes()
+
+    def storage_key_from_public_url(self, public_url):
+        parsed = urlparse(str(public_url or "").strip())
+        if not parsed.scheme or not parsed.netloc:
+            return None
+        normalized_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        public_base = self._public_base_url()
+        if public_base:
+            prefix = f"{public_base}/"
+            if normalized_url.startswith(prefix):
+                return unquote(normalized_url[len(prefix):])
+        bucket_name = self._bucket_name()
+        storage_prefix = f"https://storage.googleapis.com/{bucket_name}/"
+        if normalized_url.startswith(storage_prefix):
+            return unquote(normalized_url[len(storage_prefix):])
+        return None
 
 
 def get_storage_adapter():

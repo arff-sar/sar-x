@@ -195,6 +195,26 @@
   .empty-selection { display:grid; gap:10px; place-items:center; text-align:center; padding:22px 24px; border:1px dashed var(--border-dark); border-radius:20px; background:linear-gradient(180deg, rgba(248,250,252,0.92) 0%, rgba(255,255,255,0.98) 100%); color:var(--text3); min-height:132px; }
   .empty-selection strong { color:var(--navy); font-size:16px; }
   .empty-selection small { font-size:12px; color:var(--text4); line-height:1.55; max-width:560px; }
+  .bulk-role-panel { margin-top:16px; display:grid; gap:12px; padding:18px; border:1px solid var(--border); border-radius:20px; background:linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,250,252,.98) 100%); }
+  .bulk-role-panel-head { display:grid; gap:6px; }
+  .bulk-role-panel-title { font-size:15px; font-weight:800; color:var(--navy); }
+  .bulk-role-panel-note { font-size:12px; color:var(--text3); line-height:1.55; }
+  .bulk-role-filter-form { display:grid; grid-template-columns:minmax(320px, 1fr) max-content; gap:10px 12px; align-items:end; }
+  .bulk-role-filter-form .form-group { margin-bottom:0; min-width:0; }
+  .bulk-role-filter-form .form-control { margin-bottom:0; }
+  .bulk-role-filter-form .btn { align-self:end; white-space:nowrap; margin-bottom:0; }
+  .bulk-role-grid { display:grid; grid-template-columns:minmax(0, 1.22fr) minmax(280px, .78fr); gap:0; align-items:stretch; border:1px solid var(--border); border-radius:16px; background:linear-gradient(180deg, rgba(248,250,252,.92) 0%, rgba(255,255,255,.98) 100%); overflow:hidden; }
+  .bulk-role-grid > .form-group { margin-bottom:0; padding:12px; }
+  .bulk-role-grid > .form-group + .form-group { border-left:1px solid var(--border); }
+  .bulk-role-user-list { max-height:236px; overflow:auto; border:1px solid var(--border); border-radius:12px; background:#fff; padding:10px; display:grid; gap:8px; }
+  .bulk-role-user-item { display:grid; gap:4px; padding:10px; border:1px solid var(--border); border-radius:12px; background:var(--surface2); text-align:left; }
+  .bulk-role-user-item input { margin-right:8px; }
+  .bulk-role-user-item-row { display:flex; align-items:flex-start; gap:8px; color:var(--text2); font-size:12.5px; line-height:1.45; }
+  .bulk-role-user-item small { color:var(--text3); font-size:11.25px; }
+  .bulk-role-select { min-height:236px; margin-bottom:0; }
+  .bulk-role-info { margin-top:8px; font-size:11.5px; color:var(--text3); line-height:1.55; }
+  .bulk-role-actions { display:flex; justify-content:flex-end; margin-top:4px; }
+  .bulk-role-empty { padding:14px; border:1px dashed var(--border-dark); border-radius:14px; color:var(--text3); background:linear-gradient(180deg, rgba(248,250,252,0.92) 0%, rgba(255,255,255,0.98) 100%); font-size:12px; line-height:1.55; text-align:left; }
 
   @media (max-width: 1180px) {
     .filter-stage-layout,
@@ -214,6 +234,9 @@
   }
 
   @media (max-width: 760px) {
+    .bulk-role-filter-form,
+    .bulk-role-grid { grid-template-columns: 1fr; }
+    .bulk-role-grid > .form-group + .form-group { border-left:0; border-top:1px solid var(--border); }
     .panel-header,
     .selection-summary-head,
     .section-card-head,
@@ -432,7 +455,7 @@
                                 {% set role_label = rol_etiketleri.get(user.rol, user.rol) %}
                                 <option
                                     value="{{ user.id }}"
-                                    data-search-text="{{ (user.tam_ad ~ ' ' ~ (user.havalimani.ad if user.havalimani else 'Global erişim') ~ ' ' ~ role_label)|lower }}"
+                                    data-search-text="{{ user.tam_ad ~ ' ' ~ (user.havalimani.ad if user.havalimani else 'Global erişim') ~ ' ' ~ role_label }}"
                                     {% if selected_user and user.id == selected_user.id %}selected{% endif %}
                                 >
                                     {{ user.tam_ad }} • {{ user.havalimani.ad if user.havalimani else 'Global erişim' }} • {{ role_label }}
@@ -467,7 +490,7 @@
                         href="{{ url_for('admin.kullanicilar', user_id=user.id, q=search_term or None, role=selected_role_key or None, airport_id=selected_airport_key or None, status=selected_status_key if selected_status_key != 'active' else None) }}"
                         class="user-option {% if selected_user and user.id == selected_user.id %}is-active{% endif %}"
                         data-user-card="{{ user.id }}"
-                        data-user-search="{{ (user.tam_ad ~ ' ' ~ scope_label ~ ' ' ~ role_label ~ ' ' ~ user.kullanici_adi)|lower }}"
+                        data-user-search="{{ user.tam_ad ~ ' ' ~ scope_label ~ ' ' ~ role_label ~ ' ' ~ user.kullanici_adi }}"
                     >
                         <div class="user-option-head">
                             <div>
@@ -505,12 +528,17 @@
         </div>
     </details>
 
-    <details class="panel user-editor-panel stage-accordion" id="userDetailPanel" data-stage-accordion {% if selected_user %}open{% endif %}>
+    <details class="panel user-editor-panel stage-accordion" id="userDetailPanel" data-stage-accordion {% if selected_user or selected_bulk_airport_key %}open{% endif %}>
         <summary class="panel-header stage-accordion-summary">
             <div class="stage-accordion-copy">
                 <div class="panel-kicker">Aşama 3</div>
+                {% if can_edit_role_scope_permissions %}
                 <div class="panel-title">Detay ve yetki düzenleme</div>
                 <div class="panel-subtitle">Seçilen kullanıcının temel bilgilerini, rolünü, kapsamını ve gerekiyorsa özel yetkilerini bu alandan yönetin.</div>
+                {% else %}
+                <div class="panel-title">Kullanıcı güncelle</div>
+                <div class="panel-subtitle">Seçilen kullanıcının temel bilgilerini, kapsamını bu alandan yönetin.</div>
+                {% endif %}
             </div>
             <span class="stage-accordion-chevron" aria-hidden="true">⌄</span>
         </summary>
@@ -614,11 +642,18 @@
                                 <div class="editor-form-grid">
                                     <div class="form-group">
                                         <label>Rol</label>
+                                        {% if can_edit_role_scope_permissions %}
                                         <select name="rol" class="form-control" data-selected-role="{{ selected_user_effective_role or selected_user.rol }}">
                                             {% for role in role_options %}
                                             <option value="{{ role.key }}" {% if (selected_user_effective_role or selected_user.rol) == role.key %}selected{% endif %}>{{ role.label }}</option>
                                             {% endfor %}
                                         </select>
+                                        {% else %}
+                                        <input type="hidden" name="rol" value="{{ selected_user.rol }}">
+                                        <div class="filter-panel-note">
+                                            {{ rol_etiketleri.get(selected_user.rol, selected_user.rol) }}
+                                        </div>
+                                        {% endif %}
                                         <div class="role-select-help">
                                             {% set tooltip_text = rol_aciklamalari.get(selected_user_effective_role or selected_user.rol, '') %}
                                             {% set tooltip_aria_label = rol_etiketleri.get(selected_user_effective_role or selected_user.rol, selected_user.rol) ~ ' rol açıklaması' %}
@@ -628,12 +663,19 @@
                                     </div>
                                     <div class="form-group">
                                         <label>Havalimanı</label>
+                                        {% if can_edit_role_scope_permissions %}
                                         <select name="h_id" class="form-control">
                                             <option value="">Global</option>
                                             {% for h in havalimanlari %}
                                             <option value="{{ h.id }}" {% if selected_user.havalimani_id == h.id %}selected{% endif %}>{{ h.kodu }} - {{ h.ad }}</option>
                                             {% endfor %}
                                         </select>
+                                        {% else %}
+                                        <input type="hidden" name="h_id" value="{{ selected_user.havalimani_id or '' }}">
+                                        <div class="filter-panel-note">
+                                            {{ selected_user.havalimani.ad if selected_user.havalimani else 'Global erişim' }}
+                                        </div>
+                                        {% endif %}
                                     </div>
                                 </div>
                             </div>
@@ -782,6 +824,7 @@
                                 </div>
                             </div>
 
+                            {% if can_edit_role_scope_permissions %}
                             <div class="permissions-stack">
                                 <div class="permission-section allow">
                                     <div class="permission-section-head">
@@ -857,6 +900,17 @@
                                     {% endfor %}
                                 </div>
                             </div>
+                            {% else %}
+                            {% for permission_key in selected_override_allow|sort %}
+                            <input type="hidden" name="allow_permissions" value="{{ permission_key }}">
+                            {% endfor %}
+                            {% for permission_key in selected_override_deny|sort %}
+                            <input type="hidden" name="deny_permissions" value="{{ permission_key }}">
+                            {% endfor %}
+                            <div class="filter-panel-note">
+                                Rol, kapsam ve özel izin override alanları yalnızca Sistem Sorumlusu tarafından düzenlenebilir. Bu görünümde mevcut özet bilgileri inceleyebilirsiniz.
+                            </div>
+                            {% endif %}
                         </div>
                     </div>
 
@@ -880,6 +934,89 @@
                 <strong>Önce bir kullanıcı seçin</strong>
                 <div>Kullanıcı listesi üst bölümde filtrelenip seçildikten sonra rol ve yetki düzenleme alanı burada açılır.</div>
                 <small>Önce filtrele, sonra kullanıcı seç, ardından detayları güncelle akışı bu yüzden daha kısa ve daha anlaşılır ilerler.</small>
+            </div>
+            <div class="bulk-role-panel" id="bulkRolePanel" data-bulk-role-panel>
+                <div class="bulk-role-panel-head">
+                    <div class="bulk-role-panel-title">Toplu yetki düzenleme</div>
+                    <div class="bulk-role-panel-note">Seçilen havalimanındaki personeller için toplu rol/kapsam düzenleme alanı.</div>
+                </div>
+
+                <form method="GET" action="{{ url_for('admin.kullanicilar') }}" class="bulk-role-filter-form">
+                    {% if search_term %}
+                    <input type="hidden" name="q" value="{{ search_term }}">
+                    {% endif %}
+                    {% if selected_role_key %}
+                    <input type="hidden" name="role" value="{{ selected_role_key }}">
+                    {% endif %}
+                    {% if selected_airport_key %}
+                    <input type="hidden" name="airport_id" value="{{ selected_airport_key }}">
+                    {% endif %}
+                    {% if selected_status_key and selected_status_key != 'active' %}
+                    <input type="hidden" name="status" value="{{ selected_status_key }}">
+                    {% endif %}
+
+                    <div class="form-group">
+                        <label for="bulkAirportFilter">Havalimanı filtresi</label>
+                        <select id="bulkAirportFilter" name="bulk_airport_id" class="form-control" data-bulk-airport-filter>
+                            <option value="">Havalimanı seçin</option>
+                            {% for h in havalimanlari %}
+                            <option value="{{ h.id }}" {% if selected_bulk_airport_key == h.id|string %}selected{% endif %}>
+                                {{ h.kodu }} - {{ h.ad }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-secondary">Personelleri Listele</button>
+                </form>
+
+                {% if not can_edit_role_scope_permissions %}
+                <div class="bulk-role-empty">Toplu rol/kapsam düzenleme yalnızca Sistem Sorumlusu hesabında kullanılabilir.</div>
+                {% elif not selected_bulk_airport_key %}
+                <div class="bulk-role-empty">Önce bir havalimanı seçin. Seçim sonrası ilgili havalimanındaki aktif personeller bu alanda listelenir.</div>
+                {% else %}
+                <form method="POST" action="{{ url_for('admin.kullanici_toplu_yetki_guncelle') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="bulk_airport_id" value="{{ selected_bulk_airport_key }}">
+
+                    <div class="bulk-role-grid">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label>Personel listesi ({{ selected_bulk_airport_label }})</label>
+                            {% if bulk_airport_staff %}
+                            <div class="bulk-role-user-list">
+                                {% for staff in bulk_airport_staff %}
+                                <label class="bulk-role-user-item" data-bulk-staff-id="{{ staff.id }}">
+                                    <span class="bulk-role-user-item-row">
+                                        <input type="checkbox" name="bulk_user_ids" value="{{ staff.id }}">
+                                        <span>{{ staff.tam_ad }}</span>
+                                    </span>
+                                    <small>{{ rol_etiketleri.get(staff.rol, staff.rol) }} • {{ staff.kullanici_adi }}</small>
+                                </label>
+                                {% endfor %}
+                            </div>
+                            {% else %}
+                            <div class="bulk-role-empty">Seçili havalimanında aktif personel bulunamadı.</div>
+                            {% endif %}
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label for="bulkRoleSelect">Rol seçimi (çoklu)</label>
+                            <select id="bulkRoleSelect" name="bulk_roles" class="form-control bulk-role-select" multiple>
+                                {% for role in assignable_role_options %}
+                                <option value="{{ role.key }}">{{ role.label }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="bulk-role-info">
+                                Sistem kullanıcı başına tek rol tuttuğu için birden fazla rol seçilirse ilk rol uygulanır.
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if bulk_airport_staff %}
+                    <div class="bulk-role-actions">
+                        <button type="submit" class="btn btn-navy">Seçili personellere uygula</button>
+                    </div>
+                    {% endif %}
+                </form>
+                {% endif %}
             </div>
             {% endif %}
         </div>
@@ -1184,6 +1321,7 @@
     const airportFilter = document.getElementById('userAirportFilter');
     const statusFilter = document.getElementById('userStatusFilter');
     const localSearch = document.getElementById('userLocalSearch');
+    const bulkAirportFilter = document.querySelector('[data-bulk-airport-filter]');
     const directoryCards = Array.from(document.querySelectorAll('[data-user-search]'));
     const localEmpty = document.getElementById('userLocalEmpty');
     const directoryVisibleCount = document.getElementById('directoryVisibleCount');
@@ -1223,6 +1361,23 @@
       return String(value || '').replace(/[iıçğöşü]/g, function (char) {
         return turkishUpperMap[char] || char;
       }).toUpperCase();
+    };
+
+    const normalizeLookupText = function (value) {
+      const text = String(value || '').trim();
+      if (!text) return '';
+      const translated = text
+        .replace(/[ıİI]/g, 'i')
+        .replace(/[şŞ]/g, 's')
+        .replace(/[ğĞ]/g, 'g')
+        .replace(/[üÜ]/g, 'u')
+        .replace(/[öÖ]/g, 'o')
+        .replace(/[çÇ]/g, 'c');
+      const lowered = translated.toLowerCase();
+      const normalized = typeof lowered.normalize === 'function'
+        ? lowered.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+        : lowered;
+      return normalized.trim();
     };
 
     const getFieldFeedback = function (input) {
@@ -1493,6 +1648,14 @@
       });
     }
 
+    if (bulkAirportFilter) {
+      bulkAirportFilter.addEventListener('change', function () {
+        if (bulkAirportFilter.form) {
+          bulkAirportFilter.form.requestSubmit();
+        }
+      });
+    }
+
     document.querySelectorAll('[data-filter-clear]').forEach(function (link) {
       link.addEventListener('click', function () {
         queueIntent({ kind: 'filter-clear' });
@@ -1501,11 +1664,11 @@
 
     if (localSearch) {
       localSearch.addEventListener('input', function () {
-        const needle = localSearch.value.trim().toLowerCase();
+        const needle = normalizeLookupText(localSearch.value);
         let visibleCount = 0;
 
         directoryCards.forEach(function (card) {
-          const haystack = (card.getAttribute('data-user-search') || '').toLowerCase();
+          const haystack = normalizeLookupText(card.getAttribute('data-user-search') || '');
           const matches = !needle || haystack.indexOf(needle) !== -1;
           card.hidden = !matches;
           if (matches) visibleCount += 1;
@@ -1517,7 +1680,7 @@
               option.hidden = false;
               return;
             }
-            const haystack = (option.getAttribute('data-search-text') || option.textContent || '').toLowerCase();
+            const haystack = normalizeLookupText(option.getAttribute('data-search-text') || option.textContent || '');
             const matches = !needle || haystack.indexOf(needle) !== -1 || option.selected;
             option.hidden = !matches;
           });

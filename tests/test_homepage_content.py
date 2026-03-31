@@ -207,6 +207,32 @@ def test_admin_can_access_all_homepage_management_pages(client, app):
         assert response.status_code == 200
 
 
+def test_homepage_announcement_search_matches_turkish_character_variants(client, app):
+    admin = KullaniciFactory(rol="sahip", is_deleted=False)
+    published = AnnouncementFactory(
+        title="Şule Çağrı İçerik Duyurusu",
+        slug="sule-cagri-duyurusu",
+        summary="İzmir Çiğli saha notu",
+        is_published=True,
+    )
+    draft = AnnouncementFactory(
+        title="Farklı Kayıt",
+        slug="farkli-kayit",
+        summary="Trabzon notu",
+        is_published=False,
+    )
+    db.session.add_all([admin, published, draft])
+    db.session.commit()
+    _login(client, admin)
+
+    response = client.get("/admin/homepage/announcements?q=sule cagri izmir cigli")
+    page = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Şule Çağrı İçerik Duyurusu" in page
+    assert "Farklı Kayıt" not in page
+
+
 def test_admin_homepage_dashboard_focuses_on_core_public_modules(client, app):
     admin = KullaniciFactory(rol="sahip")
     db.session.add(admin)

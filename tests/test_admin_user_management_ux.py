@@ -17,6 +17,13 @@ def _extract_select_markup(html, element_id):
     return html[start:end]
 
 
+def _extract_update_form_markup(html, user_id):
+    marker = f'<form method="POST" action="/kullanici-guncelle/{user_id}"'
+    start = html.index(marker)
+    end = html.index("</form>", start)
+    return html[start:end]
+
+
 def test_selected_user_loads_current_role_and_permission_overrides(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Erzurum Havalimanı", kodu="ERZ")
@@ -42,6 +49,7 @@ def test_selected_user_loads_current_role_and_permission_overrides(client, app):
     assert response.status_code == 200
     assert f'data-selected-user-id="{staff_id}"' in html
     assert 'value="ekip_uyesi" selected' in html
+    assert 'name="h_id"' in html
     assert 'name="allow_permissions" value="inventory.export" checked' in html
     assert 'name="deny_permissions" value="logs.view" checked' in html
 
@@ -355,6 +363,30 @@ def test_empty_state_renders_when_filters_return_no_users(client, app):
     assert 'data-result-count="0"' in html
 
 
+def test_user_search_matches_turkish_character_variants(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="İzmir Çiğli Havalimanı", kodu="IGL")
+        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-tr-search@sarx.com")
+        user = KullaniciFactory(
+            rol="bakim_sorumlusu",
+            is_deleted=False,
+            tam_ad="Şule Çağrı Öztürk",
+            kullanici_adi="sule.cagri@sarx.com",
+            havalimani=airport,
+        )
+        db.session.add_all([airport, owner, user])
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+    response = client.get("/kullanicilar?q=sule cagri ozturk izmir cigli")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Şule Çağrı Öztürk" in html
+    assert "İzmir Çiğli Havalimanı" in html
+
+
 def test_detail_panel_is_rendered_after_filter_and_selection_blocks(client, app):
     with app.app_context():
         owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-layout@sarx.com")
@@ -370,16 +402,155 @@ def test_detail_panel_is_rendered_after_filter_and_selection_blocks(client, app)
     assert "Filtrele ve kullanıcıyı bul" in html
     assert "Kullanıcı seç" in html
     assert "Detay ve yetki düzenleme" in html
+    assert "Toplu yetki düzenleme" in html
     assert html.index('class="panel filter-panel stage-accordion"') < html.index('class="panel user-directory-panel stage-accordion"')
     assert html.index('class="panel user-directory-panel stage-accordion"') < html.index('id="userDetailPanel"')
     assert html.index('id="userDetailPanel"') < html.index('id="newUserPanel"')
     assert 'data-filter-summary' in html
     assert 'data-detail-empty-state' in html
+    assert 'data-bulk-role-panel' in html
     assert html.count('data-stage-accordion') >= 3
     stage_select_start = html.index('data-admin-stage="select"')
     stage_select_markup = html[stage_select_start:html.index('>', stage_select_start)]
     assert " open" not in stage_select_markup
     assert 'id="userDirectoryShell"' in html
+
+
+def test_bulk_role_panel_lists_only_selected_airport_staff(client, app):
+    with app.app_context():
+        erzurum = HavalimaniFactory(ad="Erzurum Havalimanı", kodu="ERZ")
+        trabzon = HavalimaniFactory(ad="Trabzon Havalimanı", kodu="TZX")
+        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-bulk-panel@sarx.com")
+        local_staff = KullaniciFactory(
+            rol="bakim_sorumlusu",
+            is_deleted=False,
+            tam_ad="Erzurum Toplu Personel",
+            kullanici_adi="bulk-erzurum@sarx.com",
+            havalimani=erzurum,
+        )
+        remote_staff = KullaniciFactory(
+            rol="bakim_sorumlusu",
+            is_deleted=False,
+            tam_ad="Trabzon Toplu Personel",
+            kullanici_adi="bulk-trabzon@sarx.com",
+            havalimani=trabzon,
+        )
+        db.session.add_all([erzurum, trabzon, owner, local_staff, remote_staff])
+        db.session.commit()
+        owner_id = owner.id
+        erzurum_id = erzurum.id
+        local_staff_id = local_staff.id
+        remote_staff_id = remote_staff.id
+
+    _login(client, owner_id)
+    response = client.get(f"/kullanicilar?bulk_airport_id={erzurum_id}")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Toplu yetki düzenleme" in html
+    assert "Seçilen havalimanındaki personeller için toplu rol/kapsam düzenleme alanı." in html
+    assert 'id="userDetailPanel" data-stage-accordion open' in html
+    assert f'data-bulk-staff-id="{local_staff_id}"' in html
+    assert f'data-bulk-staff-id="{remote_staff_id}"' not in html
+    assert 'name="bulk_roles"' in html
+    assert 'id="bulkRoleSelect"' in html
+
+
+def test_bulk_role_apply_updates_selected_airport_users(client, app):
+    with app.app_context():
+        erzurum = HavalimaniFactory(ad="Erzurum Havalimanı", kodu="ERZ")
+        trabzon = HavalimaniFactory(ad="Trabzon Havalimanı", kodu="TZX")
+        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-bulk-apply@sarx.com")
+        staff_one = KullaniciFactory(
+            rol="bakim_sorumlusu",
+            is_deleted=False,
+            tam_ad="Toplu Bir",
+            kullanici_adi="bulk-one@sarx.com",
+            havalimani=erzurum,
+        )
+        staff_two = KullaniciFactory(
+            rol="depo_sorumlusu",
+            is_deleted=False,
+            tam_ad="Toplu Iki",
+            kullanici_adi="bulk-two@sarx.com",
+            havalimani=erzurum,
+        )
+        remote_staff = KullaniciFactory(
+            rol="bakim_sorumlusu",
+            is_deleted=False,
+            tam_ad="Uzak Personel",
+            kullanici_adi="bulk-remote@sarx.com",
+            havalimani=trabzon,
+        )
+        db.session.add_all([erzurum, trabzon, owner, staff_one, staff_two, remote_staff])
+        db.session.commit()
+        owner_id = owner.id
+        erzurum_id = erzurum.id
+        trabzon_id = trabzon.id
+        staff_one_id = staff_one.id
+        staff_two_id = staff_two.id
+        remote_staff_id = remote_staff.id
+
+    _login(client, owner_id)
+    response = client.post(
+        "/kullanicilar/toplu-yetki-guncelle",
+        data={
+            "bulk_airport_id": str(erzurum_id),
+            "bulk_user_ids": [str(staff_one_id), str(staff_two_id), str(remote_staff_id)],
+            "bulk_roles": ["ekip_sorumlusu", "ekip_uyesi"],
+        },
+        follow_redirects=True,
+    )
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Birden fazla rol seçildiği için ilk rol uygulandı" in html
+    assert "2 kullanıcı için toplu rol/kapsam güncellendi." in html
+    assert "1 kullanıcı kapsam/yetki kontrolü nedeniyle atlandı." in html
+
+    with app.app_context():
+        refreshed_one = db.session.get(Kullanici, staff_one_id)
+        refreshed_two = db.session.get(Kullanici, staff_two_id)
+        refreshed_remote = db.session.get(Kullanici, remote_staff_id)
+        assert refreshed_one.rol == "ekip_sorumlusu"
+        assert refreshed_two.rol == "ekip_sorumlusu"
+        assert refreshed_one.havalimani_id == erzurum_id
+        assert refreshed_two.havalimani_id == erzurum_id
+        assert refreshed_remote.rol == "bakim_sorumlusu"
+        assert refreshed_remote.havalimani_id == trabzon_id
+
+
+def test_non_owner_detail_panel_copy_hides_permission_wording(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Erzurum Havalimanı", kodu="ERZ")
+        actor = KullaniciFactory(
+            rol="ekip_sorumlusu",
+            is_deleted=False,
+            tam_ad="Erzurum Yonetici",
+            kullanici_adi="lead-stage3@sarx.com",
+            havalimani=airport,
+        )
+        selected_user = KullaniciFactory(
+            rol="bakim_sorumlusu",
+            is_deleted=False,
+            tam_ad="Secilen Kullanici",
+            kullanici_adi="selected-stage3@sarx.com",
+            havalimani=airport,
+        )
+        db.session.add_all([airport, actor, selected_user])
+        db.session.commit()
+        actor_id = actor.id
+        selected_user_id = selected_user.id
+
+    _login(client, actor_id)
+    response = client.get(f"/kullanicilar?user_id={selected_user_id}")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Kullanıcı güncelle" in html
+    assert "Seçilen kullanıcının temel bilgilerini, kapsamını bu alandan yönetin." in html
+    assert "Detay ve yetki düzenleme" not in html
+    assert "Seçilen kullanıcının temel bilgilerini, rolünü, kapsamını ve gerekiyorsa özel yetkilerini bu alandan yönetin." not in html
 
 
 def test_user_selector_hides_email_and_shows_name_airport_and_role(client, app):
@@ -907,6 +1078,42 @@ def test_non_owner_cannot_change_user_role_scope_or_permission_matrix(client, ap
         assert updated.rol == "ekip_uyesi"
 
 
+def test_non_system_user_detail_panel_hides_role_scope_and_override_edit_controls(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Van Havalimanı", kodu="VAN")
+        lead = KullaniciFactory(
+            rol="ekip_sorumlusu",
+            is_deleted=False,
+            kullanici_adi="lead-readonly@sarx.com",
+            havalimani=airport,
+        )
+        staff = KullaniciFactory(
+            rol="ekip_uyesi",
+            is_deleted=False,
+            tam_ad="Readonly Personel",
+            kullanici_adi="readonly-user@sarx.com",
+            havalimani=airport,
+        )
+        db.session.add_all([airport, lead, staff])
+        db.session.flush()
+        update_user_permission_overrides(staff.id, ["inventory.export"], ["logs.view"])
+        db.session.commit()
+        lead_id = lead.id
+        staff_id = staff.id
+
+    _login(client, lead_id)
+    response = client.get(f"/kullanicilar?user_id={staff_id}")
+    html = response.data.decode("utf-8")
+    form_html = _extract_update_form_markup(html, staff_id)
+
+    assert response.status_code == 200
+    assert 'data-selected-role=' not in form_html
+    assert 'type="checkbox" name="allow_permissions"' not in form_html
+    assert 'type="checkbox" name="deny_permissions"' not in form_html
+    assert "yalnızca Sistem Sorumlusu tarafından düzenlenebilir" in form_html
+    assert 'type="hidden" name="rol" value="ekip_uyesi"' in form_html
+
+
 def test_team_lead_create_form_is_locked_to_team_member_and_own_airport(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Rize Havalimanı", kodu="RZV")
@@ -976,6 +1183,7 @@ def test_team_lead_can_create_only_team_member_in_own_airport_without_403(client
 
 def test_role_switched_team_lead_can_open_user_management_and_create_scoped_user(client, app):
     with app.app_context():
+        app.config["ROLE_SWITCH_ALLOWED_USERS"] = "mehmetcinocevi@gmail.com"
         airport = HavalimaniFactory(ad="Bodrum Havalimanı", kodu="BJV")
         owner = KullaniciFactory(
             rol="sahip",

@@ -230,7 +230,7 @@ def test_sifre_sifirla_talep_uses_public_reset_base_url(client, app):
     assert "http://127.0.0.1:5000/sifre-yenile/" not in email_html
 
 
-def test_sifre_sifirla_talep_uses_forwarded_headers_for_reset_link(client, app):
+def test_sifre_sifirla_talep_uses_local_request_host_when_reset_base_url_is_not_configured(client, app):
     app.config.update({
         'WTF_CSRF_ENABLED': False,
         'PASSWORD_RESET_BASE_URL': '',
@@ -244,6 +244,30 @@ def test_sifre_sifirla_talep_uses_forwarded_headers_for_reset_link(client, app):
         response = client.post(
             '/sifre-sifirla-talep',
             data={'kullanici_adi': 'proxy@sarx.com'},
+            base_url='http://127.0.0.1:5000',
+            follow_redirects=True,
+        )
+
+    assert response.status_code == 200
+    assert mocked_mail.call_count == 1
+    email_html = mocked_mail.call_args.args[2]
+    assert "http://127.0.0.1:5000/sifre-yenile/" in email_html
+
+
+def test_sifre_sifirla_talep_rejects_forwarded_host_fallback_without_configured_base_url(client, app):
+    app.config.update({
+        'WTF_CSRF_ENABLED': False,
+        'PASSWORD_RESET_BASE_URL': '',
+        'PUBLIC_BASE_URL': '',
+    })
+    user = KullaniciFactory(kullanici_adi="proxy-blocked@sarx.com", is_deleted=False)
+    db.session.add(user)
+    db.session.commit()
+
+    with patch('routes.auth.mail_gonder', return_value=True) as mocked_mail:
+        response = client.post(
+            '/sifre-sifirla-talep',
+            data={'kullanici_adi': 'proxy-blocked@sarx.com'},
             base_url='http://internal.service.local',
             headers={
                 'X-Forwarded-Proto': 'https',
@@ -253,10 +277,10 @@ def test_sifre_sifirla_talep_uses_forwarded_headers_for_reset_link(client, app):
         )
 
     assert response.status_code == 200
-    assert mocked_mail.call_count == 1
-    email_html = mocked_mail.call_args.args[2]
-    assert "https://sarx.example.com/sifre-yenile/" in email_html
-    assert "http://internal.service.local/sifre-yenile/" not in email_html
+    assert mocked_mail.call_count == 0
+    html = response.data.decode('utf-8')
+    assert "SAR-X-MAIL-4101" in html
+    assert "Şifre sıfırlama isteği şu an gönderilemedi." in html
 
 
 def test_sifre_yenile_page_loads(client, app):
