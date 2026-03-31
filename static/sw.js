@@ -62,7 +62,7 @@ async function getDB() {
         openRequest.onupgradeneeded = () => {
             const db = openRequest.result;
             if (!db.objectStoreNames.contains(OFFLINE_STORE_NAME)) {
-                db.createObjectStore(OFFLINE_STORE_NAME, { keyPath: 'id', autoIncrement: true });
+                db.createObjectStore('bekleyen_bakimlar', { keyPath: 'id', autoIncrement: true });
             }
         };
 
