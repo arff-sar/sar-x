@@ -61,6 +61,13 @@ def test_fresh_database_can_upgrade_with_migrations(app, monkeypatch):
     assert "asset_spare_part_link" in tables
 
     with sqlite3.connect(db_path) as connection:
+        passkey_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(passkey_credential)").fetchall()
+        }
+    assert {"friendly_name", "is_active", "revoked_at"} <= passkey_columns
+
+    with sqlite3.connect(db_path) as connection:
         islem_log_columns = {
             row[1]
             for row in connection.execute("PRAGMA table_info(islem_log)").fetchall()
@@ -167,4 +174,4 @@ def test_drifted_database_recovers_missing_havalimani_drive_folder_column(app):
 
     assert "drive_folder_id" in havalimani_columns
     assert "ix_havalimani_drive_folder_id" in havalimani_indexes
-    assert current_revision == "3f4b2c1d9a7e"
+    assert current_revision == "8d6e4b2c1f90"

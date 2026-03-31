@@ -109,3 +109,30 @@ def test_authenticated_shell_contains_mobile_sidebar_logout_and_saha_mode_order(
     assert 'class="sidebar-logout-btn"' in html
     assert html.index("<strong>Saha Modu</strong>") < html.index('class="sidebar-logout-form"')
     assert ".topbar-end > form { display: none !important; }" in html
+
+
+def test_authenticated_shell_contains_mobile_pwa_qr_scan_controls(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Rize-Artvin Havalimanı", kodu="RZV")
+        user = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False)
+        db.session.add_all([airport, user])
+        db.session.commit()
+        user_id = user.id
+
+    _login(client, user_id)
+    response = client.get("/dashboard")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert 'id="qrScanLaunchButton"' in html
+    assert html.index('id="qrScanLaunchButton"') < html.index('class="sidebar-logout-form"')
+    assert 'id="qrScanOverlay"' in html
+    assert 'class="qr-scan-corner tl"' in html
+    assert "QR kodu çerçeve içine hizalayın" in html
+    assert "Hazırlanıyor." in html
+    assert "QR aranıyor. Kodu çerçeve içinde sabit tutun." in html
+    assert "QR bulundu, yönlendiriliyor." in html
+    assert "mobileSidebarMedia.matches && isStandaloneMode()" in html
+    assert "parsedUrl.origin !== window.location.origin" in html
+    assert "window.location.assign(resolved.target);" in html
+    assert "window.open(" not in html

@@ -64,7 +64,8 @@
         return cfg;
     }
 
-    async function postJson(url, payload) {
+    async function requestJson(url, options) {
+        var cfg = Object.assign({ method: "POST", payload: null }, options || {});
         var headers = {
             "Content-Type": "application/json",
             "X-Requested-With": "XMLHttpRequest"
@@ -74,10 +75,12 @@
             headers["X-CSRFToken"] = csrfToken;
         }
         var response = await window.fetch(url, {
-            method: "POST",
+            method: String(cfg.method || "POST").toUpperCase(),
             credentials: "same-origin",
             headers: headers,
-            body: JSON.stringify(payload || {})
+            body: cfg.payload === null && String(cfg.method || "POST").toUpperCase() === "GET"
+                ? null
+                : JSON.stringify(cfg.payload || {})
         });
         var data = {};
         try {
@@ -94,6 +97,14 @@
         return data;
     }
 
+    async function postJson(url, payload) {
+        return requestJson(url, { method: "POST", payload: payload });
+    }
+
+    async function getJson(url) {
+        return requestJson(url, { method: "GET", payload: null });
+    }
+
     async function supportsPasskeys() {
         if (!window.isSecureContext || !window.PublicKeyCredential || !navigator.credentials) {
             return false;
@@ -106,12 +117,6 @@
             }
         }
         return true;
-    }
-
-    function isMobileLikeClient() {
-        var coarse = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
-        var compact = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 900px)").matches;
-        return Boolean(coarse || compact);
     }
 
     function setLoadingState(button, isLoading) {
@@ -129,9 +134,6 @@
             return;
         }
 
-        if (!isMobileLikeClient()) {
-            return;
-        }
         if (!(await supportsPasskeys())) {
             return;
         }
@@ -236,8 +238,61 @@
         });
     }
 
+    async function initManagement(config) {
+        var settings = Object.assign({}, config || {});
+        var button = document.getElementById(settings.buttonId || "");
+        if (!button || !settings.listUrl || !settings.revokeUrl) {
+            return;
+        }
+        button.hidden = false;
+
+        button.addEventListener("click", async function () {
+            setLoadingState(button, true);
+            try {
+                var listResponse = await getJson(settings.listUrl);
+                var credentials = Array.isArray(listResponse.credentials) ? listResponse.credentials : [];
+                if (!credentials.length) {
+                    showToast("Bu hesap için kayıtlı aktif passkey bulunmuyor.", "info");
+                    return;
+                }
+                var lines = credentials.map(function (item, index) {
+                    var label = String(item.label || ("Cihaz " + (index + 1))).trim();
+                    var createdAt = String(item.created_at || "").trim();
+                    var lastUsedAt = String(item.last_used_at || "").trim();
+                    var details = [];
+                    if (createdAt) details.push("Kayıt: " + createdAt);
+                    if (lastUsedAt) details.push("Son kullanım: " + lastUsedAt);
+                    return (index + 1) + ") " + label + (details.length ? " [" + details.join(" | ") + "]" : "");
+                });
+                var selected = window.prompt(
+                    "Kaldırmak istediğiniz passkey için numara girin. İptal için boş bırakın.\n\n" + lines.join("\n")
+                );
+                if (selected === null || String(selected).trim() === "") {
+                    return;
+                }
+                var selectedIndex = Number.parseInt(String(selected).trim(), 10) - 1;
+                if (!Number.isFinite(selectedIndex) || selectedIndex < 0 || selectedIndex >= credentials.length) {
+                    showToast("Geçerli bir passkey numarası girin.", "warning");
+                    return;
+                }
+                var selectedCredential = credentials[selectedIndex];
+                var confirmText = "\"" + String(selectedCredential.label || ("Cihaz " + (selectedIndex + 1))) + "\" kaydı kaldırılacak. Onaylıyor musunuz?";
+                if (!window.confirm(confirmText)) {
+                    return;
+                }
+                var revokeResponse = await postJson(settings.revokeUrl, { credential_id: selectedCredential.id });
+                showToast(String(revokeResponse.message || "Passkey kaydı kaldırıldı."), "success");
+            } catch (error) {
+                showToast((error && error.userMessage) || "Passkey kayıtları yönetilemedi.", "warning");
+            } finally {
+                setLoadingState(button, false);
+            }
+        });
+    }
+
     window.SARXPasskey = {
         initLogin: initLogin,
-        initRegistration: initRegistration
+        initRegistration: initRegistration,
+        initManagement: initManagement
     };
 })(window);

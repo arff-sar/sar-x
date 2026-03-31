@@ -283,6 +283,8 @@ def _consume_state(session_key: str) -> dict[str, Any]:
 
 
 def parse_client_data(client_data_b64: str, *, expected_type: str, expected_challenge: str) -> bytes:
+    if not str(expected_challenge or "").strip():
+        raise PasskeyError("Passkey challenge oturumu doğrulanamadı.")
     client_data_raw = b64url_decode(client_data_b64)
     try:
         client_data = json.loads(client_data_raw.decode("utf-8"))
@@ -467,8 +469,13 @@ def verify_authentication_response(payload: dict[str, Any], *, credential_public
     signed_data = auth_data["raw"] + client_data_hash
     _verify_signature(public_key_bytes, signature, signed_data)
     new_sign_count = int(auth_data["sign_count"] or 0)
-    if stored_sign_count and new_sign_count and new_sign_count <= int(stored_sign_count):
-        raise PasskeyError("Passkey sayaç doğrulaması başarısız oldu.")
+    current_sign_count = int(stored_sign_count or 0)
+    # Authenticator counter rollback, clone/downgrade ve anomali durumlarında fail-closed.
+    if current_sign_count > 0:
+        if new_sign_count <= 0:
+            raise PasskeyError("Passkey sayaç doğrulaması başarısız oldu.")
+        if new_sign_count <= current_sign_count:
+            raise PasskeyError("Passkey sayaç doğrulaması başarısız oldu.")
     return {
         "sign_count": new_sign_count,
         "backup_eligible": auth_data["backup_eligible"],

@@ -5,7 +5,7 @@ import re
 from datetime import timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from flask import Blueprint, abort, current_app, flash, g, jsonify, make_response, redirect, render_template, request, session, url_for
 from flask_login import login_user, logout_user, login_required, current_user
@@ -120,6 +120,37 @@ def _passkey_success_redirect_url(user):
 
 def _passkey_remember_value(payload):
     return bool((payload or {}).get("remember_me"))
+
+
+def _passkey_transports_from_json(raw_value):
+    if not raw_value:
+        return []
+    try:
+        parsed = json.loads(raw_value)
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item).strip() for item in parsed if str(item).strip()]
+
+
+def _format_passkey_timestamp(value):
+    if not value:
+        return ""
+    try:
+        return value.strftime("%d.%m.%Y %H:%M")
+    except Exception:
+        return str(value)
+
+
+def _default_passkey_friendly_name():
+    user_agent = (request.user_agent.string or "").strip()
+    if not user_agent:
+        return "Kayıtlı Cihaz"
+    compact = user_agent.replace("\n", " ").strip()
+    if len(compact) > 80:
+        compact = compact[:77].rstrip() + "..."
+    return compact or "Kayıtlı Cihaz"
 
 def gizli_sifreyi_getir():
     # 1) Secret Manager erişimi yoksa/kapalıysa env üzerinden devam et.
@@ -257,6 +288,33 @@ def _get_password_reset_base_url():
 def _build_password_reset_link(token):
     reset_path = url_for('auth.sifre_yenile', token=token)
     return urljoin(_get_password_reset_base_url(), reset_path.lstrip("/"))
+
+
+def _safe_redirect_target(raw_target, fallback_target):
+    fallback = str(fallback_target or "/").strip() or "/"
+    target = str(raw_target or "").strip()
+    if not target:
+        return fallback
+    if target.startswith("//"):
+        return fallback
+
+    parsed = urlsplit(target)
+    if parsed.scheme or parsed.netloc:
+        request_origin = urlsplit(request.host_url)
+        if (parsed.scheme or "").lower() != (request_origin.scheme or "").lower():
+            return fallback
+        if (parsed.hostname or "").lower() != (request_origin.hostname or "").lower():
+            return fallback
+        request_port = request_origin.port
+        parsed_port = parsed.port
+        if (request_port or None) != (parsed_port or None):
+            return fallback
+        safe_path = parsed.path if str(parsed.path or "").startswith("/") else f"/{parsed.path or ''}"
+        return urlunsplit(("", "", safe_path or "/", parsed.query, parsed.fragment))
+
+    if not target.startswith("/"):
+        return fallback
+    return target
 
 
 def _password_reset_state(user):
@@ -467,12 +525,9 @@ def passkey_register_begin():
 
     exclude_credentials = []
     for credential in current_user.passkey_credentials:
-        transports = []
-        if credential.transports_json:
-            try:
-                transports = json.loads(credential.transports_json)
-            except Exception:
-                transports = []
+        if not getattr(credential, "is_active", True):
+            continue
+        transports = _passkey_transports_from_json(credential.transports_json)
         exclude_credentials.append(
             {
                 "id": credential.credential_id,
@@ -534,11 +589,31 @@ def passkey_register_finish():
 
     existing = PasskeyCredential.query.filter_by(credential_id=verified["credential_id"]).first()
     if existing:
-        if existing.user_id == current_user.id:
+        if existing.user_id != current_user.id:
+            audit_log("auth.passkey.register.finish", outcome="conflict", user_id=current_user.id, ip=_client_ip())
+            return _passkey_json_error("Bu passkey başka bir hesap için kayıtlı.", 409)
+        if getattr(existing, "is_active", True):
             audit_log("auth.passkey.register.finish", outcome="duplicate", user_id=current_user.id, ip=_client_ip())
             return jsonify({"status": "success", "message": "Bu cihaz zaten biyometrik giriş için kayıtlı."})
-        audit_log("auth.passkey.register.finish", outcome="conflict", user_id=current_user.id, ip=_client_ip())
-        return _passkey_json_error("Bu passkey başka bir hesap için kayıtlı.", 409)
+
+        existing.public_key = verified["public_key"]
+        existing.algorithm = verified["algorithm"]
+        existing.sign_count = verified["sign_count"]
+        existing.friendly_name = (str(payload.get("device_name") or "").strip()[:120] or existing.friendly_name or _default_passkey_friendly_name())
+        existing.transports_json = json.dumps(verified["transports"], ensure_ascii=True)
+        existing.backup_eligible = verified["backup_eligible"]
+        existing.backup_state = verified["backup_state"]
+        existing.is_active = True
+        existing.revoked_at = None
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            audit_log("auth.passkey.register.finish", outcome="error", user_id=current_user.id, ip=_client_ip())
+            return _passkey_json_error("Biyometrik giriş bu cihaz için etkinleştirilemedi.", 500)
+        log_kaydet("Güvenlik", f"{current_user.kullanici_adi} için kaldırılmış passkey yeniden etkinleştirildi.", event_key="auth.passkey.register", outcome="success")
+        audit_log("auth.passkey.register.finish", outcome="reactivated", user_id=current_user.id, ip=_client_ip())
+        return jsonify({"status": "success", "message": "Biyometrik giriş kaydı yeniden etkinleştirildi."})
 
     credential = PasskeyCredential(
         user_id=current_user.id,
@@ -546,6 +621,9 @@ def passkey_register_finish():
         public_key=verified["public_key"],
         algorithm=verified["algorithm"],
         sign_count=verified["sign_count"],
+        friendly_name=(str(payload.get("device_name") or "").strip()[:120] or _default_passkey_friendly_name()),
+        is_active=True,
+        revoked_at=None,
         transports_json=json.dumps(verified["transports"], ensure_ascii=True),
         backup_eligible=verified["backup_eligible"],
         backup_state=verified["backup_state"],
@@ -561,6 +639,72 @@ def passkey_register_finish():
     log_kaydet("Güvenlik", f"{current_user.kullanici_adi} için yeni bir passkey kaydedildi.", event_key="auth.passkey.register", outcome="success")
     audit_log("auth.passkey.register.finish", outcome="success", user_id=current_user.id, ip=_client_ip())
     return jsonify({"status": "success", "message": "Biyometrik giriş bu cihaz için etkinleştirildi."})
+
+
+@auth_bp.route("/passkey/credentials", methods=["GET"])
+@login_required
+@limiter.limit("60 per minute", methods=["GET"])
+def passkey_credentials():
+    _require_passkey_feature()
+
+    credentials = (
+        PasskeyCredential.query.filter_by(user_id=current_user.id, is_active=True)
+        .order_by(PasskeyCredential.last_used_at.desc(), PasskeyCredential.created_at.desc())
+        .all()
+    )
+    payload = []
+    for index, credential in enumerate(credentials, start=1):
+        device_label = str(getattr(credential, "friendly_name", "") or "").strip() or f"Cihaz {index}"
+        payload.append(
+            {
+                "id": credential.id,
+                "label": device_label,
+                "created_at": _format_passkey_timestamp(getattr(credential, "created_at", None)),
+                "last_used_at": _format_passkey_timestamp(getattr(credential, "last_used_at", None)),
+                "transports": _passkey_transports_from_json(getattr(credential, "transports_json", None)),
+                "backup_eligible": bool(getattr(credential, "backup_eligible", False)),
+                "backup_state": bool(getattr(credential, "backup_state", False)),
+            }
+        )
+    return jsonify({"status": "success", "credentials": payload})
+
+
+@auth_bp.route("/passkey/credentials/revoke", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+def passkey_credential_revoke():
+    _require_passkey_feature()
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        credential_id = int(payload.get("credential_id") or 0)
+    except Exception:
+        credential_id = 0
+    if credential_id <= 0:
+        return _passkey_json_error("Geçersiz passkey kaydı.", 400)
+
+    credential = (
+        PasskeyCredential.query.filter_by(
+            id=credential_id,
+            user_id=current_user.id,
+            is_active=True,
+        ).first()
+    )
+    if not credential:
+        return _passkey_json_error("Passkey kaydı bulunamadı.", 404)
+
+    credential.is_active = False
+    credential.revoked_at = get_tr_now().replace(tzinfo=None)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        audit_log("auth.passkey.revoke", outcome="error", user_id=current_user.id, credential_id=credential_id, ip=_client_ip())
+        return _passkey_json_error("Passkey kaydı kaldırılamadı.", 500)
+
+    log_kaydet("Güvenlik", f"{current_user.kullanici_adi} passkey kaydını kaldırdı.", event_key="auth.passkey.revoke", outcome="success")
+    audit_log("auth.passkey.revoke", outcome="success", user_id=current_user.id, credential_id=credential_id, ip=_client_ip())
+    return jsonify({"status": "success", "message": "Passkey kaydı kaldırıldı."})
 
 
 @auth_bp.route("/login/passkey/begin", methods=["POST"])
@@ -607,7 +751,7 @@ def login_passkey_finish():
         audit_log("auth.passkey.login.finish", outcome="failed", ip=_client_ip())
         return _passkey_json_error("Biyometrik giriş doğrulanamadı.", 400)
 
-    credential = PasskeyCredential.query.filter_by(credential_id=credential_id).first()
+    credential = PasskeyCredential.query.filter_by(credential_id=credential_id, is_active=True).first()
     user = credential.user if credential and credential.user and not credential.user.is_deleted else None
     identifier_source = user.kullanici_adi if user else credential_id
     identifier = _auth_identifier(identifier_source)
@@ -759,7 +903,8 @@ def role_switch():
             active_override=(session.get("temporary_role_override") or "").strip(),
         )
 
-    redirect_target = request.form.get("next") or request.referrer or url_for(role_home_endpoint(current_user))
+    fallback_target = url_for(role_home_endpoint(current_user))
+    redirect_target = _safe_redirect_target(request.form.get("next") or request.referrer, fallback_target)
     selected_role = (request.form.get('role') or "").strip()
     selected_option_map = {item["key"]: item for item in get_role_switch_options(current_user)}
 

@@ -1,5 +1,6 @@
 import hashlib
 import json
+from unittest.mock import patch
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -740,3 +741,157 @@ def test_feature_enabled_login_page_renders_passkey_trigger(client, app):
     assert response.status_code == 200
     assert 'id="passkeyLoginButton"' in html
     assert "static/passkey.js" in html
+
+
+def test_passkey_sign_counter_zero_anomaly_rejected(client, app):
+    app.config["PASSKEY_ENABLED"] = True
+    user = KullaniciFactory(kullanici_adi="counter-anomaly@sarx.com", is_deleted=False, rol="sahip")
+    db.session.add(user)
+    db.session.commit()
+    private_key, credential = _register_passkey(client, app, user)
+
+    with app.app_context():
+        stored = db.session.get(PasskeyCredential, credential.id)
+        stored.sign_count = 5
+        db.session.commit()
+
+    client.post("/logout")
+    answer = _extract_challenge_answer(client, app)
+    token = _captcha_token(client)
+    begin = client.post("/login/passkey/begin")
+    challenge = begin.get_json()["public_key"]["challenge"]
+    rp_id = begin.get_json()["public_key"]["rpId"]
+    auth_data = _authentication_authenticator_data(rp_id, sign_count=0)
+    client_data = _client_data(challenge, "http://localhost", "webauthn.get")
+    signature = private_key.sign(auth_data + hashlib.sha256(client_data).digest(), ec.ECDSA(hashes.SHA256()))
+
+    finish = client.post(
+        "/login/passkey/finish",
+        json={
+            "id": credential.credential_id,
+            "rawId": credential.credential_id,
+            "type": "public-key",
+            "response": {
+                "clientDataJSON": _b64url_encode(client_data),
+                "authenticatorData": _b64url_encode(auth_data),
+                "signature": _b64url_encode(signature),
+                "userHandle": "",
+            },
+            "security_verification": answer,
+            "security_verification_token": token,
+        },
+    )
+
+    assert finish.status_code == 400
+    assert finish.get_json()["status"] == "error"
+
+
+def test_passkey_credentials_list_and_revoke(client, app):
+    app.config["PASSKEY_ENABLED"] = True
+    user = KullaniciFactory(kullanici_adi="manage-passkey@sarx.com", is_deleted=False, rol="sahip")
+    db.session.add(user)
+    db.session.commit()
+    _private_key, _credential = _register_passkey(client, app, user)
+
+    listed = client.get("/passkey/credentials")
+    listed_payload = listed.get_json()
+    assert listed.status_code == 200
+    assert listed_payload["status"] == "success"
+    assert len(listed_payload["credentials"]) == 1
+    credential_id = listed_payload["credentials"][0]["id"]
+
+    revoked = client.post("/passkey/credentials/revoke", json={"credential_id": credential_id})
+    assert revoked.status_code == 200
+    assert revoked.get_json()["status"] == "success"
+
+    with app.app_context():
+        stored = PasskeyCredential.query.filter_by(user_id=user.id).first()
+        assert stored is not None
+        assert stored.is_active is False
+        assert stored.revoked_at is not None
+
+
+def test_revoked_passkey_credential_is_rejected_on_login(client, app):
+    app.config["PASSKEY_ENABLED"] = True
+    user = KullaniciFactory(kullanici_adi="revoked-passkey@sarx.com", is_deleted=False, rol="sahip")
+    db.session.add(user)
+    db.session.commit()
+    private_key, credential = _register_passkey(client, app, user)
+
+    credentials = client.get("/passkey/credentials").get_json()["credentials"]
+    assert credentials
+    revoke_response = client.post("/passkey/credentials/revoke", json={"credential_id": credentials[0]["id"]})
+    assert revoke_response.status_code == 200
+
+    client.post("/logout")
+    answer = _extract_challenge_answer(client, app)
+    token = _captcha_token(client)
+    begin = client.post("/login/passkey/begin")
+    challenge = begin.get_json()["public_key"]["challenge"]
+    rp_id = begin.get_json()["public_key"]["rpId"]
+    auth_data = _authentication_authenticator_data(rp_id, sign_count=4)
+    client_data = _client_data(challenge, "http://localhost", "webauthn.get")
+    signature = private_key.sign(auth_data + hashlib.sha256(client_data).digest(), ec.ECDSA(hashes.SHA256()))
+
+    finish = client.post(
+        "/login/passkey/finish",
+        json={
+            "id": credential.credential_id,
+            "rawId": credential.credential_id,
+            "type": "public-key",
+            "response": {
+                "clientDataJSON": _b64url_encode(client_data),
+                "authenticatorData": _b64url_encode(auth_data),
+                "signature": _b64url_encode(signature),
+                "userHandle": "",
+            },
+            "security_verification": answer,
+            "security_verification_token": token,
+        },
+    )
+
+    assert finish.status_code == 400
+    assert finish.get_json()["status"] == "error"
+
+
+def test_passkey_finish_rejects_stale_challenge(client, app):
+    app.config["PASSKEY_ENABLED"] = True
+    user = KullaniciFactory(kullanici_adi="stale-passkey@sarx.com", is_deleted=False, rol="sahip")
+    db.session.add(user)
+    db.session.commit()
+    private_key, credential = _register_passkey(client, app, user)
+
+    client.post("/logout")
+    answer = _extract_challenge_answer(client, app)
+    token = _captcha_token(client)
+    begin = client.post("/login/passkey/begin")
+    challenge = begin.get_json()["public_key"]["challenge"]
+    rp_id = begin.get_json()["public_key"]["rpId"]
+    auth_data = _authentication_authenticator_data(rp_id, sign_count=6)
+    client_data = _client_data(challenge, "http://localhost", "webauthn.get")
+    signature = private_key.sign(auth_data + hashlib.sha256(client_data).digest(), ec.ECDSA(hashes.SHA256()))
+
+    with client.session_transaction() as session:
+        created_at = int(session["passkey_authentication_state"]["created_at"])
+    expired_now = created_at + int(app.config.get("PASSKEY_CHALLENGE_TTL_SECONDS", 180)) + 1
+
+    with patch("passkey_helper.time.time", return_value=expired_now):
+        finish = client.post(
+            "/login/passkey/finish",
+            json={
+                "id": credential.credential_id,
+                "rawId": credential.credential_id,
+                "type": "public-key",
+                "response": {
+                    "clientDataJSON": _b64url_encode(client_data),
+                    "authenticatorData": _b64url_encode(auth_data),
+                    "signature": _b64url_encode(signature),
+                    "userHandle": "",
+                },
+                "security_verification": answer,
+                "security_verification_token": token,
+            },
+        )
+
+    assert finish.status_code == 400
+    assert finish.get_json()["status"] == "error"

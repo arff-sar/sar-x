@@ -687,6 +687,8 @@ def create_app(config_name=None):
             "passkey_login_finish_url": url_for("auth.login_passkey_finish"),
             "passkey_register_begin_url": url_for("auth.passkey_register_begin"),
             "passkey_register_finish_url": url_for("auth.passkey_register_finish"),
+            "passkey_credentials_url": url_for("auth.passkey_credentials"),
+            "passkey_revoke_url": url_for("auth.passkey_credential_revoke"),
         }
 
         if current_user.is_authenticated:

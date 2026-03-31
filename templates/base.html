@@ -16,7 +16,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
-<script src="https://cdn.jsdelivr.net/npm/idb@7/build/umd.js"></script>
 
 <style>
 /* --- SAR-X ARFF DESIGN SYSTEM --- */
@@ -123,9 +122,53 @@ body[data-display-mode="standalone"] {
 .sidebar-passkey-btn { width: 100%; min-height: 40px; border-radius: 10px; border: 1px solid rgba(15,45,74,.14); background: rgba(239,246,255,.96); color: var(--navy); font-family: var(--sans); font-size: 12px; font-weight: 800; cursor: pointer; }
 .sidebar-passkey-btn:hover { background: #dbeafe; }
 .sidebar-passkey-btn.is-loading { opacity: .72; cursor: wait; }
+.sidebar-qr-scan-btn { display: none; width: 100%; min-height: 40px; border-radius: 10px; border: 1px solid rgba(14, 116, 144, 0.22); background: rgba(236, 254, 255, 0.95); color: #155e75; font-family: var(--sans); font-size: 12px; font-weight: 800; cursor: pointer; align-items: center; justify-content: center; gap: 6px; }
+.sidebar-qr-scan-btn:hover { background: #cffafe; }
 .sidebar-logout-form { display: none; }
 .sidebar-logout-btn { width: 100%; min-height: 40px; border-radius: 10px; border: 1px solid rgba(248, 113, 113, 0.24); background: rgba(254, 242, 242, 0.96); color: var(--red); font-family: var(--sans); font-size: 12px; font-weight: 800; cursor: pointer; }
 .sidebar-logout-btn:hover { background: var(--red-light); }
+.qr-scan-panel[hidden] { display: none !important; }
+.qr-scan-panel { position: fixed; inset: 0; z-index: 240; background: rgba(15, 23, 42, 0.72); display: flex; align-items: center; justify-content: center; padding: 16px; backdrop-filter: blur(1px); }
+.qr-scan-dialog { width: min(460px, 100%); background: #ffffff; border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 24px 56px rgba(15, 23, 42, 0.34); padding: 14px; display: grid; gap: 10px; }
+.qr-scan-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.qr-scan-title { font-size: 15px; color: var(--navy); font-weight: 800; }
+.qr-scan-subtitle { font-size: 12px; color: var(--text3); line-height: 1.45; margin-top: 3px; }
+.qr-scan-close { border: 1px solid var(--border); border-radius: 8px; background: #ffffff; color: var(--text2); font-size: 12px; font-weight: 700; min-height: 34px; min-width: 72px; padding: 0 10px; cursor: pointer; }
+.qr-scan-close:hover { background: #f8fafc; }
+.qr-scan-video-wrap { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; min-height: 230px; background: #020617; display: flex; align-items: center; justify-content: center; position: relative; isolation: isolate; }
+.qr-scan-video { width: 100%; height: 100%; min-height: 230px; max-height: 62svh; object-fit: cover; display: none; }
+.qr-scan-video.is-active { display: block; }
+.qr-scan-placeholder { color: #e2e8f0; text-align: center; padding: 18px; font-size: 12px; line-height: 1.5; position: relative; z-index: 3; }
+.qr-scan-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 4; display: none; }
+.qr-scan-overlay.is-active { display: block; }
+.qr-scan-guide { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.78); color: #f8fafc; border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 999px; font-size: 11px; font-weight: 700; padding: 6px 10px; white-space: nowrap; }
+.qr-scan-frame { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(66vw, 240px); aspect-ratio: 1 / 1; border-radius: 18px; border: 1px solid rgba(226, 232, 240, 0.55); box-shadow: 0 0 0 9999px rgba(2, 6, 23, 0.42); overflow: hidden; }
+.qr-scan-frame::before { content: ""; position: absolute; left: 8%; right: 8%; top: -2px; height: 2px; background: linear-gradient(90deg, rgba(34,197,94,0) 0%, rgba(52,211,153,.95) 50%, rgba(34,197,94,0) 100%); animation: qrScanLine 2s ease-in-out infinite; }
+.qr-scan-corner { position: absolute; width: 24px; height: 24px; border: 3px solid #22d3ee; }
+.qr-scan-corner.tl { left: -1px; top: -1px; border-right: 0; border-bottom: 0; border-radius: 12px 0 0 0; }
+.qr-scan-corner.tr { right: -1px; top: -1px; border-left: 0; border-bottom: 0; border-radius: 0 12px 0 0; }
+.qr-scan-corner.bl { left: -1px; bottom: -1px; border-right: 0; border-top: 0; border-radius: 0 0 0 12px; }
+.qr-scan-corner.br { right: -1px; bottom: -1px; border-left: 0; border-top: 0; border-radius: 0 0 12px 0; }
+.qr-scan-panel[data-scan-state="success"] .qr-scan-frame { border-color: rgba(134, 239, 172, 0.9); }
+.qr-scan-panel[data-scan-state="success"] .qr-scan-corner { border-color: #22c55e; }
+.qr-scan-panel[data-scan-state="warning"] .qr-scan-frame { border-color: rgba(253, 186, 116, 0.92); }
+.qr-scan-panel[data-scan-state="warning"] .qr-scan-corner { border-color: #f97316; }
+.qr-scan-status { font-size: 12px; font-weight: 700; border-radius: 10px; border: 1px solid var(--border); background: #f8fafc; color: var(--text2); padding: 9px 10px; line-height: 1.45; display: flex; align-items: center; gap: 8px; }
+.qr-scan-status::before { content: ""; width: 8px; height: 8px; border-radius: 999px; background: #64748b; flex-shrink: 0; }
+.qr-scan-status[data-level="warning"] { border-color: #fdba74; background: #fff7ed; color: #9a3412; }
+.qr-scan-status[data-level="danger"] { border-color: #fca5a5; background: #fef2f2; color: #991b1b; }
+.qr-scan-status[data-level="success"] { border-color: #86efac; background: #f0fdf4; color: #166534; }
+.qr-scan-status[data-level="info"]::before { background: #334155; }
+.qr-scan-status[data-level="warning"]::before { background: #ea580c; }
+.qr-scan-status[data-level="danger"]::before { background: #dc2626; }
+.qr-scan-status[data-level="success"]::before { background: #16a34a; }
+
+@keyframes qrScanLine {
+  0% { transform: translateY(14%); opacity: 0; }
+  12% { opacity: 1; }
+  86% { opacity: 1; }
+  100% { transform: translateY(380%); opacity: 0; }
+}
 
 /* Content Area */
 .main-content { overflow: auto; background: var(--bg); min-width: 0; min-height: 0; }
@@ -242,6 +285,7 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
   .logout-btn { margin-left: 0; min-height: 36px; padding: 0 9px; font-size: 11px; }
   .topbar-end > form { display: none !important; }
   .sidebar-footer { padding-bottom: 10px; }
+  .sidebar-qr-scan-btn.is-visible { display: inline-flex; }
   .sidebar-logout-form { display: block; }
   .user-name { max-width: 102px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .main-inner { padding: 14px; }
@@ -266,6 +310,10 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
   .page-title { font-size: 18px; }
   .panel-title { font-size: 14px; }
   .panel-subtitle { font-size: 12px; }
+  .qr-scan-dialog { width: min(420px, 100%); padding: 12px; }
+  .qr-scan-guide { font-size: 10.5px; max-width: calc(100% - 20px); text-align: center; white-space: normal; }
+  .qr-scan-frame { width: min(72vw, 220px); }
+  .qr-scan-status { font-size: 11.5px; }
   table, .data-table { min-width: 520px; }
   .topbar-end { gap: 8px; }
   .notification-panel { width: min(300px, calc(100vw - 24px)); right: 0; }
@@ -430,7 +478,9 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
         </div>
         {% if passkey_enabled %}
         <button type="button" class="sidebar-passkey-btn" id="passkeyRegisterButton" hidden>Biyometrik Giriş Ekle</button>
+        <button type="button" class="sidebar-passkey-btn" id="passkeyManageButton" hidden>Kayıtlı Passkeyleri Yönet</button>
         {% endif %}
+        <button type="button" class="sidebar-qr-scan-btn" id="qrScanLaunchButton" hidden>QR ile Tara</button>
         <form method="POST" action="{{ url_for('auth.logout') }}" class="sidebar-logout-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="sidebar-logout-btn">Çıkış Yap</button>
@@ -438,6 +488,31 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
       </div>
     </div>
   </nav>
+  <div class="qr-scan-panel" id="qrScanPanel" hidden aria-hidden="true">
+    <div class="qr-scan-dialog" role="dialog" aria-modal="true" aria-labelledby="qrScanTitle">
+      <div class="qr-scan-head">
+        <div>
+          <div class="qr-scan-title" id="qrScanTitle">QR ile Tara</div>
+          <div class="qr-scan-subtitle">Yalnız SAR-X içindeki güvenli kutu veya envanter detay bağlantıları açılır.</div>
+        </div>
+        <button type="button" class="qr-scan-close" id="qrScanCloseButton">Kapat</button>
+      </div>
+      <div class="qr-scan-video-wrap">
+        <video class="qr-scan-video" id="qrScanVideo" playsinline muted></video>
+        <div class="qr-scan-overlay" id="qrScanOverlay" aria-hidden="true">
+          <div class="qr-scan-guide">QR kodu çerçeve içine hizalayın</div>
+          <div class="qr-scan-frame">
+            <span class="qr-scan-corner tl"></span>
+            <span class="qr-scan-corner tr"></span>
+            <span class="qr-scan-corner bl"></span>
+            <span class="qr-scan-corner br"></span>
+          </div>
+        </div>
+        <div class="qr-scan-placeholder" id="qrScanPlaceholder">Kamera erişimi bekleniyor.</div>
+      </div>
+      <div class="qr-scan-status" id="qrScanStatus" data-level="info">Hazırlanıyor.</div>
+    </div>
+  </div>
 
   <main class="main-content">
     <div class="main-inner">
@@ -781,6 +856,299 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
             });
         }
 
+        const qrScanButton = document.getElementById('qrScanLaunchButton');
+        const qrScanPanel = document.getElementById('qrScanPanel');
+        const qrScanCloseButton = document.getElementById('qrScanCloseButton');
+        const qrScanVideo = document.getElementById('qrScanVideo');
+        const qrScanPlaceholder = document.getElementById('qrScanPlaceholder');
+        const qrScanOverlay = document.getElementById('qrScanOverlay');
+        const qrScanStatus = document.getElementById('qrScanStatus');
+        const standaloneMedia = window.matchMedia('(display-mode: standalone)');
+        const allowedQrPathPatterns = [
+            /^\/asset\/\d+\/(quick|detay)$/i,
+            /^\/kutu\/[^/?#]+$/i,
+        ];
+        let qrMediaStream = null;
+        let qrAnimationFrameId = 0;
+        let qrDetector = null;
+        let qrScanRunning = false;
+        let qrDetectBusy = false;
+        let qrRedirectTimer = 0;
+
+        const updateQrStatus = function (message, level) {
+            if (!qrScanStatus) return;
+            qrScanStatus.textContent = message;
+            qrScanStatus.dataset.level = level || "info";
+        };
+
+        const setScanVisualState = function (state) {
+            if (!qrScanPanel) return;
+            qrScanPanel.dataset.scanState = state || "idle";
+        };
+
+        const toggleQrVideoState = function (isActive) {
+            if (qrScanVideo) {
+                qrScanVideo.classList.toggle("is-active", Boolean(isActive));
+            }
+            if (qrScanOverlay) {
+                qrScanOverlay.classList.toggle("is-active", Boolean(isActive));
+            }
+            if (qrScanPlaceholder) {
+                qrScanPlaceholder.hidden = Boolean(isActive);
+            }
+        };
+
+        const stopQrStream = function () {
+            qrScanRunning = false;
+            qrDetectBusy = false;
+            if (qrRedirectTimer) {
+                window.clearTimeout(qrRedirectTimer);
+                qrRedirectTimer = 0;
+            }
+            if (qrAnimationFrameId) {
+                window.cancelAnimationFrame(qrAnimationFrameId);
+                qrAnimationFrameId = 0;
+            }
+            if (qrScanVideo) {
+                try {
+                    qrScanVideo.pause();
+                } catch (error) {
+                    // pause desteklenmiyorsa sessiz devam.
+                }
+                qrScanVideo.srcObject = null;
+            }
+            if (qrMediaStream) {
+                qrMediaStream.getTracks().forEach(function (track) {
+                    try {
+                        track.stop();
+                    } catch (error) {
+                        // stop hatasında sessiz fallback.
+                    }
+                });
+                qrMediaStream = null;
+            }
+            toggleQrVideoState(false);
+            setScanVisualState("idle");
+        };
+
+        const closeQrPanel = function () {
+            if (!qrScanPanel) return;
+            stopQrStream();
+            qrScanPanel.hidden = true;
+            qrScanPanel.setAttribute("aria-hidden", "true");
+        };
+
+        const normalizeQrTarget = function (rawValue) {
+            const rawText = String(rawValue || "").trim();
+            if (!rawText) {
+                return { ok: false, reason: "empty" };
+            }
+
+            if (rawText.startsWith("BOX::")) {
+                const parts = rawText.split("::");
+                const boxCode = (parts[2] || "").trim();
+                if (/^[A-Za-z0-9._-]{2,90}$/.test(boxCode)) {
+                    return { ok: true, target: "/kutu/" + encodeURIComponent(boxCode) };
+                }
+                return { ok: false, reason: "invalid_box" };
+            }
+
+            let parsedUrl;
+            try {
+                parsedUrl = new URL(rawText, window.location.origin);
+            } catch (error) {
+                return { ok: false, reason: "invalid_url" };
+            }
+
+            if (parsedUrl.origin !== window.location.origin) {
+                return { ok: false, reason: "external_origin" };
+            }
+
+            const normalizedPath = parsedUrl.pathname.replace(/\/+$/, "") || "/";
+            const isAllowedPath = allowedQrPathPatterns.some(function (pattern) {
+                return pattern.test(normalizedPath);
+            });
+            if (!isAllowedPath) {
+                return { ok: false, reason: "path_not_allowed" };
+            }
+
+            return { ok: true, target: normalizedPath + parsedUrl.search + parsedUrl.hash };
+        };
+
+        const handleQrDetection = function (rawValue) {
+            const resolved = normalizeQrTarget(rawValue);
+            if (!resolved.ok) {
+                closeQrPanel();
+                updateQrStatus("Okunan QR güvenli bir SAR-X detay adresi değil.", "warning");
+                if (typeof window.showToast === "function") {
+                    window.showToast({
+                        type: "warning",
+                        title: "QR yönlendirmesi engellendi",
+                        message: "Harici veya geçersiz bağlantılar açılmadı.",
+                    });
+                }
+                return;
+            }
+
+            qrScanRunning = false;
+            setScanVisualState("success");
+            updateQrStatus("QR bulundu, yönlendiriliyor.", "success");
+            if (typeof window.showToast === "function") {
+                window.showToast({
+                    type: "success",
+                    title: "QR okundu",
+                    message: "İlgili kayıt açılıyor.",
+                    duration: 1100,
+                });
+            }
+            qrRedirectTimer = window.setTimeout(function () {
+                closeQrPanel();
+                window.location.assign(resolved.target);
+            }, 360);
+        };
+
+        const scanFrame = async function () {
+            if (!qrScanRunning || !qrScanVideo || !qrDetector) return;
+            if (qrDetectBusy || qrScanVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+                qrAnimationFrameId = window.requestAnimationFrame(scanFrame);
+                return;
+            }
+            qrDetectBusy = true;
+            try {
+                const results = await qrDetector.detect(qrScanVideo);
+                if (Array.isArray(results) && results.length) {
+                    const firstMatch = results.find(function (item) {
+                        return item && typeof item.rawValue === "string" && item.rawValue.trim();
+                    });
+                    if (firstMatch) {
+                        handleQrDetection(firstMatch.rawValue);
+                        return;
+                    }
+                }
+            } catch (error) {
+                // Dedektör anlık kareyi okuyamadığında sessiz devam.
+            } finally {
+                qrDetectBusy = false;
+            }
+            if (qrScanRunning) {
+                qrAnimationFrameId = window.requestAnimationFrame(scanFrame);
+            }
+        };
+
+        const openQrPanel = async function () {
+            if (!qrScanPanel || !qrScanVideo || !qrScanPlaceholder) return;
+            qrScanPanel.hidden = false;
+            qrScanPanel.setAttribute("aria-hidden", "false");
+            setScanVisualState("preparing");
+            toggleQrVideoState(false);
+            updateQrStatus("Hazırlanıyor.", "info");
+            qrScanPlaceholder.textContent = "Kamera başlatılıyor.";
+
+            if (!window.isSecureContext) {
+                setScanVisualState("warning");
+                updateQrStatus("Kamera yalnız güvenli bağlantıda (HTTPS/PWA) çalışır.", "warning");
+                qrScanPlaceholder.textContent = "Bu cihazda güvenli bağlantı olmadığı için kamera açılamadı.";
+                return;
+            }
+            if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
+                setScanVisualState("warning");
+                updateQrStatus("Tarayıcı kamera erişimini desteklemiyor.", "warning");
+                qrScanPlaceholder.textContent = "Kamera API desteği bulunamadı.";
+                return;
+            }
+            if (typeof window.BarcodeDetector !== "function") {
+                setScanVisualState("warning");
+                updateQrStatus("Bu tarayıcıda yerleşik QR tarayıcı desteği yok.", "warning");
+                qrScanPlaceholder.textContent = "Tarayıcı BarcodeDetector API desteği sunmuyor.";
+                return;
+            }
+
+            try {
+                const formats = typeof window.BarcodeDetector.getSupportedFormats === "function"
+                    ? await window.BarcodeDetector.getSupportedFormats()
+                    : [];
+                if (Array.isArray(formats) && formats.length && !formats.includes("qr_code")) {
+                    setScanVisualState("warning");
+                    updateQrStatus("Bu cihazda QR formatı desteklenmiyor.", "warning");
+                    qrScanPlaceholder.textContent = "QR kod algılama desteği bulunamadı.";
+                    return;
+                }
+
+                qrDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+                qrMediaStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: { ideal: "environment" },
+                    },
+                    audio: false,
+                });
+                qrScanVideo.srcObject = qrMediaStream;
+                await qrScanVideo.play();
+                qrScanRunning = true;
+                toggleQrVideoState(true);
+                setScanVisualState("scanning");
+                updateQrStatus("QR aranıyor. Kodu çerçeve içinde sabit tutun.", "info");
+                qrAnimationFrameId = window.requestAnimationFrame(scanFrame);
+            } catch (error) {
+                stopQrStream();
+                setScanVisualState("warning");
+                const message = error && error.name === "NotAllowedError"
+                    ? "Kamera izni reddedildi. Tarayıcı izinlerinden kamera erişimini açın."
+                    : "Kamera açılamadı. Cihaz veya tarayıcı bu özelliği desteklemiyor.";
+                updateQrStatus(message, "warning");
+                qrScanPlaceholder.textContent = message;
+            }
+        };
+
+        const isStandaloneMode = function () {
+            return Boolean(
+                (standaloneMedia && standaloneMedia.matches) ||
+                window.navigator.standalone === true ||
+                document.body.getAttribute("data-display-mode") === "standalone"
+            );
+        };
+
+        const syncQrScanButtonVisibility = function () {
+            if (!qrScanButton) return;
+            const shouldShow = Boolean(mobileSidebarMedia.matches && isStandaloneMode());
+            qrScanButton.hidden = !shouldShow;
+            qrScanButton.classList.toggle("is-visible", shouldShow);
+            if (!shouldShow) {
+                closeQrPanel();
+            }
+        };
+
+        if (qrScanButton && qrScanPanel) {
+            qrScanButton.addEventListener("click", function () {
+                closeSidebar();
+                openQrPanel();
+            });
+            if (qrScanCloseButton) {
+                qrScanCloseButton.addEventListener("click", closeQrPanel);
+            }
+            qrScanPanel.addEventListener("click", function (event) {
+                if (event.target === qrScanPanel) {
+                    closeQrPanel();
+                }
+            });
+            document.addEventListener("keydown", function (event) {
+                if (event.key === "Escape" && !qrScanPanel.hidden) {
+                    closeQrPanel();
+                }
+            });
+            syncQrScanButtonVisibility();
+            if (typeof mobileSidebarMedia.addEventListener === "function") {
+                mobileSidebarMedia.addEventListener("change", syncQrScanButtonVisibility);
+            } else if (typeof mobileSidebarMedia.addListener === "function") {
+                mobileSidebarMedia.addListener(syncQrScanButtonVisibility);
+            }
+            if (standaloneMedia && typeof standaloneMedia.addEventListener === "function") {
+                standaloneMedia.addEventListener("change", syncQrScanButtonVisibility);
+            } else if (standaloneMedia && typeof standaloneMedia.addListener === "function") {
+                standaloneMedia.addListener(syncQrScanButtonVisibility);
+            }
+            window.addEventListener("pageshow", syncQrScanButtonVisibility);
+        }
+
     })();
 </script>
 {% if passkey_enabled %}
@@ -790,6 +1158,11 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
         buttonId: 'passkeyRegisterButton',
         beginUrl: '{{ passkey_register_begin_url }}',
         finishUrl: '{{ passkey_register_finish_url }}'
+    });
+    window.SARXPasskey.initManagement({
+        buttonId: 'passkeyManageButton',
+        listUrl: '{{ passkey_credentials_url }}',
+        revokeUrl: '{{ passkey_revoke_url }}'
     });
 </script>
 {% endif %}

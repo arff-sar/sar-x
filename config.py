@@ -57,7 +57,7 @@ class BaseConfig:
     PASSWORD_RESET_BASE_URL = os.getenv("PASSWORD_RESET_BASE_URL") or PUBLIC_BASE_URL
     CRITICAL_POST_RATE_LIMIT = os.getenv("CRITICAL_POST_RATE_LIMIT", "20 per minute")
     HOMEPAGE_EDITOR_CAN_PUBLISH = _bool_env("HOMEPAGE_EDITOR_CAN_PUBLISH", True)
-    ROLE_SWITCH_ALLOWED_USERS = os.getenv("ROLE_SWITCH_ALLOWED_USERS") or os.getenv("ROLE_SWITCH_ALLOWED_EMAIL", "mehmetcinocevi@gmail.com")
+    ROLE_SWITCH_ALLOWED_USERS = os.getenv("ROLE_SWITCH_ALLOWED_USERS") or os.getenv("ROLE_SWITCH_ALLOWED_EMAIL", "")
     PASSKEY_ENABLED = _bool_env("PASSKEY_ENABLED", False)
     PASSKEY_RP_ID = os.getenv("PASSKEY_RP_ID", "")
     PASSKEY_RP_NAME = os.getenv("PASSKEY_RP_NAME", "SAR-X ARFF")
@@ -109,7 +109,7 @@ class BaseConfig:
     # Security headers
     CSP_POLICY = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "script-src 'self' 'unsafe-inline'; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' https: data:; "
