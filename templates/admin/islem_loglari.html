@@ -4,9 +4,11 @@
 {% block extra_css %}
 <style>
   .logs-shell { display:grid; gap:22px; }
+  .logs-header-actions { display:flex; gap:8px; flex-wrap:wrap; }
   .logs-filter-panel .panel-body { padding:22px; display:grid; gap:18px; }
   .logs-filter-form { display:grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap:14px; align-items:end; }
   .logs-filter-form .form-group { margin-bottom:0; }
+  .logs-filter-actions-shell { display:flex; align-items:flex-end; min-width:0; }
   .logs-filter-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   .logs-filter-actions .btn { min-width:120px; }
   .logs-filter-help { padding:14px 16px; border-radius:16px; border:1px solid var(--border); background:linear-gradient(180deg, rgba(255,255,255,.96) 0%, rgba(248,250,252,.96) 100%); color:var(--text3); font-size:12px; line-height:1.55; }
@@ -36,6 +38,9 @@
   .log-detail-meta { margin-top:8px; font-size:11px; color:var(--text4); }
   .logs-empty { display:grid; gap:8px; padding:34px 24px; border:1px dashed var(--border-dark); border-radius:18px; background:linear-gradient(180deg, rgba(248,250,252,.92) 0%, rgba(255,255,255,.98) 100%); text-align:center; color:var(--text3); }
   .logs-empty strong { color:var(--navy); font-size:16px; }
+  .logs-pagination { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:18px 22px 22px; flex-wrap:wrap; }
+  .logs-pagination-pages { display:flex; gap:8px; flex-wrap:wrap; }
+  .logs-pagination .row-btn[aria-current="page"] { background:var(--navy); border-color:var(--navy); color:#fff; }
 
   @media (max-width: 900px) {
     .logs-summary-head { display:grid; grid-template-columns:1fr; }
@@ -43,8 +48,10 @@
 
   @media (max-width: 720px) {
     .logs-filter-form { grid-template-columns: 1fr; }
+    .logs-filter-actions-shell { width:100%; }
     .logs-filter-actions { width:100%; }
     .logs-filter-actions .btn { flex:1 1 100%; }
+    .logs-pagination { align-items:stretch; }
   }
 </style>
 {% endblock %}
@@ -54,6 +61,9 @@
     <div>
         <div class="page-title">İşlem Kayıtları</div>
         <div class="page-meta">Giriş, güvenlik, kullanıcı, rapor ve içerik işlemlerini tek ekranda filtreleyin.</div>
+    </div>
+    <div class="logs-header-actions">
+        <a href="{{ url_for('admin.loglari_excel', **export_query) }}" class="btn btn-secondary">Excel Dışa Aktar</a>
     </div>
 </div>
 
@@ -118,11 +128,11 @@
                     <label for="auditDateTo">Tarih Bitiş</label>
                     <input type="date" name="date_to" id="auditDateTo" class="form-control" value="{{ selected_date_to }}">
                 </div>
-                <div class="logs-filter-actions">
-                    <button type="submit" class="btn btn-navy" data-log-filter-submit>Filtrele</button>
-                    {% if has_active_filters %}
-                    <a href="{{ url_for('admin.loglari_gor') }}" class="btn btn-secondary" data-log-filter-clear>Temizle</a>
-                    {% endif %}
+                <div class="form-group logs-filter-actions-shell">
+                    <div class="logs-filter-actions">
+                        <button type="submit" class="btn btn-navy" data-log-filter-submit>Filtrele</button>
+                        <a href="{{ clear_url }}" class="btn btn-secondary" data-log-filter-clear>Temizle</a>
+                    </div>
                 </div>
             </form>
 
@@ -143,7 +153,7 @@
                             {% if has_active_filters %}
                             Seçili filtrelerle eşleşen işlem kayıtları aşağıda listeleniyor.
                             {% else %}
-                            Son 500 işlem kaydı varsayılan görünümde gösteriliyor.
+                            Sayfa başına 20 işlem kaydı yeni tarihten eski tarihe doğru gösteriliyor.
                             {% endif %}
                         </div>
                     </div>
@@ -219,6 +229,22 @@
             </div>
             {% endif %}
         </div>
+        {% if pagination.total_pages > 1 %}
+        <div class="logs-pagination">
+            <div class="logs-pagination-pages">
+                {% if pagination.has_prev %}
+                <a href="{{ pagination.prev_url }}" class="row-btn">Geri</a>
+                {% endif %}
+                {% for item in pagination.items %}
+                <a href="{{ item.url }}" class="row-btn" {% if item.is_current %}aria-current="page"{% endif %}>{{ item.number }}</a>
+                {% endfor %}
+                {% if pagination.has_next %}
+                <a href="{{ pagination.next_url }}" class="row-btn">İleri</a>
+                {% endif %}
+            </div>
+            <div class="log-detail-meta">Sayfa {{ pagination.page }} / {{ pagination.total_pages }}</div>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

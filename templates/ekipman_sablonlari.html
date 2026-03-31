@@ -6,6 +6,7 @@
   .template-grid { display:grid; grid-template-columns:minmax(0, 1.02fr) minmax(0, .98fr); gap:18px; }
   .template-form-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
   .template-form-grid .form-group.full { grid-column:1 / -1; }
+  .template-form-note { margin-top:4px; font-size:11.5px; color:var(--text3); line-height:1.5; }
   .template-table td { vertical-align:top; }
   .template-kicker { font-size:10.5px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
   .template-meta { margin-top:5px; font-size:11.5px; color:var(--text3); line-height:1.5; }
@@ -37,34 +38,41 @@
         <div class="panel-body">
             <form method="POST" action="{{ url_for('maintenance.ekipman_sablonlari') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="selected_template_id" id="instructionTemplateId">
                 <div class="template-form-grid">
                     <div class="form-group">
-                        <label>Ekipman Adı</label>
-                        <input type="text" name="name" class="form-control" required>
+                        <label>Kategori</label>
+                        <select name="category" id="instructionCategorySelect" class="form-control" required>
+                            <option value="">Kategori seçin</option>
+                            {% for category in selectable_categories %}
+                            <option value="{{ category }}">{{ category }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
                     <div class="form-group">
-                        <label>Kategori</label>
-                        <input type="text" name="category" class="form-control">
+                        <label>Merkezi Ekipman Adı</label>
+                        <select name="name" id="instructionNameSelect" class="form-control" required disabled>
+                            <option value="">Önce kategori seçin</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label>Marka</label>
-                        <input type="text" name="brand" class="form-control">
+                        <select name="brand" id="instructionBrandSelect" class="form-control" disabled>
+                            <option value="">Önce ekipman seçin</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label>Model</label>
-                        <input type="text" name="model_code" class="form-control">
+                        <select name="model_code" id="instructionModelSelect" class="form-control" disabled>
+                            <option value="">Önce marka seçin</option>
+                        </select>
+                    </div>
+                    <div class="form-group full">
+                        <div class="template-form-note">Yalnızca sistemde tanımlı ve envantere eklenmiş ekipmanlar seçilebilir.</div>
                     </div>
                     <div class="form-group">
                         <label>Bakım Periyodu (Gün)</label>
                         <input type="number" name="maintenance_period_days" min="1" value="180" class="form-control">
-                    </div>
-                    <div class="form-group">
-                        <label>Kritik Seviyesi</label>
-                        <select name="criticality_level" class="form-control">
-                            <option value="normal">Normal</option>
-                            <option value="high">Yüksek</option>
-                            <option value="critical">Kritik</option>
-                        </select>
                     </div>
                     <div class="form-group">
                         <label>Varsayılan Bakım Formu</label>
@@ -112,8 +120,11 @@
                         <textarea name="instruction_notes" class="form-control" style="height:80px;"></textarea>
                     </div>
                 </div>
-                <button class="btn btn-primary" style="width:100%; justify-content:center;">Şablonu Kaydet</button>
+                <button class="btn btn-primary" id="instructionTemplateSubmit" style="width:100%; justify-content:center;" {% if not selectable_catalog %}disabled{% endif %}>Şablonu Kaydet</button>
             </form>
+            {% if not selectable_catalog %}
+            <div class="template-form-note">Bakım şablonu oluşturmak için önce ilgili ekipmanı envantere ekleyin.</div>
+            {% endif %}
         </div>
     </div>
     {% endif %}
@@ -195,4 +206,117 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    const catalog = {{ selectable_catalog|default([], true)|tojson }};
+    const categorySelect = document.getElementById('instructionCategorySelect');
+    const nameSelect = document.getElementById('instructionNameSelect');
+    const brandSelect = document.getElementById('instructionBrandSelect');
+    const modelSelect = document.getElementById('instructionModelSelect');
+    const templateIdInput = document.getElementById('instructionTemplateId');
+    const submitButton = document.getElementById('instructionTemplateSubmit');
+    if (!categorySelect || !nameSelect || !brandSelect || !modelSelect || !templateIdInput || !submitButton) return;
+
+    const EMPTY_VALUE = '__EMPTY__';
+    const displayValue = function (value, fallback) {
+      return value && value.trim() ? value : fallback;
+    };
+    const optionValue = function (value) {
+      return value && value.trim() ? value : EMPTY_VALUE;
+    };
+    const actualValue = function (value) {
+      return value === EMPTY_VALUE ? '' : value;
+    };
+    const uniqueValues = function (items, key) {
+      return Array.from(new Set(items.map(function (item) { return item[key] || ''; })));
+    };
+    const resetSelect = function (select, placeholder) {
+      select.innerHTML = '';
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = placeholder;
+      select.appendChild(option);
+      select.value = '';
+      select.disabled = true;
+    };
+    const fillSelect = function (select, values, placeholder, emptyLabel) {
+      resetSelect(select, placeholder);
+      values.forEach(function (value) {
+        const option = document.createElement('option');
+        option.value = optionValue(value);
+        option.textContent = displayValue(value, emptyLabel);
+        select.appendChild(option);
+      });
+      select.disabled = values.length === 0;
+      if (values.length === 1) {
+        select.value = optionValue(values[0]);
+      }
+    };
+
+    const syncTemplate = function () {
+      const selectedCategory = categorySelect.value;
+      const selectedName = nameSelect.value;
+      const selectedBrand = actualValue(brandSelect.value);
+      const selectedModel = actualValue(modelSelect.value);
+      const match = catalog.find(function (item) {
+        return item.category === selectedCategory
+          && item.name === selectedName
+          && (item.brand || '') === selectedBrand
+          && (item.model_code || '') === selectedModel;
+      });
+      templateIdInput.value = match ? String(match.id) : '';
+      submitButton.disabled = catalog.length > 0 && !match;
+    };
+
+    const refreshModels = function () {
+      const selectedCategory = categorySelect.value;
+      const selectedName = nameSelect.value;
+      const selectedBrand = actualValue(brandSelect.value);
+      const matches = catalog.filter(function (item) {
+        return item.category === selectedCategory
+          && item.name === selectedName
+          && (item.brand || '') === selectedBrand;
+      });
+      fillSelect(modelSelect, uniqueValues(matches, 'model_code'), 'Model seçin', 'Model belirtilmedi');
+      syncTemplate();
+    };
+
+    const refreshBrands = function () {
+      const selectedCategory = categorySelect.value;
+      const selectedName = nameSelect.value;
+      const matches = catalog.filter(function (item) {
+        return item.category === selectedCategory && item.name === selectedName;
+      });
+      fillSelect(brandSelect, uniqueValues(matches, 'brand'), 'Marka seçin', 'Marka belirtilmedi');
+      refreshModels();
+    };
+
+    const refreshNames = function () {
+      const selectedCategory = categorySelect.value;
+      const matches = catalog.filter(function (item) {
+        return item.category === selectedCategory;
+      });
+      fillSelect(nameSelect, uniqueValues(matches, 'name'), 'Ekipman seçin', 'Ekipman');
+      refreshBrands();
+    };
+
+    categorySelect.addEventListener('change', refreshNames);
+    nameSelect.addEventListener('change', refreshBrands);
+    brandSelect.addEventListener('change', refreshModels);
+    modelSelect.addEventListener('change', syncTemplate);
+
+    if (!catalog.length) {
+      resetSelect(nameSelect, 'Tanımlı ekipman bulunmuyor');
+      resetSelect(brandSelect, 'Tanımlı ekipman bulunmuyor');
+      resetSelect(modelSelect, 'Tanımlı ekipman bulunmuyor');
+      submitButton.disabled = true;
+      return;
+    }
+
+    refreshNames();
+  })();
+</script>
 {% endblock %}

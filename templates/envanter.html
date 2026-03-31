@@ -30,6 +30,23 @@
 .inventory-filter-toggle {
     display: none;
 }
+.inventory-filter-form {
+    display:grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    align-items: end;
+}
+.inventory-filter-form .form-group {
+    margin-bottom: 0;
+}
+.inventory-filter-actions {
+    display:flex;
+    gap:8px;
+    align-items:center;
+}
+.inventory-filter-actions .btn {
+    width:100%;
+}
 
 .inventory-row-toggle {
     display: inline-flex;
@@ -154,6 +171,9 @@
     }
     .inventory-filter-panel.is-open .panel-body {
         display: block;
+    }
+    .inventory-filter-actions {
+        width: 100%;
     }
     .inventory-table-compact {
         overflow: visible;
@@ -316,9 +336,9 @@
         </button>
     </div>
     <div class="panel-body" id="inventoryFilterBody" style="padding-bottom: 10px;">
-        <form method="GET" action="{{ url_for('inventory.envanter') }}" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end;">
+        <form method="GET" action="{{ url_for('inventory.envanter') }}" class="inventory-filter-form">
             {% if has_permission('logs.view') or has_permission('settings.manage') %}
-            <div class="form-group" style="margin-bottom: 0;">
+            <div class="form-group">
                 <label>Havalimanı</label>
                 <select name="havalimani_id" class="form-control">
                     <option value="">Tümü</option>
@@ -328,7 +348,7 @@
                 </select>
             </div>
             {% endif %}
-            <div class="form-group" style="margin-bottom: 0;">
+            <div class="form-group">
                 <label>Kategori</label>
                 <select name="kategori" class="form-control">
                     <option value="">Tümü</option>
@@ -337,9 +357,9 @@
                     {% endfor %}
                 </select>
             </div>
-            <div style="display:flex; gap:8px;">
-                <button type="submit" class="btn btn-navy" style="width:100%;">Filtrele</button>
-                <a href="{{ url_for('inventory.envanter') }}" class="btn btn-secondary" style="width:100%; text-align:center;">Sıfırla</a>
+            <div class="inventory-filter-actions">
+                <button type="submit" class="btn btn-navy">Filtrele</button>
+                <a href="{{ url_for('inventory.envanter') }}" class="btn btn-secondary" style="text-align:center;">Sıfırla</a>
             </div>
         </form>
     </div>

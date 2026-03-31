@@ -1,3 +1,6 @@
+from io import BytesIO
+
+from openpyxl import load_workbook
 from sqlalchemy.dialects import postgresql
 
 from decorators import update_user_permission_overrides
@@ -281,6 +284,10 @@ def test_logs_timestamp_formatter_supports_string_values():
     assert _format_timestamp_label("2026-03-30 10:45:12") == "30.03.2026 10:45:12"
 
 
+def test_logs_timestamp_formatter_converts_utc_offset_to_tr():
+    assert _format_timestamp_label("2026-03-31T09:15:00+00:00") == "31.03.2026 12:15:00"
+
+
 def test_logs_resolve_actor_name_from_email_when_fk_is_missing(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Kars Havalimanı", kodu="KSY")
@@ -322,3 +329,84 @@ def test_logs_resolve_actor_name_from_email_when_fk_is_missing(client, app):
     assert "Actor Email Kullanıcısı" in html
     assert "Tamamen sistem kaydı." in html
     assert "Sistem" in html
+
+
+def test_logs_pagination_keeps_filters_and_slices_results(client, app):
+    with app.app_context():
+        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-logs-pages@sarx.com")
+        db.session.add(owner)
+        db.session.flush()
+        db.session.add(
+            IslemLog(
+                kullanici_id=owner.id,
+                islem_tipi="Giriş",
+                detay="Filtre dışı kayıt",
+                outcome="success",
+            )
+        )
+        for index in range(25):
+            db.session.add(
+                IslemLog(
+                    kullanici_id=owner.id,
+                    islem_tipi="Envanter",
+                    detay=f"Sayfalanan kayıt {index}",
+                    target_model="Kutu",
+                    target_id=index + 1,
+                    outcome="success",
+                )
+            )
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+    response = client.get("/islem-loglari?event_type=Envanter&target_model=Kutu&page=2")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Sayfalanan kayıt 24" not in html
+    assert "Sayfalanan kayıt 4" in html
+    assert "Filtre dışı kayıt" not in html
+    assert "event_type=Envanter" in html
+    assert "target_model=Kutu" in html
+    assert "Sayfa 2 / 2" in html
+
+
+def test_logs_excel_export_respects_filters(client, app):
+    with app.app_context():
+        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-logs-export@sarx.com")
+        db.session.add(owner)
+        db.session.flush()
+        db.session.add_all(
+            [
+                IslemLog(
+                    kullanici_id=owner.id,
+                    islem_tipi="Rapor",
+                    detay="Excel dışa aktarma kaydı",
+                    outcome="success",
+                ),
+                IslemLog(
+                    kullanici_id=owner.id,
+                    islem_tipi="Giriş",
+                    detay="Filtre dışı giriş kaydı",
+                    outcome="success",
+                ),
+            ]
+        )
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+    response = client.get("/islem-loglari/excel?event_type=Rapor")
+
+    assert response.status_code == 200
+    assert "spreadsheetml.sheet" in response.headers["Content-Type"]
+
+    workbook = load_workbook(filename=BytesIO(response.data))
+    sheet = workbook.active
+    headers = [cell.value for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
+    rows = list(sheet.iter_rows(min_row=2, values_only=True))
+
+    assert headers == ["Tarih", "Kullanıcı", "İşlem", "İlgili Kayıt", "Sonuç", "Açıklama"]
+    assert len(rows) == 1
+    assert rows[0][2] == "Rapor ve Dışa Aktarma"
+    assert rows[0][5] == "Excel dışa aktarma kaydı"

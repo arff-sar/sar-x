@@ -2277,6 +2277,8 @@ def malzeme_excel_yukle():
 @login_required
 @permission_required("inventory.create")
 def merkezi_katalog():
+    from routes.maintenance import _build_instruction_catalog_options
+
     templates = EquipmentTemplate.query.filter_by(is_deleted=False, is_active=True).order_by(
         EquipmentTemplate.name.asc()
     ).all()
@@ -2284,11 +2286,14 @@ def merkezi_katalog():
         MaintenanceFormTemplate.name.asc()
     ).all()
     airports = _visible_operational_airports()
+    selectable_catalog, selectable_categories = _build_instruction_catalog_options()
     return render_template(
         "ekipman_sablonlari.html",
         templates=templates,
         form_templates=form_templates,
         airports=airports,
+        selectable_catalog=selectable_catalog,
+        selectable_categories=selectable_categories,
     )
 
 

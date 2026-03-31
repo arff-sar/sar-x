@@ -1,5 +1,8 @@
+from datetime import datetime, timezone
+from io import BytesIO
 from unittest.mock import patch
 
+from openpyxl import load_workbook
 from sqlalchemy.exc import OperationalError
 
 from extensions import db
@@ -205,3 +208,113 @@ def test_db_connection_error_returns_safe_message(client, app):
     assert "Sistem bağlantı hatası oluştu." in html
     assert "secret" not in html
     assert "postgres://" not in html
+
+
+def test_error_listing_uses_tr_module_labels_summary_and_timezone(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Adana Havalimanı", kodu="ADA")
+        owner = KullaniciFactory(rol="sahip", kullanici_adi="owner-errors-tr@sarx.com", is_deleted=False, havalimani=airport)
+        team_member = KullaniciFactory(
+            rol="ekip_uyesi",
+            kullanici_adi="member-errors-tr@sarx.com",
+            is_deleted=False,
+            havalimani=airport,
+        )
+        db.session.add_all([airport, owner, team_member])
+        db.session.flush()
+        db.session.add(
+            IslemLog(
+                kullanici_id=team_member.id,
+                islem_tipi="Sistem",
+                detay="Login akışı tamamlanamadı.",
+                outcome="failed",
+                error_code="SAR-X-AUTH-1202",
+                title="Güvenlik Doğrulaması Başarısız",
+                user_message="Güvenlik doğrulaması başarısız oldu.",
+                owner_message="Captcha doğrulaması geçmedi.",
+                module="AUTH",
+                severity="warning",
+                route="/login/passkey/finish",
+                method="POST",
+                request_id="sarx-passkey-error",
+                zaman=datetime(2026, 3, 31, 9, 15, 0, tzinfo=timezone.utc),
+            )
+        )
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+    response = client.get("/hata-kayitlari")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Kimlik Doğrulama" in html
+    assert "31.03.2026" in html
+    assert "Tarih bilgisi yok" not in html
+    assert "Ekip üyesi hesabında passkey giriş adımı tamamlanamadı." in html
+
+
+def test_error_logs_pagination_and_excel_export_preserve_filters(client, app):
+    with app.app_context():
+        owner = KullaniciFactory(rol="sahip", kullanici_adi="owner-errors-pages@sarx.com", is_deleted=False)
+        db.session.add(owner)
+        db.session.flush()
+        db.session.add(
+            IslemLog(
+                kullanici_id=owner.id,
+                islem_tipi="Sistem",
+                detay="Filtre dışı hata",
+                outcome="failed",
+                error_code="SAR-X-DB-2101",
+                title="Veritabanı Bağlantı Hatası",
+                user_message="Sistem bağlantı hatası oluştu.",
+                owner_message="Veritabanı bağlantısı kurulamadı.",
+                module="DB",
+                severity="critical",
+                route="/admin/test",
+                method="GET",
+                request_id="db-outside",
+            )
+        )
+        for index in range(25):
+            db.session.add(
+                IslemLog(
+                    kullanici_id=owner.id,
+                    islem_tipi="Sistem",
+                    detay=f"AUTH hata {index}",
+                    outcome="failed",
+                    error_code="SAR-X-AUTH-1202",
+                    title=f"AUTH Hata {index}",
+                    user_message="Güvenlik doğrulaması başarısız oldu.",
+                    owner_message="Captcha doğrulaması geçmedi.",
+                    module="AUTH",
+                    severity="warning",
+                    route="/login",
+                    method="POST",
+                    request_id=f"auth-{index}",
+                )
+            )
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+    response = client.get("/hata-kayitlari?module=AUTH&page=2")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "AUTH Hata 24" not in html
+    assert "AUTH Hata 4" in html
+    assert "Filtre dışı hata" not in html
+    assert "module=AUTH" in html
+    assert "Sayfa 2 / 2" in html
+
+    export = client.get("/hata-kayitlari/excel?module=AUTH")
+    workbook = load_workbook(filename=BytesIO(export.data))
+    sheet = workbook.active
+    headers = [cell.value for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
+    rows = list(sheet.iter_rows(min_row=2, values_only=True))
+
+    assert export.status_code == 200
+    assert headers == ["Durum", "Tarih", "Modül", "Hata Kodu", "Başlık", "Kısa Açıklama", "Kullanıcı", "Sayfa", "Request ID"]
+    assert len(rows) == 25
+    assert all(row[2] == "Kimlik Doğrulama" for row in rows)

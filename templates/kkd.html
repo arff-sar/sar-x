@@ -5,6 +5,9 @@
 <style>
   .ppe-layout { display:grid; grid-template-columns:minmax(0, 1.2fr) minmax(340px, .8fr); gap:20px; align-items:start; }
   .ppe-filter-form { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:12px; align-items:end; }
+  .ppe-filter-actions-shell { display:flex; align-items:flex-end; min-width:0; }
+  .ppe-filter-actions { display:flex; gap:8px; align-items:center; width:100%; }
+  .ppe-filter-actions .btn { min-height:44px; display:inline-flex; align-items:center; justify-content:center; flex:1 1 0; }
   .ppe-selection-shell { max-height:min(58vh, 700px); overflow:auto; padding-right:4px; scrollbar-gutter:stable; }
   .ppe-card-list { display:grid; gap:14px; }
   .ppe-user-accordion { border:1px solid var(--border); border-radius:18px; background:#fff; overflow:hidden; }
@@ -42,10 +45,13 @@
   @media (max-width: 1080px) {
     .ppe-layout,
     .ppe-filter-form { grid-template-columns:1fr; }
+    .ppe-filter-actions-shell { width:100%; }
   }
   @media (max-width: 760px) {
     .ppe-create-grid,
     .ppe-meta-grid { grid-template-columns:1fr; }
+    .ppe-filter-actions { flex-direction:column; }
+    .ppe-filter-actions .btn { width:100%; }
     .ppe-user-accordion summary { flex-direction:column; }
     .ppe-user-metrics { justify-content:flex-start; }
   }
@@ -109,9 +115,11 @@
                     {% endfor %}
                 </select>
             </div>
-            <div style="display:flex; gap:8px;">
-                <button type="submit" class="btn btn-navy" style="width:100%;">Filtrele</button>
-                <a href="{{ url_for('inventory.kkd_listesi') }}" class="btn btn-secondary" style="width:100%; text-align:center;">Temizle</a>
+            <div class="ppe-filter-actions-shell">
+                <div class="ppe-filter-actions">
+                    <button type="submit" class="btn btn-navy">Filtrele</button>
+                    <a href="{{ url_for('inventory.kkd_listesi') }}" class="btn btn-secondary" style="text-align:center;">Temizle</a>
+                </div>
             </div>
         </form>
     </div>

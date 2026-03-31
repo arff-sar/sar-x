@@ -1,17 +1,33 @@
+import io
 from datetime import datetime
 from types import SimpleNamespace
 
-from flask import abort, flash, redirect, render_template, request, url_for
+import pandas as pd
+from flask import abort, current_app, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import joinedload
 
+from decorators import permission_required
 from error_handling import get_error_spec, mask_sensitive_text
-from extensions import column_exists, db
+from extensions import TR_TZ, column_exists, db, log_kaydet
 from models import IslemLog, Kullanici
 from . import admin_bp
-from decorators import permission_required
 
+
+LOGS_PER_PAGE = 20
+AUDIT_EXPORT_COLUMNS = ["Tarih", "Kullanıcı", "İşlem", "İlgili Kayıt", "Sonuç", "Açıklama"]
+ERROR_EXPORT_COLUMNS = [
+    "Durum",
+    "Tarih",
+    "Modül",
+    "Hata Kodu",
+    "Başlık",
+    "Kısa Açıklama",
+    "Kullanıcı",
+    "Sayfa",
+    "Request ID",
+]
 
 EVENT_TYPE_LABELS = {
     "Giriş": "Giriş",
@@ -63,6 +79,33 @@ TARGET_MODEL_LABELS = {
     "demo_seed": "Demo Veri",
 }
 
+ERROR_MODULE_LABELS = {
+    "AUTH": "Kimlik Doğrulama",
+    "SYSTEM": "Sistem",
+    "MAIL": "E-posta",
+    "DB": "Veritabanı",
+    "CMS": "İçerik",
+    "PUBLIC": "Açık Sayfa",
+    "ADMIN": "Yönetim",
+    "MEDIA": "Dosya ve Medya",
+}
+
+ERROR_SEVERITY_LABELS = {
+    "warning": "Uyarı",
+    "error": "Hata",
+    "critical": "Kritik",
+    "info": "Bilgi",
+}
+
+ROLE_LABELS = {
+    "sahip": "Site sahibi",
+    "yetkili": "Havalimanı yetkilisi",
+    "ekip_sorumlusu": "Ekip sorumlusu",
+    "ekip_uyesi": "Ekip üyesi",
+    "personel": "Personel",
+    "readonly": "Salt okunur kullanıcı",
+}
+
 OUTCOME_OPTIONS = [
     {"key": "success", "label": "Başarılı"},
     {"key": "failed", "label": "Başarısız"},
@@ -92,40 +135,89 @@ def _label_target_model(value):
     return TARGET_MODEL_LABELS.get(value, value)
 
 
+def _label_error_module(value):
+    cleaned = str(value or "").strip().upper()
+    if not cleaned:
+        return "Sistem"
+    return ERROR_MODULE_LABELS.get(cleaned, cleaned.replace("_", " ").title())
+
+
+def _label_error_severity(value):
+    cleaned = str(value or "").strip().lower()
+    if not cleaned:
+        return "Hata"
+    return ERROR_SEVERITY_LABELS.get(cleaned, cleaned.title())
+
+
+def _label_role(value):
+    cleaned = str(value or "").strip().lower()
+    if not cleaned:
+        return "Kullanıcı"
+    return ROLE_LABELS.get(cleaned, cleaned.replace("_", " "))
+
+
 def _build_options(values, labeler):
     cleaned_values = sorted({value for value in values if value}, key=lambda item: labeler(item).lower())
     return [{"key": value, "label": labeler(value)} for value in cleaned_values]
 
 
-def _format_timestamp_label(value):
+def _sentence(text, fallback=""):
+    value = str(text or fallback or "").strip()
+    if not value:
+        return ""
+    if value[-1] not in ".!?":
+        value += "."
+    return value
+
+
+def _normalize_datetime(value):
     if value is None:
-        return "-"
-    if hasattr(value, "strftime"):
+        return None
+
+    parsed = None
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        raw_value = str(value).strip()
+        if not raw_value:
+            return None
+        normalized = raw_value.replace("Z", "+00:00")
+        for parser in (
+            lambda item: datetime.fromisoformat(item),
+            lambda item: datetime.strptime(item, "%Y-%m-%d %H:%M:%S"),
+            lambda item: datetime.strptime(item, "%Y-%m-%d %H:%M:%S.%f"),
+        ):
+            try:
+                parsed = parser(normalized)
+                break
+            except Exception:
+                continue
+        if parsed is None:
+            return None
+
+    try:
+        if parsed.tzinfo is not None:
+            return parsed.astimezone(TR_TZ)
+        return TR_TZ.localize(parsed)
+    except Exception:
+        return parsed
+
+
+def _format_timestamp_label(value, empty_label="-"):
+    parsed = _normalize_datetime(value)
+    if parsed is not None:
         try:
-            return value.strftime("%d.%m.%Y %H:%M:%S")
-        except Exception:
-            return "-"
-    raw_value = str(value).strip()
-    if not raw_value:
-        return "-"
-    normalized = raw_value.replace("Z", "+00:00")
-    for parser in (
-        lambda item: datetime.fromisoformat(item),
-        lambda item: datetime.strptime(item, "%Y-%m-%d %H:%M:%S"),
-        lambda item: datetime.strptime(item, "%Y-%m-%d %H:%M:%S.%f"),
-    ):
-        try:
-            parsed = parser(normalized)
             return parsed.strftime("%d.%m.%Y %H:%M:%S")
         except Exception:
-            continue
-    return raw_value
+            return empty_label
+    raw_value = str(value or "").strip()
+    return raw_value or empty_label
 
 
-def _resolve_actor_label(log):
+def _resolve_actor(log):
     actor = getattr(log, "yapan_kullanici", None)
     if actor and getattr(actor, "tam_ad", None):
-        return actor.tam_ad
+        return actor
 
     user_id = getattr(log, "kullanici_id", None)
     if user_id is not None:
@@ -135,7 +227,7 @@ def _resolve_actor_label(log):
             db.session.rollback()
             actor = None
         if actor and getattr(actor, "tam_ad", None):
-            return actor.tam_ad
+            return actor
 
     user_email = str(getattr(log, "user_email", "") or "").strip()
     if user_email:
@@ -149,10 +241,52 @@ def _resolve_actor_label(log):
             db.session.rollback()
             actor = None
         if actor and getattr(actor, "tam_ad", None):
-            return actor.tam_ad
-        return user_email
+            return actor
 
-    return "Sistem"
+    return None
+
+
+def _resolve_actor_label(log):
+    actor = _resolve_actor(log)
+    if actor and getattr(actor, "tam_ad", None):
+        return actor.tam_ad
+    user_email = str(getattr(log, "user_email", "") or "").strip()
+    return user_email or "Sistem"
+
+
+def _build_error_summary(log, spec):
+    actor = _resolve_actor(log)
+    role_prefix = ""
+    if actor and getattr(actor, "rol", None):
+        role_prefix = f"{_label_role(actor.rol)} hesabında "
+
+    route = str(getattr(log, "route", None) or "").strip().lower()
+    module = str(getattr(log, "module", None) or spec.module or "SYSTEM").strip().upper()
+    safe_message = _sentence(getattr(log, "user_message", None) or spec.user_message or spec.title or "İşlem tamamlanamadı")
+
+    summary_prefix = {
+        "AUTH": "giriş, captcha veya yetki adımı tamamlanamadı",
+        "DB": "veri erişimi veya kayıt işlemi tamamlanamadı",
+        "MAIL": "bildirim ve e-posta akışı tamamlanamadı",
+        "CMS": "içerik veya belge verisi yüklenemedi",
+        "PUBLIC": "açık sayfa içeriği yüklenemedi",
+        "ADMIN": "yönetim ekranı isteği işlenemedi",
+        "MEDIA": "dosya yükleme veya medya doğrulaması tamamlanamadı",
+        "SYSTEM": "sistem işlemi beklenen şekilde tamamlanamadı",
+    }.get(module, "ilgili işlem tamamlanamadı")
+
+    error_code = str(getattr(log, "error_code", None) or spec.error_code or "").strip()
+    if error_code == "SAR-X-SYSTEM-5103":
+        summary_prefix = "istek güvenlik sınırına takıldı"
+    elif route.startswith("/login/passkey") or "passkey" in route:
+        summary_prefix = "passkey giriş adımı tamamlanamadı"
+    elif route.startswith("/login"):
+        summary_prefix = "giriş ve güvenlik doğrulama adımı tamamlanamadı"
+
+    lead = _sentence(f"{role_prefix}{summary_prefix}")
+    if safe_message.lower() == lead.lower():
+        return lead
+    return f"{lead} {safe_message}".strip()
 
 
 def _serialize_log_row(log):
@@ -191,39 +325,62 @@ def _serialize_log_row(log):
 def _serialize_error_row(log):
     request_id = str(getattr(log, "request_id", "") or "").strip()
     user_email = str(getattr(log, "user_email", "") or "").strip()
-    user_label = _resolve_actor_label(log)
-    summary = str(getattr(log, "user_message", None) or getattr(log, "detay", None) or "Açıklama bulunmuyor.").strip()
-    module = str(getattr(log, "module", None) or "SYSTEM").strip().upper()
-    severity = str(getattr(log, "severity", None) or "error").strip().lower()
     spec = get_error_spec(str(getattr(log, "error_code", "") or "SAR-X-SYSTEM-5101"))
+    severity = str(getattr(log, "severity", None) or spec.severity or "error").strip().lower()
+    module = str(getattr(log, "module", None) or spec.module or "SYSTEM").strip().upper()
     return SimpleNamespace(
         id=log.id,
         created_at=getattr(log, "created_at", None) or getattr(log, "zaman", None),
-        created_at_label=_format_timestamp_label(getattr(log, "created_at", None) or getattr(log, "zaman", None)),
+        created_at_label=_format_timestamp_label(
+            getattr(log, "created_at", None) or getattr(log, "zaman", None),
+            empty_label="Tarih bilgisi yok",
+        ),
         status_label="Çözüldü" if getattr(log, "resolved", False) else "Açık",
         status_class="status-aktif" if getattr(log, "resolved", False) else "status-ariza",
-        module=module,
+        module=_label_error_module(module),
         error_code=spec.error_code,
         title=str(getattr(log, "title", None) or spec.title or "Hata kaydı").strip(),
         user_message=spec.user_message if not getattr(log, "user_message", None) else str(log.user_message).strip(),
         owner_message=str(getattr(log, "owner_message", None) or spec.owner_message or "").strip(),
         possible_cause=spec.possible_cause,
         severity=severity,
-        severity_label={
-            "warning": "Uyarı",
-            "error": "Hata",
-            "critical": "Kritik",
-            "info": "Bilgi",
-        }.get(severity, severity.title()),
-        user_label=user_label,
+        severity_label=_label_error_severity(severity),
+        user_label=_resolve_actor_label(log),
         user_email=user_email,
         route=str(getattr(log, "route", None) or "-").strip() or "-",
         method=str(getattr(log, "method", None) or "-").strip() or "-",
         request_id=request_id or "-",
-        summary=summary,
+        summary=_build_error_summary(log, spec),
         can_view_detail=bool(current_user.is_authenticated and current_user.is_sahip),
         detail_url=url_for("admin.hata_kaydi_detay", log_id=log.id),
     )
+
+
+def _serialize_audit_export_row(log):
+    row = _serialize_log_row(log)
+    return {
+        "Tarih": row.zaman_label,
+        "Kullanıcı": row.user_label,
+        "İşlem": row.operation_label,
+        "İlgili Kayıt": row.record_label,
+        "Sonuç": row.outcome_label,
+        "Açıklama": row.detail,
+    }
+
+
+def _serialize_error_export_row(log):
+    row = _serialize_error_row(log)
+    return {
+        "Durum": row.status_label,
+        "Tarih": row.created_at_label,
+        "Modül": row.module,
+        "Hata Kodu": row.error_code,
+        "Başlık": row.title,
+        "Kısa Açıklama": row.summary,
+        "Kullanıcı": row.user_label,
+        "Sayfa": f"{row.method} {row.route}",
+        "Request ID": row.request_id,
+    }
 
 
 def _scope_logs_query(query):
@@ -246,7 +403,210 @@ def _scoped_log_option_query(column):
     return _scope_logs_query(IslemLog.query.with_entities(column)).filter(column.isnot(None))
 
 
+def _parse_page_arg(raw_value):
+    try:
+        page = int(raw_value)
+    except (TypeError, ValueError):
+        return 1
+    return page if page > 0 else 1
+
+
+def _count_query_rows(query):
+    return query.order_by(None).count()
+
+
+def _paginate_query(query, page, per_page=LOGS_PER_PAGE):
+    total_count = _count_query_rows(query)
+    total_pages = max(((total_count - 1) // per_page) + 1, 1) if total_count else 1
+    page = min(page, total_pages)
+    if total_count == 0:
+        return [], 0, page, total_pages
+    items = query.offset((page - 1) * per_page).limit(per_page).all()
+    return items, total_count, page, total_pages
+
+
+def _query_args_without(*excluded_keys):
+    excluded = set(excluded_keys)
+    payload = {}
+    for key in request.args:
+        if key in excluded:
+            continue
+        value = request.args.get(key)
+        if value in (None, ""):
+            continue
+        payload[key] = value
+    return payload
+
+
+def _build_pagination(endpoint, page, total_pages, params):
+    def _page_url(target_page):
+        payload = dict(params)
+        if target_page > 1:
+            payload["page"] = target_page
+        else:
+            payload.pop("page", None)
+        return url_for(endpoint, **payload)
+
+    start_page = max(1, page - 2)
+    end_page = min(total_pages, page + 2)
+    items = [
+        SimpleNamespace(number=page_number, url=_page_url(page_number), is_current=(page_number == page))
+        for page_number in range(start_page, end_page + 1)
+    ]
+    return SimpleNamespace(
+        page=page,
+        total_pages=total_pages,
+        has_prev=page > 1,
+        has_next=page < total_pages,
+        prev_url=_page_url(page - 1) if page > 1 else None,
+        next_url=_page_url(page + 1) if page < total_pages else None,
+        items=items,
+    )
+
+
+def _prepare_audit_log_listing():
+    has_event_key = column_exists("islem_log", "event_key")
+    has_target_model = column_exists("islem_log", "target_model")
+    has_target_id = column_exists("islem_log", "target_id")
+    has_outcome = column_exists("islem_log", "outcome")
+
+    page = _parse_page_arg(request.args.get("page"))
+    user_id = request.args.get("user_id", type=int)
+    event_type = (request.args.get("event_type") or "").strip()
+    legacy_event_key = (request.args.get("event_key") or "").strip()
+    target_model = (request.args.get("target_model") or "").strip()
+    outcome = (request.args.get("outcome") or "").strip()
+    date_from = (request.args.get("date_from") or "").strip()
+    date_to = (request.args.get("date_to") or "").strip()
+    active_filters = []
+
+    event_type_values = [row[0] for row in _scoped_log_option_query(IslemLog.islem_tipi).distinct().all()]
+    event_type_options = _build_options(event_type_values, _label_event_type)
+    valid_event_types = {item["key"] for item in event_type_options}
+    if event_type not in valid_event_types:
+        event_type = ""
+
+    target_model_values = []
+    if has_target_model:
+        target_model_values = [row[0] for row in _scoped_log_option_query(IslemLog.target_model).distinct().all()]
+    target_model_options = _build_options(target_model_values, _label_target_model)
+    valid_target_models = {item["key"] for item in target_model_options}
+    if target_model not in valid_target_models:
+        target_model = ""
+
+    valid_outcomes = {item["key"] for item in OUTCOME_OPTIONS}
+    if outcome not in valid_outcomes:
+        outcome = ""
+
+    if has_event_key and has_target_model and has_target_id and has_outcome:
+        query = _scope_logs_query(IslemLog.query.options(joinedload(IslemLog.yapan_kullanici))).order_by(
+            IslemLog.zaman.desc(), IslemLog.id.desc()
+        )
+        if user_id:
+            query = query.filter_by(kullanici_id=user_id)
+            active_filters.append(("Kullanıcı", str(user_id)))
+        if event_type:
+            query = query.filter(IslemLog.islem_tipi == event_type)
+            active_filters.append(("Olay Tipi", _label_event_type(event_type)))
+        if legacy_event_key:
+            query = query.filter(IslemLog.event_key.ilike(f"%{legacy_event_key}%"))
+            active_filters.append(("İşlem anahtarı", legacy_event_key))
+        if target_model:
+            query = query.filter(IslemLog.target_model == target_model)
+            active_filters.append(("İlgili Kayıt Türü", _label_target_model(target_model)))
+        if outcome:
+            query = query.filter(IslemLog.outcome == outcome)
+            active_filters.append(("Sonuç", next((item["label"] for item in OUTCOME_OPTIONS if item["key"] == outcome), outcome)))
+        if date_from:
+            query = query.filter(IslemLog.zaman >= f"{date_from} 00:00:00")
+            active_filters.append(("Başlangıç", date_from))
+        if date_to:
+            query = query.filter(IslemLog.zaman <= f"{date_to} 23:59:59")
+            active_filters.append(("Bitiş", date_to))
+    else:
+        query = _scope_logs_query(
+            IslemLog.query.with_entities(
+                IslemLog.id,
+                IslemLog.kullanici_id,
+                IslemLog.islem_tipi,
+                IslemLog.detay,
+                IslemLog.ip_adresi,
+                IslemLog.user_agent,
+                IslemLog.zaman,
+            )
+        ).order_by(IslemLog.zaman.desc(), IslemLog.id.desc())
+        if user_id:
+            query = query.filter(IslemLog.kullanici_id == user_id)
+            active_filters.append(("Kullanıcı", str(user_id)))
+        if event_type:
+            query = query.filter(IslemLog.islem_tipi == event_type)
+            active_filters.append(("Olay Tipi", _label_event_type(event_type)))
+        if date_from:
+            query = query.filter(IslemLog.zaman >= f"{date_from} 00:00:00")
+            active_filters.append(("Başlangıç", date_from))
+        if date_to:
+            query = query.filter(IslemLog.zaman <= f"{date_to} 23:59:59")
+            active_filters.append(("Bitiş", date_to))
+
+    users_query = Kullanici.query.filter_by(is_deleted=False)
+    if not current_user.is_sahip:
+        users_query = users_query.filter(Kullanici.havalimani_id == getattr(current_user, "havalimani_id", None))
+    users = users_query.order_by(Kullanici.tam_ad.asc()).all()
+    user_lookup = {user.id: user.tam_ad for user in users}
+    active_filters = [
+        ("Kullanıcı", user_lookup.get(user_id, "Sistem")) if key == "Kullanıcı" else (key, value)
+        for key, value in active_filters
+    ]
+
+    return SimpleNamespace(
+        query=query,
+        users=users,
+        event_type_options=event_type_options,
+        target_model_options=target_model_options,
+        selected_user_id=user_id,
+        selected_event_type=event_type,
+        selected_target_model=target_model,
+        selected_outcome=outcome,
+        selected_date_from=date_from,
+        selected_date_to=date_to,
+        has_target_model=has_target_model and bool(target_model_options),
+        has_active_filters=bool(active_filters),
+        active_filters=active_filters,
+        page=page,
+        export_query=_query_args_without("page"),
+        clear_url=url_for("admin.loglari_gor"),
+    )
+
+
 def _load_error_log_listing_data(search_query, selected_module, selected_severity, selected_status):
+    module_values = [
+        row[0]
+        for row in IslemLog.query.with_entities(IslemLog.module)
+        .filter(IslemLog.error_code.isnot(None), IslemLog.module.isnot(None))
+        .distinct()
+        .order_by(IslemLog.module.asc())
+        .all()
+    ]
+    severity_values = [
+        row[0]
+        for row in IslemLog.query.with_entities(IslemLog.severity)
+        .filter(IslemLog.error_code.isnot(None), IslemLog.severity.isnot(None))
+        .distinct()
+        .order_by(IslemLog.severity.asc())
+        .all()
+    ]
+    module_options = _build_options(module_values, _label_error_module)
+    severity_options = _build_options(severity_values, _label_error_severity)
+
+    valid_modules = {item["key"] for item in module_options}
+    valid_severities = {item["key"] for item in severity_options}
+    if selected_module not in valid_modules:
+        selected_module = ""
+    if selected_severity not in valid_severities:
+        selected_severity = ""
+    if selected_status not in {"", "open", "resolved"}:
+        selected_status = ""
+
     query = (
         IslemLog.query.options(joinedload(IslemLog.yapan_kullanici))
         .filter(IslemLog.error_code.isnot(None))
@@ -272,120 +632,90 @@ def _load_error_log_listing_data(search_query, selected_module, selected_severit
     elif selected_status == "open":
         query = query.filter(IslemLog.resolved.is_(False))
 
-    raw_logs = query.limit(300).all()
-    module_options = [
-        row[0]
-        for row in IslemLog.query.with_entities(IslemLog.module)
-        .filter(IslemLog.error_code.isnot(None), IslemLog.module.isnot(None))
-        .distinct()
-        .order_by(IslemLog.module.asc())
-        .all()
-    ]
-    severity_options = [
-        row[0]
-        for row in IslemLog.query.with_entities(IslemLog.severity)
-        .filter(IslemLog.error_code.isnot(None), IslemLog.severity.isnot(None))
-        .distinct()
-        .order_by(IslemLog.severity.asc())
-        .all()
-    ]
-    return raw_logs, module_options, severity_options
+    return query, module_options, severity_options, selected_module, selected_severity, selected_status
+
+
+def _prepare_error_log_listing():
+    required_columns = (
+        "error_code",
+        "title",
+        "user_message",
+        "module",
+        "severity",
+        "request_id",
+        "resolved",
+    )
+    if any(not column_exists("islem_log", column_name) for column_name in required_columns):
+        return SimpleNamespace(
+            has_schema_support=False,
+            hata_kayitlari=[],
+            module_options=[],
+            severity_options=[],
+            selected_module="",
+            selected_severity="",
+            selected_status="",
+            search_query="",
+            has_active_filters=False,
+            page=1,
+            clear_url=url_for("admin.hata_kayitlari"),
+            export_query={},
+            query=None,
+        )
+
+    search_query = (request.args.get("q") or "").strip()
+    selected_module = (request.args.get("module") or "").strip().upper()
+    selected_severity = (request.args.get("severity") or "").strip().lower()
+    selected_status = (request.args.get("status") or "").strip().lower()
+    page = _parse_page_arg(request.args.get("page"))
+
+    query, module_options, severity_options, selected_module, selected_severity, selected_status = _load_error_log_listing_data(
+        search_query,
+        selected_module,
+        selected_severity,
+        selected_status,
+    )
+
+    return SimpleNamespace(
+        has_schema_support=True,
+        query=query,
+        module_options=module_options,
+        severity_options=severity_options,
+        selected_module=selected_module,
+        selected_severity=selected_severity,
+        selected_status=selected_status,
+        search_query=search_query,
+        has_active_filters=bool(search_query or selected_module or selected_severity or selected_status),
+        page=page,
+        clear_url=url_for("admin.hata_kayitlari"),
+        export_query=_query_args_without("page"),
+    )
+
+
+def _write_excel_response(rows, columns, filename_prefix):
+    frame = pd.DataFrame(rows, columns=columns)
+    payload = io.BytesIO()
+    with pd.ExcelWriter(payload, engine="openpyxl") as writer:
+        frame.to_excel(writer, index=False)
+    payload.seek(0)
+    return send_file(
+        payload,
+        as_attachment=True,
+        download_name=f"{filename_prefix}_{datetime.now(TR_TZ).strftime('%Y%m%d_%H%M')}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @admin_bp.route('/islem-loglari')
 @login_required
 @permission_required('logs.view')
 def loglari_gor():
-    has_event_key = column_exists("islem_log", "event_key")
-    has_target_model = column_exists("islem_log", "target_model")
-    has_target_id = column_exists("islem_log", "target_id")
-    has_outcome = column_exists("islem_log", "outcome")
+    state = _prepare_audit_log_listing()
+    raw_logs, filtered_count, page, total_pages = _paginate_query(state.query, state.page)
+    pagination = _build_pagination("admin.loglari_gor", page, total_pages, state.export_query)
 
-    user_id = request.args.get("user_id", type=int)
-    event_type = (request.args.get("event_type") or "").strip()
-    legacy_event_key = (request.args.get("event_key") or "").strip()
-    target_model = (request.args.get("target_model") or "").strip()
-    outcome = (request.args.get("outcome") or "").strip()
-    date_from = (request.args.get("date_from") or "").strip()
-    date_to = (request.args.get("date_to") or "").strip()
-    active_filters = []
-
-    event_type_values = [
-        row[0]
-        for row in _scoped_log_option_query(IslemLog.islem_tipi)
-        .distinct()
-        .all()
-    ]
-    event_type_options = _build_options(event_type_values, _label_event_type)
-    valid_event_types = {item["key"] for item in event_type_options}
-    if event_type not in valid_event_types:
-        event_type = ""
-
-    target_model_values = []
-    if has_target_model:
-        target_model_values = [
-            row[0]
-            for row in _scoped_log_option_query(IslemLog.target_model)
-            .distinct()
-            .all()
-        ]
-    target_model_options = _build_options(target_model_values, _label_target_model)
-    valid_target_models = {item["key"] for item in target_model_options}
-    if target_model not in valid_target_models:
-        target_model = ""
-
-    valid_outcomes = {item["key"] for item in OUTCOME_OPTIONS}
-    if outcome not in valid_outcomes:
-        outcome = ""
-
-    if has_event_key and has_target_model and has_target_id and has_outcome:
-        query = _scope_logs_query(IslemLog.query.options(joinedload(IslemLog.yapan_kullanici))).order_by(IslemLog.zaman.desc())
-        if user_id:
-            query = query.filter_by(kullanici_id=user_id)
-            active_filters.append(("Kullanıcı", str(user_id)))
-        if event_type:
-            query = query.filter(IslemLog.islem_tipi == event_type)
-            active_filters.append(("Olay Tipi", _label_event_type(event_type)))
-        if legacy_event_key:
-            query = query.filter(IslemLog.event_key.ilike(f"%{legacy_event_key}%"))
-            active_filters.append(("İşlem anahtarı", legacy_event_key))
-        if target_model:
-            query = query.filter(IslemLog.target_model == target_model)
-            active_filters.append(("İlgili Kayıt Türü", _label_target_model(target_model)))
-        if outcome:
-            query = query.filter(IslemLog.outcome == outcome)
-            active_filters.append(
-                ("Sonuç", next((item["label"] for item in OUTCOME_OPTIONS if item["key"] == outcome), outcome))
-            )
-        if date_from:
-            query = query.filter(IslemLog.zaman >= f"{date_from} 00:00:00")
-            active_filters.append(("Başlangıç", date_from))
-        if date_to:
-            query = query.filter(IslemLog.zaman <= f"{date_to} 23:59:59")
-            active_filters.append(("Bitiş", date_to))
-        raw_logs = query.limit(500).all()
+    if state.has_target_model:
+        raw_logs = raw_logs
     else:
-        query = _scope_logs_query(IslemLog.query.with_entities(
-            IslemLog.id,
-            IslemLog.kullanici_id,
-            IslemLog.islem_tipi,
-            IslemLog.detay,
-            IslemLog.ip_adresi,
-            IslemLog.user_agent,
-            IslemLog.zaman,
-        )).order_by(IslemLog.zaman.desc())
-        if user_id:
-            query = query.filter(IslemLog.kullanici_id == user_id)
-            active_filters.append(("Kullanıcı", str(user_id)))
-        if event_type:
-            query = query.filter(IslemLog.islem_tipi == event_type)
-            active_filters.append(("Olay Tipi", _label_event_type(event_type)))
-        if date_from:
-            query = query.filter(IslemLog.zaman >= f"{date_from} 00:00:00")
-            active_filters.append(("Başlangıç", date_from))
-        if date_to:
-            query = query.filter(IslemLog.zaman <= f"{date_to} 23:59:59")
-            active_filters.append(("Bitiş", date_to))
         raw_logs = [
             SimpleNamespace(
                 id=row.id,
@@ -400,36 +730,63 @@ def loglari_gor():
                 target_id=None,
                 outcome="legacy",
             )
-            for row in query.limit(500).all()
+            for row in raw_logs
         ]
-    users_query = Kullanici.query.filter_by(is_deleted=False)
-    if not current_user.is_sahip:
-        users_query = users_query.filter(Kullanici.havalimani_id == getattr(current_user, "havalimani_id", None))
-    users = users_query.order_by(Kullanici.tam_ad.asc()).all()
-    user_lookup = {user.id: user.tam_ad for user in users}
-    active_filters = [
-        ("Kullanıcı", user_lookup.get(user_id, "Sistem")) if key == "Kullanıcı" else (key, value)
-        for key, value in active_filters
-    ]
 
     return render_template(
         'admin/islem_loglari.html',
         loglar=[_serialize_log_row(log) for log in raw_logs],
-        users=users,
-        event_type_options=event_type_options,
-        target_model_options=target_model_options,
+        users=state.users,
+        event_type_options=state.event_type_options,
+        target_model_options=state.target_model_options,
         outcome_options=OUTCOME_OPTIONS,
-        selected_user_id=user_id,
-        selected_event_type=event_type,
-        selected_target_model=target_model,
-        selected_outcome=outcome,
-        selected_date_from=date_from,
-        selected_date_to=date_to,
-        has_target_model=has_target_model and bool(target_model_options),
-        has_active_filters=bool(active_filters),
-        active_filters=active_filters,
-        filtered_count=len(raw_logs),
+        selected_user_id=state.selected_user_id,
+        selected_event_type=state.selected_event_type,
+        selected_target_model=state.selected_target_model,
+        selected_outcome=state.selected_outcome,
+        selected_date_from=state.selected_date_from,
+        selected_date_to=state.selected_date_to,
+        has_target_model=state.has_target_model,
+        has_active_filters=state.has_active_filters,
+        active_filters=state.active_filters,
+        filtered_count=filtered_count,
+        pagination=pagination,
+        export_query=state.export_query,
+        clear_url=state.clear_url,
     )
+
+
+@admin_bp.route('/islem-loglari/excel')
+@login_required
+@permission_required('logs.view')
+def loglari_excel():
+    state = _prepare_audit_log_listing()
+    limit = int(current_app.config.get("MAX_EXPORT_ROWS", 10000))
+    total_count = _count_query_rows(state.query)
+    if total_count > limit:
+        abort(413)
+
+    raw_logs = state.query.limit(limit).all()
+    if not state.has_target_model:
+        raw_logs = [
+            SimpleNamespace(
+                id=row.id,
+                kullanici_id=row.kullanici_id,
+                islem_tipi=row.islem_tipi,
+                detay=row.detay,
+                ip_adresi=row.ip_adresi,
+                user_agent=row.user_agent,
+                zaman=row.zaman,
+                event_key=None,
+                target_model=None,
+                target_id=None,
+                outcome="legacy",
+            )
+            for row in raw_logs
+        ]
+
+    log_kaydet("Rapor", f"İşlem kayıtları Excel dışa aktarıldı ({current_user.rol})")
+    return _write_excel_response([_serialize_audit_export_row(log) for log in raw_logs], AUDIT_EXPORT_COLUMNS, "islem_kayitlari")
 
 
 @admin_bp.route('/hata-kayitlari')
@@ -439,55 +796,82 @@ def hata_kayitlari():
     if not current_user.is_sahip:
         abort(403)
 
-    required_columns = (
-        "error_code",
-        "title",
-        "user_message",
-        "module",
-        "severity",
-        "request_id",
-        "resolved",
-    )
-    if any(not column_exists("islem_log", column_name) for column_name in required_columns):
-        return render_template(
-            "admin/hata_kayitlari.html",
-            hata_kayitlari=[],
+    try:
+        state = _prepare_error_log_listing()
+        if not state.has_schema_support:
+            pagination = _build_pagination("admin.hata_kayitlari", 1, 1, {})
+            return render_template(
+                "admin/hata_kayitlari.html",
+                hata_kayitlari=[],
+                module_options=[],
+                severity_options=[],
+                selected_module="",
+                selected_severity="",
+                selected_status="",
+                search_query="",
+                has_schema_support=False,
+                has_active_filters=False,
+                pagination=pagination,
+                export_query={},
+                clear_url=url_for("admin.hata_kayitlari"),
+            )
+
+        raw_logs, _, page, total_pages = _paginate_query(state.query, state.page)
+        pagination = _build_pagination("admin.hata_kayitlari", page, total_pages, state.export_query)
+    except Exception:
+        db.session.rollback()
+        state = SimpleNamespace(
+            has_schema_support=True,
             module_options=[],
             severity_options=[],
             selected_module="",
             selected_severity="",
             selected_status="",
             search_query="",
-            has_schema_support=False,
+            has_active_filters=False,
+            export_query={},
+            clear_url=url_for("admin.hata_kayitlari"),
         )
-
-    search_query = (request.args.get("q") or "").strip()
-    selected_module = (request.args.get("module") or "").strip().upper()
-    selected_severity = (request.args.get("severity") or "").strip().lower()
-    selected_status = (request.args.get("status") or "").strip().lower()
-
-    try:
-        raw_logs, module_options, severity_options = _load_error_log_listing_data(
-            search_query,
-            selected_module,
-            selected_severity,
-            selected_status,
-        )
-    except Exception:
-        db.session.rollback()
-        raw_logs, module_options, severity_options = [], [], []
+        raw_logs = []
+        pagination = _build_pagination("admin.hata_kayitlari", 1, 1, {})
 
     return render_template(
         "admin/hata_kayitlari.html",
         hata_kayitlari=[_serialize_error_row(log) for log in raw_logs],
-        module_options=[item for item in module_options if item],
-        severity_options=[item for item in severity_options if item],
-        selected_module=selected_module,
-        selected_severity=selected_severity,
-        selected_status=selected_status,
-        search_query=search_query,
+        module_options=state.module_options,
+        severity_options=state.severity_options,
+        selected_module=state.selected_module,
+        selected_severity=state.selected_severity,
+        selected_status=state.selected_status,
+        search_query=state.search_query,
         has_schema_support=True,
+        has_active_filters=state.has_active_filters,
+        pagination=pagination,
+        export_query=state.export_query,
+        clear_url=state.clear_url,
     )
+
+
+@admin_bp.route('/hata-kayitlari/excel')
+@login_required
+@permission_required('logs.view')
+def hata_kayitlari_excel():
+    if not current_user.is_sahip:
+        abort(403)
+
+    state = _prepare_error_log_listing()
+    if not state.has_schema_support:
+        flash("Hata kayıtları dışa aktarma için hazır değil.", "warning")
+        return redirect(url_for("admin.hata_kayitlari"))
+
+    limit = int(current_app.config.get("MAX_EXPORT_ROWS", 10000))
+    total_count = _count_query_rows(state.query)
+    if total_count > limit:
+        abort(413)
+
+    raw_logs = state.query.limit(limit).all()
+    log_kaydet("Rapor", "Hata kayıtları Excel dışa aktarıldı")
+    return _write_excel_response([_serialize_error_export_row(log) for log in raw_logs], ERROR_EXPORT_COLUMNS, "hata_kayitlari")
 
 
 @admin_bp.route('/hata-kayitlari/<int:log_id>')
@@ -508,8 +892,8 @@ def hata_kaydi_detay(log_id):
         title=str(getattr(log, "title", None) or spec.title or "").strip(),
         user_message=str(getattr(log, "user_message", None) or spec.user_message or "").strip(),
         owner_message=str(getattr(log, "owner_message", None) or spec.owner_message or "").strip(),
-        module=str(getattr(log, "module", None) or spec.module or "").strip(),
-        severity=str(getattr(log, "severity", None) or spec.severity or "").strip(),
+        module=_label_error_module(getattr(log, "module", None) or spec.module or ""),
+        severity=_label_error_severity(getattr(log, "severity", None) or spec.severity or ""),
         exception_type=str(getattr(log, "exception_type", None) or "-").strip() or "-",
         exception_message=mask_sensitive_text(getattr(log, "exception_message", None) or "-", limit=2400),
         traceback_summary=mask_sensitive_text(getattr(log, "traceback_summary", None) or "-", limit=5000),
@@ -522,7 +906,10 @@ def hata_kaydi_detay(log_id):
         ip_address=str(getattr(log, "ip_address", None) or getattr(log, "ip_adresi", None) or "-").strip() or "-",
         user_agent=mask_sensitive_text(getattr(log, "user_agent", None) or "-", limit=280),
         created_at=getattr(log, "created_at", None) or getattr(log, "zaman", None),
-        created_at_label=_format_timestamp_label(getattr(log, "created_at", None) or getattr(log, "zaman", None)),
+        created_at_label=_format_timestamp_label(
+            getattr(log, "created_at", None) or getattr(log, "zaman", None),
+            empty_label="Tarih bilgisi yok",
+        ),
         resolved=bool(getattr(log, "resolved", False)),
         resolution_note=str(getattr(log, "resolution_note", None) or "").strip(),
     )

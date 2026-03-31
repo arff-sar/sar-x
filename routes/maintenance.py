@@ -19,6 +19,7 @@ from models import (
     AssetMeterReading,
     EquipmentTemplate,
     Havalimani,
+    InventoryCategory,
     InventoryAsset,
     Kullanici,
     MaintenanceTriggerRule,
@@ -77,6 +78,62 @@ def _can_manage_form_catalog():
 
 def _can_manage_instruction_catalog():
     return bool(getattr(current_user, "is_sahip", False))
+
+
+def _build_instruction_catalog_options():
+    allowed_categories = [
+        guvenli_metin(item.name or "").strip()
+        for item in InventoryCategory.query.filter_by(is_deleted=False, is_active=True)
+        .order_by(InventoryCategory.name.asc())
+        .all()
+        if guvenli_metin(item.name or "").strip()
+    ]
+    allowed_category_set = {item for item in allowed_categories if item}
+
+    templates = (
+        EquipmentTemplate.query.join(
+            InventoryAsset,
+            InventoryAsset.equipment_template_id == EquipmentTemplate.id,
+        )
+        .filter(
+            EquipmentTemplate.is_deleted.is_(False),
+            EquipmentTemplate.is_active.is_(True),
+            EquipmentTemplate.name.isnot(None),
+            EquipmentTemplate.name != "",
+            EquipmentTemplate.category.isnot(None),
+            EquipmentTemplate.category != "",
+            InventoryAsset.is_deleted.is_(False),
+        )
+        .distinct()
+        .order_by(
+            EquipmentTemplate.category.asc(),
+            EquipmentTemplate.name.asc(),
+            EquipmentTemplate.brand.asc(),
+            EquipmentTemplate.model_code.asc(),
+            EquipmentTemplate.id.asc(),
+        )
+        .all()
+    )
+
+    catalog = []
+    for template in templates:
+        category = guvenli_metin(template.category or "").strip()
+        if not category:
+            continue
+        if allowed_category_set and category not in allowed_category_set:
+            continue
+        catalog.append(
+            {
+                "id": template.id,
+                "category": category,
+                "name": guvenli_metin(template.name or "").strip(),
+                "brand": guvenli_metin(template.brand or "").strip(),
+                "model_code": guvenli_metin(template.model_code or "").strip(),
+            }
+        )
+
+    selectable_categories = sorted({item["category"] for item in catalog}, key=str.lower)
+    return catalog, selectable_categories
 
 
 def _asset_scope():
@@ -1222,48 +1279,80 @@ def geciken_bakimlar():
 @login_required
 @permission_required("maintenance.plan.change", "maintenance.instructions.manage", any_of=True)
 def ekipman_sablonlari():
+    selectable_catalog, selectable_categories = _build_instruction_catalog_options()
+
     if request.method == "POST":
         if not _can_manage_instruction_catalog():
             abort(403)
 
-        name = guvenli_metin(request.form.get("name") or "").strip()
-        if not name:
-            flash("Ekipman adı zorunludur.", "danger")
+        selected_template_id = request.form.get("selected_template_id", type=int)
+        selected_category = guvenli_metin(request.form.get("category") or "").strip()
+        selected_name = guvenli_metin(request.form.get("name") or "").strip()
+        selected_brand = guvenli_metin(request.form.get("brand") or "").strip().replace("__EMPTY__", "")
+        selected_model_code = guvenli_metin(request.form.get("model_code") or "").strip().replace("__EMPTY__", "")
+
+        selected_catalog_item = next((item for item in selectable_catalog if item["id"] == selected_template_id), None)
+        if selected_catalog_item is None:
+            flash("Bakım talimatı oluşturmak için sistemde tanımlı ve envantere eklenmiş bir ekipman seçin.", "danger")
             return redirect(url_for("maintenance.ekipman_sablonlari"))
 
-        template = EquipmentTemplate(
-            name=name,
-            category=guvenli_metin(request.form.get("category") or "").strip(),
-            brand=guvenli_metin(request.form.get("brand") or "").strip(),
-            model_code=guvenli_metin(request.form.get("model_code") or "").strip(),
-            description=guvenli_metin(request.form.get("description") or "").strip(),
-            technical_specs=guvenli_metin(request.form.get("technical_specs") or "").strip(),
-            maintenance_period_days=request.form.get("maintenance_period_days", type=int) or 180,
-            criticality_level=(request.form.get("criticality_level") or "normal").strip(),
-            default_maintenance_form_id=request.form.get("default_maintenance_form_id", type=int) or None,
-            is_active=True,
-        )
-        db.session.add(template)
-        db.session.flush()
+        if (
+            selected_category != selected_catalog_item["category"]
+            or selected_name != selected_catalog_item["name"]
+            or selected_brand != selected_catalog_item["brand"]
+            or selected_model_code != selected_catalog_item["model_code"]
+        ):
+            flash("Seçilen ekipman bilgisi sistem kayıtlarıyla eşleşmiyor.", "danger")
+            return redirect(url_for("maintenance.ekipman_sablonlari"))
 
+        template = EquipmentTemplate.query.filter_by(
+            id=selected_template_id,
+            is_deleted=False,
+            is_active=True,
+        ).first_or_404()
+        template.description = guvenli_metin(request.form.get("description") or "").strip() or template.description
+        template.technical_specs = (
+            guvenli_metin(request.form.get("technical_specs") or "").strip() or template.technical_specs
+        )
+        template.maintenance_period_days = (
+            request.form.get("maintenance_period_days", type=int)
+            or template.maintenance_period_days
+            or 180
+        )
+        template.default_maintenance_form_id = request.form.get("default_maintenance_form_id", type=int) or None
+
+        instruction = template.maintenance_instruction
         instruction_title = guvenli_metin(request.form.get("instruction_title") or "").strip()
-        if instruction_title:
-            db.session.add(
-                MaintenanceInstruction(
-                    equipment_template_id=template.id,
-                    title=instruction_title,
-                    description=guvenli_metin(request.form.get("instruction_description") or "").strip(),
-                    manual_url=guvenli_metin(request.form.get("manual_url") or "").strip(),
-                    visual_url=guvenli_metin(request.form.get("visual_url") or "").strip(),
-                    revision_no=guvenli_metin(request.form.get("revision_no") or "").strip(),
-                    revision_date=_parse_date(request.form.get("revision_date")),
-                    notes=guvenli_metin(request.form.get("instruction_notes") or "").strip(),
-                    is_active=(request.form.get("instruction_active") or "on") == "on",
-                )
-            )
+        instruction_description = guvenli_metin(request.form.get("instruction_description") or "").strip()
+        manual_url = guvenli_metin(request.form.get("manual_url") or "").strip()
+        visual_url = guvenli_metin(request.form.get("visual_url") or "").strip()
+        revision_no = guvenli_metin(request.form.get("revision_no") or "").strip()
+        instruction_notes = guvenli_metin(request.form.get("instruction_notes") or "").strip()
+        has_instruction_payload = bool(
+            instruction
+            or instruction_title
+            or instruction_description
+            or manual_url
+            or visual_url
+            or revision_no
+            or request.form.get("revision_date")
+            or instruction_notes
+        )
+        if instruction is None and has_instruction_payload:
+            instruction = MaintenanceInstruction(equipment_template_id=template.id, title=instruction_title or template.name)
+            db.session.add(instruction)
+        if instruction is not None:
+            instruction.title = instruction_title or instruction.title or template.name
+            instruction.description = instruction_description or instruction.description
+            instruction.manual_url = manual_url or instruction.manual_url
+            instruction.visual_url = visual_url or instruction.visual_url
+            instruction.revision_no = revision_no or instruction.revision_no
+            instruction.revision_date = _parse_date(request.form.get("revision_date")) or instruction.revision_date
+            instruction.notes = instruction_notes or instruction.notes
+            instruction.is_active = (request.form.get("instruction_active") or "on") == "on"
 
         db.session.commit()
-        log_kaydet("Merkezi Şablon", f"Şablon oluşturuldu: {template.name}")
+        log_kaydet("Merkezi Şablon", f"Bakım talimatı kaydedildi: {template.name}")
         flash("Merkezi ekipman şablonu kaydedildi.", "success")
         return redirect(url_for("maintenance.ekipman_sablonlari"))
 
@@ -1277,6 +1366,8 @@ def ekipman_sablonlari():
         templates=templates,
         form_templates=form_templates,
         airports=airports,
+        selectable_catalog=selectable_catalog,
+        selectable_categories=selectable_categories,
     )
 
 

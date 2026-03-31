@@ -4,7 +4,10 @@
 {% block extra_css %}
 <style>
   .error-log-shell { display:grid; gap:20px; }
+  .error-log-header-actions { display:flex; gap:8px; flex-wrap:wrap; }
   .error-log-filters { display:grid; grid-template-columns: 1.6fr repeat(3, minmax(160px, 1fr)) auto; gap:12px; align-items:end; }
+  .error-log-actions-shell { display:flex; align-items:flex-end; min-width:0; }
+  .error-log-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   .error-code-link { border:0; background:none; padding:0; color:var(--navy); font-weight:800; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
   .error-code-link:hover { color:var(--orange); }
   .error-summary { min-width:250px; }
@@ -22,6 +25,9 @@
   .error-modal-close { border:0; background:transparent; color:var(--text3); font-size:24px; line-height:1; cursor:pointer; }
   .error-empty { padding:30px 24px; text-align:center; border:1px dashed var(--border-dark); border-radius:18px; color:var(--text3); }
   .error-empty strong { display:block; color:var(--navy); margin-bottom:6px; }
+  .error-pagination { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:18px 22px 22px; flex-wrap:wrap; }
+  .error-pagination-pages { display:flex; gap:8px; flex-wrap:wrap; }
+  .error-pagination .row-btn[aria-current="page"] { background:var(--navy); border-color:var(--navy); color:#fff; }
 
   @media (max-width: 980px) {
     .error-log-filters { grid-template-columns:1fr 1fr; }
@@ -29,6 +35,9 @@
 
   @media (max-width: 640px) {
     .error-log-filters { grid-template-columns:1fr; }
+    .error-log-actions-shell { width:100%; }
+    .error-log-actions { width:100%; }
+    .error-log-actions .btn { flex:1 1 100%; }
   }
 </style>
 {% endblock %}
@@ -39,6 +48,11 @@
     <div class="page-title">Hata Kayıtları</div>
     <div class="page-meta">Kullanıcıya gösterilen güvenli hata kodlarını ve merkezi hata kayıtlarını tek ekranda izleyin.</div>
   </div>
+  {% if has_schema_support %}
+  <div class="error-log-header-actions">
+    <a href="{{ url_for('admin.hata_kayitlari_excel', **export_query) }}" class="btn btn-secondary">Excel Dışa Aktar</a>
+  </div>
+  {% endif %}
 </div>
 
 <div class="error-log-shell">
@@ -61,16 +75,16 @@
           <select id="errorLogModule" name="module" class="form-control">
             <option value="">Tüm modüller</option>
             {% for item in module_options %}
-            <option value="{{ item }}" {% if selected_module == item %}selected{% endif %}>{{ item }}</option>
+            <option value="{{ item.key }}" {% if selected_module == item.key %}selected{% endif %}>{{ item.label }}</option>
             {% endfor %}
           </select>
         </div>
         <div class="form-group">
-          <label for="errorLogSeverity">Severity</label>
+          <label for="errorLogSeverity">Seviye</label>
           <select id="errorLogSeverity" name="severity" class="form-control">
             <option value="">Tüm seviyeler</option>
             {% for item in severity_options %}
-            <option value="{{ item }}" {% if selected_severity == item %}selected{% endif %}>{{ item|capitalize }}</option>
+            <option value="{{ item.key }}" {% if selected_severity == item.key %}selected{% endif %}>{{ item.label }}</option>
             {% endfor %}
           </select>
         </div>
@@ -82,8 +96,11 @@
             <option value="resolved" {% if selected_status == 'resolved' %}selected{% endif %}>Çözüldü</option>
           </select>
         </div>
-        <div class="form-group">
-          <button type="submit" class="btn btn-navy">Filtrele</button>
+        <div class="form-group error-log-actions-shell">
+          <div class="error-log-actions">
+            <button type="submit" class="btn btn-navy">Filtrele</button>
+            <a href="{{ clear_url }}" class="btn btn-secondary">Temizle</a>
+          </div>
         </div>
       </form>
       {% else %}
@@ -159,6 +176,22 @@
       </div>
       {% endif %}
     </div>
+    {% if pagination.total_pages > 1 %}
+    <div class="error-pagination">
+      <div class="error-pagination-pages">
+        {% if pagination.has_prev %}
+        <a href="{{ pagination.prev_url }}" class="row-btn">Geri</a>
+        {% endif %}
+        {% for item in pagination.items %}
+        <a href="{{ item.url }}" class="row-btn" {% if item.is_current %}aria-current="page"{% endif %}>{{ item.number }}</a>
+        {% endfor %}
+        {% if pagination.has_next %}
+        <a href="{{ pagination.next_url }}" class="row-btn">İleri</a>
+        {% endif %}
+      </div>
+      <div class="error-meta-note">Sayfa {{ pagination.page }} / {{ pagination.total_pages }}</div>
+    </div>
+    {% endif %}
   </div>
   {% endif %}
 </div>

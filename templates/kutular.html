@@ -7,13 +7,14 @@
   .box-toolbar-row { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(320px, .9fr); gap:12px; align-items:end; }
   .box-filter-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; gap:12px; align-items:end; }
   .box-create-form { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:end; }
+  .box-create-form .form-group { margin:0; }
   .box-filter-actions { display:flex; gap:8px; align-items:center; }
   .box-filter-actions .btn { min-height:44px; display:inline-flex; align-items:center; justify-content:center; }
   .box-create-form .btn { min-height:44px; display:inline-flex; align-items:center; justify-content:center; }
   .box-content-col { width:92px; text-align:center; }
   .box-content-count { text-align:center; font-weight:700; }
   .box-airport-code { font-family:var(--mono); font-size:12.5px; font-weight:700; }
-  .box-actions-shell { display:flex; justify-content:flex-end; }
+  .box-actions-shell { display:flex; justify-content:flex-end; width:100%; }
   @media (max-width: 900px) {
     .box-toolbar-row,
     .box-filter-grid,
