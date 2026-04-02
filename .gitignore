@@ -1,5 +1,7 @@
 # Environment
 .env
+.env.*
+!.env.example
 .venv/
 venv/
 
@@ -17,6 +19,11 @@ instance/
 # Logs
 logs/
 *.log
+konusma_kaydi_*.txt
+artifacts/
+*.artifact
+proje_yapisi.txt
+tam_dizin.py
 
 # Test / coverage outputs
 .pytest_cache/
