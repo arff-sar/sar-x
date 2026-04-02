@@ -6,7 +6,7 @@ from flask_wtf.csrf import generate_csrf
 import sqlalchemy as sa
 from sqlalchemy.orm import joinedload
 
-from decorators import CANONICAL_ROLE_ADMIN, CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_TEAM_LEAD, get_effective_role, permission_required
+from decorators import CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_TEAM_LEAD, get_effective_role, permission_required
 from extensions import db, limiter
 from models import (
     AirportMessage,
@@ -30,7 +30,7 @@ api_bp = Blueprint("api", __name__)
 
 
 def _can_view_all():
-    return get_effective_role(current_user) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}
+    return get_effective_role(current_user) == CANONICAL_ROLE_SYSTEM
 
 
 def _can_view_all_boxes():
@@ -38,7 +38,7 @@ def _can_view_all_boxes():
 
 
 def _can_moderate_airport_messages():
-    return get_effective_role(current_user) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN, CANONICAL_ROLE_TEAM_LEAD}
+    return get_effective_role(current_user) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_TEAM_LEAD}
 
 
 def _visible_message_airports():
@@ -93,7 +93,7 @@ def _message_display_name(message):
 
 def _serialize_airport_message(message):
     current_role = get_effective_role(current_user)
-    can_moderate = current_role in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}
+    can_moderate = current_role == CANONICAL_ROLE_SYSTEM
     if current_role == CANONICAL_ROLE_TEAM_LEAD and message.havalimani_id == getattr(current_user, "havalimani_id", None):
         can_moderate = True
     can_delete = bool(message.user_id == current_user.id or can_moderate)

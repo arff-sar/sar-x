@@ -11,6 +11,11 @@ def _bool_env(name, default=False):
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _csv_env(name):
+    raw = os.getenv(name, "")
+    return tuple(item.strip() for item in str(raw).split(",") if item.strip())
+
+
 class BaseConfig:
     ENV = os.getenv("FLASK_ENV", "development")
     DEBUG = False
@@ -55,6 +60,8 @@ class BaseConfig:
     PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL")
     PASSWORD_RESET_BASE_URL = os.getenv("PASSWORD_RESET_BASE_URL") or PUBLIC_BASE_URL
     CRITICAL_POST_RATE_LIMIT = os.getenv("CRITICAL_POST_RATE_LIMIT", "20 per minute")
+    TRUST_PROXY_HEADERS = _bool_env("TRUST_PROXY_HEADERS", False)
+    TRUSTED_PROXY_IPS = _csv_env("TRUSTED_PROXY_IPS")
     HOMEPAGE_EDITOR_CAN_PUBLISH = _bool_env("HOMEPAGE_EDITOR_CAN_PUBLISH", True)
     ROLE_SWITCH_ALLOWED_USERS = os.getenv("ROLE_SWITCH_ALLOWED_USERS") or os.getenv("ROLE_SWITCH_ALLOWED_EMAIL", "")
     PASSKEY_ENABLED = _bool_env("PASSKEY_ENABLED", False)
@@ -81,6 +88,8 @@ class BaseConfig:
     GOOGLE_DRIVE_REFRESH_TOKEN = os.getenv("GOOGLE_DRIVE_REFRESH_TOKEN")
     GOOGLE_DRIVE_TOKEN_URI = os.getenv("GOOGLE_DRIVE_TOKEN_URI", "https://oauth2.googleapis.com/token")
     GOOGLE_DRIVE_REDIRECT_URI = os.getenv("GOOGLE_DRIVE_REDIRECT_URI")
+    GOOGLE_DRIVE_AUTH_URI = os.getenv("GOOGLE_DRIVE_AUTH_URI", "https://accounts.google.com/o/oauth2/v2/auth")
+    GOOGLE_DRIVE_OAUTH_REQUIRE_STATE = _bool_env("GOOGLE_DRIVE_OAUTH_REQUIRE_STATE", True)
     GOOGLE_DRIVE_PARENT_FOLDER_ID = os.getenv("GOOGLE_DRIVE_PARENT_FOLDER_ID", "root")
     GOOGLE_DRIVE_DRILLS_ROOT_FOLDER_NAME = os.getenv("GOOGLE_DRIVE_DRILLS_ROOT_FOLDER_NAME", "SAR-X Tatbikat Belgeleri")
 
@@ -125,6 +134,7 @@ class DevelopmentConfig(BaseConfig):
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "sqlite:///sar_veritabani.db")
     SESSION_COOKIE_SECURE = False
     REMEMBER_COOKIE_SECURE = False
+    PASSKEY_ENABLED = _bool_env("PASSKEY_ENABLED", True)
     ENABLE_SCHEDULER = _bool_env("ENABLE_SCHEDULER", True)
     AUTO_CREATE_TABLES = _bool_env("AUTO_CREATE_TABLES", True)
     DEMO_TOOLS_ENABLED = _bool_env("DEMO_TOOLS_ENABLED", True)

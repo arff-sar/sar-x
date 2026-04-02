@@ -26,6 +26,12 @@ def _assert_all_personnel_accordion_bodies_hidden_in_rendered_html(html):
     assert all("hidden" in tag for tag in tags)
 
 
+def _assert_all_create_accordions_closed_in_rendered_html(html):
+    tags = re.findall(r'<details class="ppe-create-item"[^>]*>', html)
+    assert tags
+    assert all(" open" not in tag and "open=" not in tag for tag in tags)
+
+
 def test_kkd_page_shows_separate_add_and_assignment_accordions(client, app):
     with app.app_context():
         airport = HavalimaniFactory(kodu="AYT", ad="Antalya Havalimanı")
@@ -43,6 +49,7 @@ def test_kkd_page_shows_separate_add_and_assignment_accordions(client, app):
     assert "Yeni KKD Ekle" in html
     assert "Yeni KKD Tahsisi" in html
     assert "PDF Rapor" in html
+    _assert_all_create_accordions_closed_in_rendered_html(html)
 
 
 def test_kkd_page_redirects_without_503_when_schema_link_column_missing(client, app, monkeypatch):
@@ -612,6 +619,48 @@ def test_kkd_assignment_signed_document_upload_stores_drive_and_local_metadata(c
         assert "/KKD/" in stored.signed_document_key
         assert stored.signed_document_drive_file_id == "drive-file-1"
         assert stored.signed_document_drive_folder_id == "kkd-folder-1"
+
+
+def test_kkd_recent_assignment_list_shows_return_and_delete_actions(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(kodu="MZH", ad="Amasya")
+        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-actions-owner@sarx.com")
+        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Aksiyon Personeli")
+        db.session.add_all([airport, owner, recipient])
+        db.session.flush()
+
+        active_assignment = PPEAssignmentRecord(
+            assignment_no="KKD-ACT-001",
+            delivered_by_id=owner.id,
+            delivered_by_name=owner.tam_ad,
+            recipient_user_id=recipient.id,
+            airport_id=airport.id,
+            status="active",
+            created_by_id=owner.id,
+        )
+        returned_assignment = PPEAssignmentRecord(
+            assignment_no="KKD-RET-001",
+            delivered_by_id=owner.id,
+            delivered_by_name=owner.tam_ad,
+            recipient_user_id=recipient.id,
+            airport_id=airport.id,
+            status="returned",
+            created_by_id=owner.id,
+            returned_by_id=owner.id,
+        )
+        db.session.add_all([active_assignment, returned_assignment])
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+    response = client.get("/kkd")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "KKD-ACT-001" in html
+    assert "KKD-RET-001" in html
+    assert "İade Al" in html
+    assert "Sil" in html
 
 
 def test_kkd_assignment_return_flow_marks_record_returned_and_restores_available_quantity(client, app):

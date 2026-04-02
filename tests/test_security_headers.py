@@ -102,7 +102,7 @@ def test_production_defaults_to_memory_rate_limit_storage_when_unset(monkeypatch
 
 
 def test_authenticated_dashboard_response_uses_private_no_store_cache_headers(client, app):
-    user = KullaniciFactory(rol="sahip", is_deleted=False)
+    user = KullaniciFactory(rol="ekip_uyesi", is_deleted=False)
     db.session.add(user)
     db.session.commit()
 

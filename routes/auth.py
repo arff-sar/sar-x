@@ -1,5 +1,6 @@
 import json
 import hashlib
+import ipaddress
 import secrets
 import smtplib
 import re
@@ -197,8 +198,40 @@ def gizli_sifreyi_getir():
 
 
 def _client_ip():
-    forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
-    return forwarded or (request.remote_addr or "unknown")
+    remote_addr = str(request.remote_addr or "").strip()
+    remote_ip = _normalize_ip_address(remote_addr)
+    fallback_ip = remote_ip or "unknown"
+
+    if not bool(current_app.config.get("TRUST_PROXY_HEADERS", False)):
+        return fallback_ip
+
+    trusted_proxies = _trusted_proxy_ips()
+    if trusted_proxies:
+        if not remote_ip or remote_ip not in trusted_proxies:
+            return fallback_ip
+
+    forwarded = str(request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+    forwarded_ip = _normalize_ip_address(forwarded)
+    return forwarded_ip or fallback_ip
+
+
+def _normalize_ip_address(raw_value):
+    candidate = str(raw_value or "").strip()
+    if not candidate:
+        return ""
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return ""
+
+
+def _trusted_proxy_ips():
+    configured = current_app.config.get("TRUSTED_PROXY_IPS") or ()
+    if isinstance(configured, str):
+        values = [item.strip() for item in configured.split(",")]
+    else:
+        values = [str(item).strip() for item in configured]
+    return {normalized for normalized in (_normalize_ip_address(item) for item in values) if normalized}
 
 
 def _normalize_login_email(raw_value):

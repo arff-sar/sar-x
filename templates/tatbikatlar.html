@@ -20,6 +20,12 @@
   .drill-title-link:hover { color:var(--orange); }
   .drill-subtle { font-size:12px; color:var(--text3); line-height:1.55; }
   .drill-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+  .drill-upload-accordion { border:1px solid var(--border); border-radius:16px; background:#fff; overflow:hidden; }
+  .drill-upload-accordion summary { list-style:none; cursor:pointer; padding:16px 18px; display:flex; justify-content:space-between; align-items:flex-start; gap:10px; background:linear-gradient(180deg, rgba(248,250,252,.95) 0%, rgba(255,255,255,1) 100%); }
+  .drill-upload-accordion summary::-webkit-details-marker { display:none; }
+  .drill-upload-accordion summary::after { content:"▾"; font-size:14px; color:var(--text3); line-height:1; margin-left:auto; transition:transform .2s ease, color .2s ease; }
+  .drill-upload-accordion[open] summary::after { transform:rotate(180deg); color:var(--navy); }
+  .drill-upload-body { border-top:1px solid var(--border); }
   @media (max-width: 1080px) {
     .drill-layout { grid-template-columns:1fr; }
   }
@@ -152,52 +158,73 @@
 
   {% if can_manage_drills %}
   <div class="panel">
-      <div class="panel-header">
+    <details class="drill-upload-accordion">
+      <summary>
         <div>
           <div class="panel-title">Yeni Kayıt Yükle</div>
           <div class="panel-subtitle">Dosya doğrudan ilgili havalimanı klasörüne Google Drive üzerinde kaydedilir.</div>
         </div>
-      </div>
-    <div class="panel-body">
-      <form method="POST" action="{{ url_for('inventory.tatbikat_yukle') }}" enctype="multipart/form-data">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div class="drill-upload-grid">
-          <div class="form-group">
-            <label>Havalimanı</label>
-            {% if drill_airport_select_enabled %}
-            <select name="airport_id" class="form-control" required>
-              <option value="">Seçin</option>
-              {% for airport in airports %}
-              <option value="{{ airport.id }}" {% if selected_airport == airport.id %}selected{% endif %}>{{ airport.kodu }} - {{ airport.ad }}</option>
-              {% endfor %}
-            </select>
-            {% else %}
-            <input type="hidden" name="airport_id" value="{{ current_user.havalimani_id or '' }}">
-            <input type="text" class="form-control" value="{{ current_user.havalimani.kodu ~ ' - ' ~ current_user.havalimani.ad if current_user.havalimani else 'Kapsam bulunamadı' }}" readonly>
-          {% endif %}
-          </div>
-          <div class="form-group">
-            <label>Başlık</label>
-            <input type="text" name="title" class="form-control" maxlength="180" placeholder="Tatbikat başlığı">
-          </div>
-          <div class="form-group">
-            <label>Tatbikat Tarihi</label>
-            <input type="date" name="drill_date" class="form-control" required>
-          </div>
-          <div class="form-group full">
-            <label>Açıklama</label>
-            <textarea name="description" class="form-control" rows="3" maxlength="1000" placeholder="Belgeye kısa açıklama ekleyin"></textarea>
-          </div>
-          <div class="form-group full">
-            <label>Dosya</label>
-            <input type="file" name="document" class="form-control" accept=".rar,.zip,.7z,application/x-rar-compressed,application/vnd.rar,application/zip,application/x-zip-compressed,application/x-7z-compressed" required>
-            <div class="drill-subtle">Desteklenen türler: RAR, ZIP, 7Z</div>
-          </div>
+      </summary>
+      <div class="drill-upload-body">
+        <div class="panel-body">
+          <form method="POST" action="{{ url_for('inventory.tatbikat_yukle') }}" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="drill-upload-grid">
+              <div class="form-group">
+                <label>Havalimanı</label>
+                {% if drill_airport_select_enabled %}
+                <select name="airport_id" class="form-control" required>
+                  <option value="">Seçin</option>
+                  {% for airport in airports %}
+                  <option value="{{ airport.id }}" {% if selected_airport == airport.id %}selected{% endif %}>{{ airport.kodu }} - {{ airport.ad }}</option>
+                  {% endfor %}
+                </select>
+                {% else %}
+                <input type="hidden" name="airport_id" value="{{ current_user.havalimani_id or '' }}">
+                <input type="text" class="form-control" value="{{ current_user.havalimani.kodu ~ ' - ' ~ current_user.havalimani.ad if current_user.havalimani else 'Kapsam bulunamadı' }}" readonly>
+              {% endif %}
+              </div>
+              <div class="form-group">
+                <label>Başlık</label>
+                <input type="text" name="title" class="form-control" maxlength="180" placeholder="Tatbikat başlığı">
+              </div>
+              <div class="form-group">
+                <label>Tatbikat Tarihi</label>
+                <input type="date" name="drill_date" class="form-control" required>
+              </div>
+              <div class="form-group full">
+                <label>Açıklama</label>
+                <textarea name="description" class="form-control" rows="3" maxlength="1000" placeholder="Belgeye kısa açıklama ekleyin"></textarea>
+              </div>
+              <div class="form-group full">
+                <label>Dosya</label>
+                <input type="file" name="document" class="form-control" accept=".rar,.zip,.7z,application/x-rar-compressed,application/vnd.rar,application/zip,application/x-zip-compressed,application/x-7z-compressed" required>
+                <div class="drill-subtle">Desteklenen türler: RAR, ZIP, 7Z</div>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Kaydı Yükle</button>
+          </form>
         </div>
-        <button type="submit" class="btn btn-primary">Kaydı Yükle</button>
-      </form>
-    </div>
+      </div>
+    </details>
   </div>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    const uploadAccordion = document.querySelector('.drill-upload-accordion');
+    if (!uploadAccordion) {
+      return;
+    }
+    const closeUploadAccordion = function () {
+      uploadAccordion.removeAttribute('open');
+      uploadAccordion.open = false;
+    };
+    closeUploadAccordion();
+    window.addEventListener('pageshow', closeUploadAccordion);
+  })();
+</script>
 {% endblock %}

@@ -25,7 +25,6 @@ from extensions import (
 from models import Havalimani, Kullanici, TR_UPPER_MAP
 from . import admin_bp
 from decorators import (
-    CANONICAL_ROLE_ADMIN,
     CANONICAL_ROLE_SYSTEM,
     CANONICAL_ROLE_TEAM_LEAD,
     CANONICAL_ROLE_TEAM_MEMBER,
@@ -47,7 +46,7 @@ from decorators import (
 from services.text_normalization_service import normalize_lookup_key, turkish_contains_all
 
 
-GLOBAL_ROLES = {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}
+GLOBAL_ROLES = {CANONICAL_ROLE_SYSTEM}
 AIRPORT_ROLES = {CANONICAL_ROLE_TEAM_LEAD, CANONICAL_ROLE_TEAM_MEMBER}
 STATUS_OPTIONS = [
     {"key": "active", "label": "Aktif kayıtlar"},
@@ -94,7 +93,7 @@ SHOE_SIZE_OPTIONS = tuple(
 def _visible_users_query(actor):
     query = Kullanici.query.outerjoin(Havalimani)
     actor_role = get_effective_role(actor)
-    if actor_role in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
+    if actor_role == CANONICAL_ROLE_SYSTEM:
         return query
     if actor.havalimani_id is None:
         return query.filter(Kullanici.havalimani_id.is_(None))
@@ -170,7 +169,7 @@ def _normalize_phone_number(raw_value):
 
 
 def _visible_airports(actor):
-    if get_effective_role(actor) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
+    if get_effective_role(actor) == CANONICAL_ROLE_SYSTEM:
         return Havalimani.query.filter_by(is_deleted=False).all()
     return Havalimani.query.filter_by(is_deleted=False, id=actor.havalimani_id).all()
 
@@ -773,7 +772,7 @@ def kullanici_import_sablonu():
 
     notes = workbook.create_sheet("Aciklamalar")
     notes.append(["Alan", "Açıklama"])
-    notes.append(["rol", "Sistemde tanımlı rol anahtarı kullanılmalıdır. Örn: ekip_uyesi, ekip_sorumlusu, admin"])
+    notes.append(["rol", "Sistemde tanımlı rol anahtarı kullanılmalıdır. Örn: ekip_uyesi, ekip_sorumlusu, sistem_sorumlusu"])
     notes.append(["havalimani", "Kod, ad veya görünür havalimanı ID değeri kullanılabilir. Global roller için boş bırakılabilir."])
     notes.append(["aktif/pasif", "aktif veya pasif değerlerinden biri kullanılmalıdır."])
     notes.append(["telefon", "Telefon yalnızca site sahibi içe aktarıyorsa kaydedilir."])

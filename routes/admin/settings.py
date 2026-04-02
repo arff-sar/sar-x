@@ -2,6 +2,7 @@ import json
 
 from flask import current_app, render_template, request, redirect, url_for, flash, abort, session
 from flask_login import login_required, current_user
+import sqlalchemy as sa
 
 from extensions import db, limiter, log_kaydet, guvenli_metin
 from homepage_demo import (
@@ -11,10 +12,42 @@ from homepage_demo import (
     seed_homepage_demo_data,
 )
 from demo_data import get_platform_demo_status
-from models import Havalimani, Haber, Kullanici, NavMenu, SliderResim, SiteAyarlari
+from models import (
+    AssignmentItem,
+    AssignmentRecord,
+    AssignmentRecipient,
+    AssetMeterReading,
+    AssetOperationalState,
+    AssetSparePartLink,
+    BakimKaydi,
+    CalibrationRecord,
+    CalibrationSchedule,
+    ConsumableStockMovement,
+    Havalimani,
+    Haber,
+    InventoryAsset,
+    InventoryBulkImportRowResult,
+    Kutu,
+    Kullanici,
+    MaintenanceHistory,
+    MaintenancePlan,
+    MaintenanceTriggerRule,
+    Malzeme,
+    MeterDefinition,
+    NavMenu,
+    PPEAssignmentItem,
+    PPEAssignmentRecord,
+    PPERecord,
+    SiteAyarlari,
+    SliderResim,
+    SparePartStock,
+    WorkOrder,
+    WorkOrderChecklistResponse,
+    WorkOrderPartUsage,
+    get_tr_now,
+)
 from . import admin_bp
 from decorators import (
-    CANONICAL_ROLE_ADMIN,
     DEFAULT_ROLE_LABELS,
     get_effective_role,
     get_manageable_role_options,
@@ -45,6 +78,9 @@ DEFAULT_PUBLIC_NAV_MENUS = [
     {"ad": "Eğitimler", "link": "/faaliyetlerimiz/egitimler", "sira": 4},
     {"ad": "Tatbikatlar", "link": "/faaliyetlerimiz/tatbikatlar", "sira": 5},
 ]
+
+_ALLOWED_SITE_TABS = {"genel", "organizasyon", "icerik", "silme"}
+_PROTECTED_OWNER_ROLE_KEYS = {"sahip", "sistem_sorumlusu"}
 
 
 def _load_site_meta(ayarlar):
@@ -170,7 +206,6 @@ def _can_manage_demo_mode():
             return False
         return bool(
             getattr(user, "is_sahip", False)
-            or get_effective_role(user) == CANONICAL_ROLE_ADMIN
             or has_permission("settings.manage", user=user)
         )
 
@@ -189,6 +224,386 @@ def _demo_tools_runtime_enabled():
     if not current_app.config.get("DEMO_TOOLS_ENABLED", False):
         return False
     return str(current_app.config.get("ENV") or "").strip().lower() != "production"
+
+
+def _resolve_site_tab(raw_tab):
+    tab = str(raw_tab or "genel").strip().lower()
+    return tab if tab in _ALLOWED_SITE_TABS else "genel"
+
+
+def _collect_ids(query):
+    return [int(row[0]) for row in query.all() if row and row[0] is not None]
+
+
+def _bulk_soft_delete(model, condition, deleted_at):
+    if condition is None:
+        return 0
+    updated = (
+        model.query.filter(model.is_deleted.is_(False), condition)
+        .update(
+            {
+                model.is_deleted: True,
+                model.deleted_at: deleted_at,
+            },
+            synchronize_session=False,
+        )
+    )
+    return int(updated or 0)
+
+
+def _build_airport_cleanup_stats(airports):
+    airport_ids = [airport.id for airport in airports if airport]
+    if not airport_ids:
+        return {}
+
+    material_counts = {
+        int(airport_id): int(count)
+        for airport_id, count in (
+            db.session.query(Malzeme.havalimani_id, sa.func.count(Malzeme.id))
+            .filter(
+                Malzeme.is_deleted.is_(False),
+                Malzeme.havalimani_id.in_(airport_ids),
+            )
+            .group_by(Malzeme.havalimani_id)
+            .all()
+        )
+    }
+    personnel_counts = {
+        int(airport_id): int(count)
+        for airport_id, count in (
+            db.session.query(Kullanici.havalimani_id, sa.func.count(Kullanici.id))
+            .filter(
+                Kullanici.is_deleted.is_(False),
+                Kullanici.havalimani_id.in_(airport_ids),
+            )
+            .group_by(Kullanici.havalimani_id)
+            .all()
+        )
+    }
+    ppe_counts = {
+        int(airport_id): int(count)
+        for airport_id, count in (
+            db.session.query(PPERecord.airport_id, sa.func.count(PPERecord.id))
+            .filter(
+                PPERecord.is_deleted.is_(False),
+                PPERecord.airport_id.in_(airport_ids),
+            )
+            .group_by(PPERecord.airport_id)
+            .all()
+        )
+    }
+    work_order_counts = {
+        int(airport_id): int(count)
+        for airport_id, count in (
+            db.session.query(InventoryAsset.havalimani_id, sa.func.count(WorkOrder.id))
+            .join(WorkOrder, WorkOrder.asset_id == InventoryAsset.id)
+            .filter(
+                InventoryAsset.havalimani_id.in_(airport_ids),
+                InventoryAsset.is_deleted.is_(False),
+                WorkOrder.is_deleted.is_(False),
+            )
+            .group_by(InventoryAsset.havalimani_id)
+            .all()
+        )
+    }
+
+    return {
+        airport_id: {
+            "materials": material_counts.get(airport_id, 0),
+            "personnel": personnel_counts.get(airport_id, 0),
+            "ppe": ppe_counts.get(airport_id, 0),
+            "work_orders": work_order_counts.get(airport_id, 0),
+        }
+        for airport_id in airport_ids
+    }
+
+
+def _run_airport_bulk_cleanup(airport_id, *, protected_user_ids=None):
+    protected_user_ids = {int(item) for item in (protected_user_ids or set()) if item}
+    now = get_tr_now()
+
+    asset_ids = _collect_ids(
+        db.session.query(InventoryAsset.id).filter(
+            InventoryAsset.havalimani_id == airport_id,
+            InventoryAsset.is_deleted.is_(False),
+        )
+    )
+    material_ids = _collect_ids(
+        db.session.query(Malzeme.id).filter(
+            Malzeme.havalimani_id == airport_id,
+            Malzeme.is_deleted.is_(False),
+        )
+    )
+    work_order_ids = _collect_ids(
+        db.session.query(WorkOrder.id)
+        .join(InventoryAsset, WorkOrder.asset_id == InventoryAsset.id)
+        .filter(
+            InventoryAsset.havalimani_id == airport_id,
+            WorkOrder.is_deleted.is_(False),
+        )
+    )
+    assignment_ids = _collect_ids(
+        db.session.query(AssignmentRecord.id).filter(
+            AssignmentRecord.airport_id == airport_id,
+            AssignmentRecord.is_deleted.is_(False),
+        )
+    )
+    ppe_record_ids = _collect_ids(
+        db.session.query(PPERecord.id).filter(
+            PPERecord.airport_id == airport_id,
+            PPERecord.is_deleted.is_(False),
+        )
+    )
+    ppe_assignment_ids = _collect_ids(
+        db.session.query(PPEAssignmentRecord.id).filter(
+            PPEAssignmentRecord.airport_id == airport_id,
+            PPEAssignmentRecord.is_deleted.is_(False),
+        )
+    )
+
+    summary = {
+        "materials": 0,
+        "personnel": 0,
+        "ppe_records": 0,
+        "ppe_assignments": 0,
+        "work_orders": 0,
+    }
+
+    if work_order_ids:
+        summary["work_order_checklist"] = _bulk_soft_delete(
+            WorkOrderChecklistResponse,
+            WorkOrderChecklistResponse.work_order_id.in_(work_order_ids),
+            now,
+        )
+        summary["work_order_parts"] = _bulk_soft_delete(
+            WorkOrderPartUsage,
+            WorkOrderPartUsage.work_order_id.in_(work_order_ids),
+            now,
+        )
+        summary["calibration_records"] = _bulk_soft_delete(
+            CalibrationRecord,
+            CalibrationRecord.work_order_id.in_(work_order_ids),
+            now,
+        )
+    else:
+        summary["work_order_checklist"] = 0
+        summary["work_order_parts"] = 0
+        summary["calibration_records"] = 0
+
+    if asset_ids:
+        summary["maintenance_history"] = _bulk_soft_delete(
+            MaintenanceHistory,
+            MaintenanceHistory.asset_id.in_(asset_ids),
+            now,
+        )
+        summary["maintenance_plans"] = _bulk_soft_delete(
+            MaintenancePlan,
+            sa.or_(
+                MaintenancePlan.asset_id.in_(asset_ids),
+                MaintenancePlan.owner_airport_id == airport_id,
+            ),
+            now,
+        )
+        summary["asset_operational_states"] = _bulk_soft_delete(
+            AssetOperationalState,
+            AssetOperationalState.asset_id.in_(asset_ids),
+            now,
+        )
+        summary["calibration_schedules"] = _bulk_soft_delete(
+            CalibrationSchedule,
+            CalibrationSchedule.asset_id.in_(asset_ids),
+            now,
+        )
+        summary["calibration_records_assets"] = _bulk_soft_delete(
+            CalibrationRecord,
+            CalibrationRecord.asset_id.in_(asset_ids),
+            now,
+        )
+        summary["meter_definitions"] = _bulk_soft_delete(
+            MeterDefinition,
+            MeterDefinition.asset_id.in_(asset_ids),
+            now,
+        )
+        summary["meter_readings"] = _bulk_soft_delete(
+            AssetMeterReading,
+            AssetMeterReading.asset_id.in_(asset_ids),
+            now,
+        )
+        summary["trigger_rules"] = _bulk_soft_delete(
+            MaintenanceTriggerRule,
+            MaintenanceTriggerRule.asset_id.in_(asset_ids),
+            now,
+        )
+        summary["asset_part_links"] = _bulk_soft_delete(
+            AssetSparePartLink,
+            AssetSparePartLink.asset_id.in_(asset_ids),
+            now,
+        )
+        summary["bulk_import_rows"] = _bulk_soft_delete(
+            InventoryBulkImportRowResult,
+            InventoryBulkImportRowResult.asset_id.in_(asset_ids),
+            now,
+        )
+    else:
+        summary["maintenance_history"] = 0
+        summary["maintenance_plans"] = _bulk_soft_delete(
+            MaintenancePlan,
+            MaintenancePlan.owner_airport_id == airport_id,
+            now,
+        )
+        summary["asset_operational_states"] = 0
+        summary["calibration_schedules"] = 0
+        summary["calibration_records_assets"] = 0
+        summary["meter_definitions"] = 0
+        summary["meter_readings"] = 0
+        summary["trigger_rules"] = 0
+        summary["asset_part_links"] = 0
+        summary["bulk_import_rows"] = 0
+
+    summary["work_orders"] = _bulk_soft_delete(
+        WorkOrder,
+        WorkOrder.id.in_(work_order_ids) if work_order_ids else None,
+        now,
+    )
+    summary["inventory_assets"] = _bulk_soft_delete(
+        InventoryAsset,
+        InventoryAsset.havalimani_id == airport_id,
+        now,
+    )
+
+    if material_ids:
+        summary["bakim_kayitlari"] = _bulk_soft_delete(
+            BakimKaydi,
+            BakimKaydi.malzeme_id.in_(material_ids),
+            now,
+        )
+    else:
+        summary["bakim_kayitlari"] = 0
+    summary["materials"] = _bulk_soft_delete(
+        Malzeme,
+        Malzeme.havalimani_id == airport_id,
+        now,
+    )
+    summary["boxes"] = _bulk_soft_delete(
+        Kutu,
+        Kutu.havalimani_id == airport_id,
+        now,
+    )
+
+    summary["assignments"] = _bulk_soft_delete(
+        AssignmentRecord,
+        AssignmentRecord.airport_id == airport_id,
+        now,
+    )
+    assignment_item_clauses = []
+    if assignment_ids:
+        assignment_item_clauses.append(AssignmentItem.assignment_id.in_(assignment_ids))
+    if material_ids:
+        assignment_item_clauses.append(AssignmentItem.material_id.in_(material_ids))
+    if asset_ids:
+        assignment_item_clauses.append(AssignmentItem.asset_id.in_(asset_ids))
+    summary["assignment_items"] = _bulk_soft_delete(
+        AssignmentItem,
+        sa.or_(*assignment_item_clauses) if assignment_item_clauses else None,
+        now,
+    )
+    summary["assignment_recipients"] = _bulk_soft_delete(
+        AssignmentRecipient,
+        AssignmentRecipient.assignment_id.in_(assignment_ids) if assignment_ids else None,
+        now,
+    )
+
+    ppe_item_clauses = []
+    if ppe_assignment_ids:
+        ppe_item_clauses.append(PPEAssignmentItem.assignment_id.in_(ppe_assignment_ids))
+    if ppe_record_ids:
+        ppe_item_clauses.append(PPEAssignmentItem.ppe_record_id.in_(ppe_record_ids))
+    summary["ppe_assignment_items"] = _bulk_soft_delete(
+        PPEAssignmentItem,
+        sa.or_(*ppe_item_clauses) if ppe_item_clauses else None,
+        now,
+    )
+    summary["ppe_records"] = _bulk_soft_delete(
+        PPERecord,
+        PPERecord.airport_id == airport_id,
+        now,
+    )
+    summary["ppe_assignments"] = _bulk_soft_delete(
+        PPEAssignmentRecord,
+        PPEAssignmentRecord.airport_id == airport_id,
+        now,
+    )
+
+    summary["spare_part_stocks"] = _bulk_soft_delete(
+        SparePartStock,
+        SparePartStock.airport_id == airport_id,
+        now,
+    )
+    summary["consumable_movements"] = _bulk_soft_delete(
+        ConsumableStockMovement,
+        ConsumableStockMovement.airport_id == airport_id,
+        now,
+    )
+
+    personnel_query = Kullanici.query.filter(
+        Kullanici.havalimani_id == airport_id,
+        Kullanici.is_deleted.is_(False),
+        sa.not_(Kullanici.rol.in_(sorted(_PROTECTED_OWNER_ROLE_KEYS))),
+    )
+    if protected_user_ids:
+        personnel_query = personnel_query.filter(sa.not_(Kullanici.id.in_(sorted(protected_user_ids))))
+    summary["personnel"] = int(
+        personnel_query.update(
+            {
+                Kullanici.is_deleted: True,
+                Kullanici.deleted_at: now,
+            },
+            synchronize_session=False,
+        )
+        or 0
+    )
+
+    return summary
+
+
+def _build_site_yonetimi_context(aktif_sekme):
+    ayarlar = SiteAyarlari.query.first()
+    meta = _load_site_meta(ayarlar)
+    footer_content = _resolve_footer_content(meta)
+    rol_etiketleri = _resolve_role_labels(ayarlar)
+    role_catalog = []
+    role_usage_counts = {}
+    for user in Kullanici.query.filter_by(is_deleted=False).all():
+        role_usage_counts[user.rol] = role_usage_counts.get(user.rol, 0) + 1
+    for role in get_manageable_role_options():
+        role_copy = dict(role)
+        role_copy["permission_count"] = len(get_role_permissions(role["key"]))
+        role_copy["user_count"] = role_usage_counts.get(role["key"], 0)
+        role_catalog.append(role_copy)
+    demo_tools_enabled = _demo_tools_runtime_enabled()
+    platform_demo_status = get_platform_demo_status() if demo_tools_enabled else None
+    homepage_demo_status = get_homepage_demo_status() if demo_tools_enabled else None
+    airports = Havalimani.query.filter_by(is_deleted=False).order_by(Havalimani.kodu.asc()).all()
+
+    return {
+        "menuler": _ensure_default_public_nav_menus(),
+        "sliderlar": SliderResim.query.all(),
+        "ayarlar": ayarlar,
+        "site_notu": meta.get("site_notu", ""),
+        "public_contact_note": meta.get("public_contact_note", meta.get("site_notu", "")),
+        "public_logo_url": meta.get("public_logo_url", ""),
+        "footer_content": footer_content if isinstance(footer_content, dict) else _resolve_footer_content({}),
+        "rol_etiketleri": rol_etiketleri,
+        "role_catalog": role_catalog,
+        "core_role_keys": {item["key"] for item in get_role_options()},
+        "permission_catalog": get_permission_catalog(),
+        "havalimanlari": airports,
+        "airport_cleanup_stats": _build_airport_cleanup_stats(airports),
+        "aktif_sekme": aktif_sekme,
+        "demo_tools_enabled": demo_tools_enabled,
+        "platform_demo_status": platform_demo_status,
+        "homepage_demo_status": homepage_demo_status,
+    }
 
 
 # --- HAVALİMANI YÖNETİMİ (SİTE AYARLARI İÇİNE TAŞINDI) ---
@@ -325,46 +740,79 @@ def site_yonetimi():
     if not _can_manage_demo_mode():
         abort(403)
 
-    ayarlar = SiteAyarlari.query.first()
-    meta = _load_site_meta(ayarlar)
-    footer_content = _resolve_footer_content(meta)
-    rol_etiketleri = _resolve_role_labels(ayarlar)
-    role_catalog = []
-    role_usage_counts = {}
-    for user in Kullanici.query.filter_by(is_deleted=False).all():
-        role_usage_counts[user.rol] = role_usage_counts.get(user.rol, 0) + 1
-    for role in get_manageable_role_options():
-        role_copy = dict(role)
-        role_copy["permission_count"] = len(get_role_permissions(role["key"]))
-        role_copy["user_count"] = role_usage_counts.get(role["key"], 0)
-        role_catalog.append(role_copy)
-    aktif_sekme = request.args.get('tab', 'genel')
-    if aktif_sekme not in ['genel', 'organizasyon', 'icerik']:
-        aktif_sekme = 'genel'
-    demo_tools_enabled = _demo_tools_runtime_enabled()
-    platform_demo_status = get_platform_demo_status() if demo_tools_enabled else None
-    homepage_demo_status = get_homepage_demo_status() if demo_tools_enabled else None
+    aktif_sekme = _resolve_site_tab(request.args.get('tab', 'genel'))
+    return render_template('admin/site_yonetimi.html', **_build_site_yonetimi_context(aktif_sekme))
 
-    page_context = {
-        "menuler": _ensure_default_public_nav_menus(),
-        "sliderlar": SliderResim.query.all(),
-        "ayarlar": ayarlar,
-        "site_notu": meta.get("site_notu", ""),
-        "public_contact_note": meta.get("public_contact_note", meta.get("site_notu", "")),
-        "public_logo_url": meta.get("public_logo_url", ""),
-        # Template footer alanları bu context'e bağlıdır; her zaman gönderilir.
-        "footer_content": footer_content if isinstance(footer_content, dict) else _resolve_footer_content({}),
-        "rol_etiketleri": rol_etiketleri,
-        "role_catalog": role_catalog,
-        "core_role_keys": {item["key"] for item in get_role_options()},
-        "permission_catalog": get_permission_catalog(),
-        "havalimanlari": Havalimani.query.filter_by(is_deleted=False).all(),
-        "aktif_sekme": aktif_sekme,
-        "demo_tools_enabled": demo_tools_enabled,
-        "platform_demo_status": platform_demo_status,
-        "homepage_demo_status": homepage_demo_status,
-    }
-    return render_template('admin/site_yonetimi.html', **page_context)
+
+@admin_bp.route('/site-yonetimi/havalimani-toplu-silme')
+@login_required
+@permission_required('settings.manage')
+def site_yonetimi_havalimani_toplu_silme():
+    if not _can_manage_demo_mode():
+        abort(403)
+    return render_template('admin/site_yonetimi.html', **_build_site_yonetimi_context('silme'))
+
+
+@admin_bp.route('/havalimani-toplu-silme', methods=['POST'])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+@permission_required('settings.manage')
+def havalimani_toplu_silme():
+    if not current_user.is_sahip:
+        abort(403)
+
+    airport_id = request.form.get('airport_id', type=int)
+    airport = Havalimani.query.filter_by(id=airport_id, is_deleted=False).first() if airport_id else None
+    if not airport:
+        flash("Silinecek havalimanı seçimi geçersiz.", "danger")
+        return redirect(url_for('admin.site_yonetimi', tab='silme'))
+
+    expected_confirm = f"SIL-{airport.kodu}".upper()
+    confirm_text = guvenli_metin(request.form.get("confirm_text")).strip().upper()
+    if confirm_text != expected_confirm:
+        flash(f"Onay metni hatalı. Lütfen {expected_confirm} ifadesini girin.", "danger")
+        return redirect(url_for('admin.site_yonetimi', tab='silme'))
+
+    password = request.form.get("confirm_password") or ""
+    if not password or not current_user.sifre_kontrol(password):
+        flash("Şifre doğrulaması başarısız. İşlem iptal edildi.", "danger")
+        return redirect(url_for('admin.site_yonetimi', tab='silme'))
+
+    try:
+        summary = _run_airport_bulk_cleanup(airport.id, protected_user_ids={current_user.id})
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Havalimanı toplu silme işlemi hata verdi | airport_id=%s", airport.id)
+        flash("Toplu silme işlemi sırasında beklenmeyen bir hata oluştu. Veriler geri alındı.", "danger")
+        return redirect(url_for('admin.site_yonetimi', tab='silme'))
+
+    log_lines = [
+        f"Havalimanı: {airport.kodu} - {airport.ad}",
+        f"Malzeme: {summary.get('materials', 0)}",
+        f"Personel: {summary.get('personnel', 0)}",
+        f"KKD Kaydı: {summary.get('ppe_records', 0)}",
+        f"KKD Zimmet: {summary.get('ppe_assignments', 0)}",
+        f"İş Emri: {summary.get('work_orders', 0)}",
+        f"Envanter Asset: {summary.get('inventory_assets', 0)}",
+    ]
+    log_kaydet(
+        "Sistem",
+        "\n".join(log_lines),
+        event_key="admin.airport.bulk_cleanup",
+    )
+
+    flash(
+        (
+            f"{airport.kodu} için toplu silme tamamlandı. "
+            f"Malzeme: {summary.get('materials', 0)}, "
+            f"Personel: {summary.get('personnel', 0)}, "
+            f"KKD: {summary.get('ppe_records', 0)}, "
+            f"İş Emri: {summary.get('work_orders', 0)}"
+        ),
+        "warning",
+    )
+    return redirect(url_for('admin.site_yonetimi', tab='silme'))
 
 
 @admin_bp.route('/demo-veri/olustur', methods=['POST'])

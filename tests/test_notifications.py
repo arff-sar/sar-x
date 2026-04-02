@@ -30,8 +30,8 @@ def test_notification_created_and_marked_read(client, app):
     assert page.status_code == 200
     assert "Düşük stok" in page.data.decode("utf-8")
 
-    response = client.post(f"/admin/notifications/read/{notification_id}", follow_redirects=True)
-    assert response.status_code == 200
+    response = client.post(f"/admin/notifications/read/{notification_id}", follow_redirects=False)
+    assert response.status_code == 302
     with app.app_context():
         item = db.session.get(Notification, notification_id)
         assert item.is_read is True
@@ -52,3 +52,26 @@ def test_mark_all_notifications_read(client, app):
     with app.app_context():
         unread = Notification.query.filter_by(user_id=user_id, is_read=False).count()
         assert unread == 0
+
+
+def test_notification_read_redirect_rejects_external_link(client, app):
+    with app.app_context():
+        user = KullaniciFactory(rol="personel", is_deleted=False)
+        db.session.add(user)
+        db.session.commit()
+        notification = create_notification(
+            user.id,
+            "security-check",
+            "Güvenlik",
+            "Harici link fallback testi",
+            link_url="https://attacker.example/phish",
+            severity="info",
+        )
+        user_id = user.id
+        notification_id = notification.id
+
+    _login(client, user_id)
+    response = client.post(f"/admin/notifications/read/{notification_id}", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/notifications")

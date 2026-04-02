@@ -1,11 +1,13 @@
 import io
 import base64
+import hmac
 import json
 import mimetypes
 import re
+import secrets
 import zipfile
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlparse, urlunsplit
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -81,9 +83,9 @@ from models import (
 from extensions import table_exists
 from qr_logic import generate_qr_data
 from decorators import (
-    CANONICAL_ROLE_ADMIN,
     CANONICAL_ROLE_SYSTEM,
     CANONICAL_ROLE_TEAM_LEAD,
+    CANONICAL_ROLE_TEAM_MEMBER,
     ROLE_ADMIN,
     ROLE_AIRPORT_MANAGER,
     ROLE_MANAGER,
@@ -117,6 +119,7 @@ from services.text_normalization_service import turkish_contains, turkish_equals
 
 inventory_bp = Blueprint("inventory", __name__)
 OFFLINE_MAINTENANCE_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{8,64}$")
+GOOGLE_DRIVE_OAUTH_STATE_SESSION_KEY = "google_drive_oauth_state"
 
 ASSIGNMENT_STATUS_LABELS = {
     "active": "Aktif",
@@ -225,6 +228,11 @@ def havalimani_filtreli_sorgu(model_sinifi):
 
 
 def _can_view_all_operational_scope():
+    actor_role = get_effective_role(current_user)
+    if actor_role == CANONICAL_ROLE_SYSTEM:
+        return True
+    if actor_role in {CANONICAL_ROLE_TEAM_LEAD, CANONICAL_ROLE_TEAM_MEMBER}:
+        return False
     return has_permission("logs.view") or has_permission("settings.manage")
 
 
@@ -279,16 +287,10 @@ def _can_issue_assignments(actor=None):
 def _can_delete_assignments():
     if not getattr(current_user, "is_authenticated", False):
         return False
-    raw_role = str(getattr(current_user, "rol", "") or "").strip().lower()
-    if raw_role in {
-        CANONICAL_ROLE_SYSTEM,
-        ROLE_OWNER,
-        ROLE_SYSTEM_OWNER,
-        CANONICAL_ROLE_ADMIN,
-        ROLE_ADMIN,
-    }:
+    actor_role = get_effective_role(current_user)
+    if actor_role == CANONICAL_ROLE_SYSTEM:
         return has_permission("assignment.view")
-    if raw_role in {CANONICAL_ROLE_TEAM_LEAD, ROLE_MANAGER, ROLE_AIRPORT_MANAGER}:
+    if actor_role == CANONICAL_ROLE_TEAM_LEAD:
         return has_permission("assignment.manage")
     return False
 
@@ -377,7 +379,7 @@ def _ensure_kkd_schema_ready():
 
 def _drill_scope():
     query = TatbikatBelgesi.query.filter_by(is_deleted=False)
-    if get_effective_role(current_user) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
+    if get_effective_role(current_user) == CANONICAL_ROLE_SYSTEM:
         return apply_platform_demo_scope(query, "TatbikatBelgesi", TatbikatBelgesi.id)
     if current_user.havalimani_id is None:
         scoped = query.filter(TatbikatBelgesi.havalimani_id.is_(None))
@@ -387,7 +389,7 @@ def _drill_scope():
 
 
 def _can_view_drills_for_airport(airport_id):
-    if get_effective_role(current_user) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
+    if get_effective_role(current_user) == CANONICAL_ROLE_SYSTEM:
         return True
     return bool(current_user.havalimani_id and current_user.havalimani_id == airport_id)
 
@@ -403,7 +405,7 @@ def _can_manage_drills_for_airport(airport_id):
 
 
 def _visible_drill_airports():
-    if get_effective_role(current_user) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
+    if get_effective_role(current_user) == CANONICAL_ROLE_SYSTEM:
         query = Havalimani.query.filter_by(is_deleted=False)
         query = apply_platform_demo_scope(query, "Havalimani", Havalimani.id)
         return query.order_by(Havalimani.kodu.asc()).all()
@@ -524,6 +526,14 @@ def _get_drill_document_or_403(document_id):
     if not _can_view_drills_for_airport(document.havalimani_id):
         abort(403)
     return document
+
+
+def _google_drive_oauth_state_matches(request_state):
+    expected_state = str(session.pop(GOOGLE_DRIVE_OAUTH_STATE_SESSION_KEY, "") or "").strip()
+    provided_state = str(request_state or "").strip()
+    if not expected_state or not provided_state:
+        return False
+    return hmac.compare_digest(expected_state, provided_state)
 
 
 def _redirect_after_google_oauth():
@@ -1008,7 +1018,7 @@ def _assignment_pdf_logo_uri():
 
 def _asset_scope():
     query = InventoryAsset.query.filter_by(is_deleted=False)
-    if has_permission("logs.view") or has_permission("settings.manage"):
+    if _can_view_all_operational_scope():
         scoped = query
     else:
         scoped = query.filter_by(havalimani_id=current_user.havalimani_id)
@@ -1366,6 +1376,34 @@ def _is_valid_url(raw_value):
         return True
     parsed = urlparse(value)
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _safe_internal_redirect_target(raw_target, fallback_target):
+    fallback = str(fallback_target or "/").strip() or "/"
+    target = str(raw_target or "").strip()
+    if not target or target.startswith("//"):
+        return fallback
+
+    parsed = urlparse(target)
+    if parsed.scheme or parsed.netloc:
+        request_origin = urlparse(request.host_url)
+        if (parsed.scheme or "").lower() != (request_origin.scheme or "").lower():
+            return fallback
+        if (parsed.hostname or "").lower() != (request_origin.hostname or "").lower():
+            return fallback
+        try:
+            request_port = request_origin.port
+            parsed_port = parsed.port
+        except ValueError:
+            return fallback
+        if (request_port or None) != (parsed_port or None):
+            return fallback
+        safe_path = parsed.path if str(parsed.path or "").startswith("/") else f"/{parsed.path or ''}"
+        return urlunsplit(("", "", safe_path or "/", parsed.query, parsed.fragment))
+
+    if not target.startswith("/"):
+        return fallback
+    return target
 
 
 def _safe_asset_display_name(asset):
@@ -3014,7 +3052,7 @@ def envanter_excel():
 @permission_required("inventory.delete")
 def malzeme_sil_legacy(id):
     flash("Bu işlem yalnızca form gönderimi ile yapılabilir.", "warning")
-    return redirect(request.referrer or url_for("inventory.dashboard"))
+    return redirect(_safe_internal_redirect_target(request.referrer, url_for("inventory.dashboard")))
 
 
 @inventory_bp.route("/malzeme-sil/<int:id>", methods=["POST"])
@@ -3022,7 +3060,7 @@ def malzeme_sil_legacy(id):
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
 @permission_required("inventory.delete")
 def malzeme_sil(id):
-    malzeme = db.session.get(Malzeme, id)
+    malzeme = havalimani_filtreli_sorgu(Malzeme).filter(Malzeme.id == id).first()
     if malzeme and not malzeme.is_deleted:
         malzeme_adi = malzeme.ad
         malzeme.soft_delete()
@@ -3040,7 +3078,7 @@ def malzeme_sil(id):
     else:
         flash("Hata: Malzeme bulunamadı veya zaten silinmiş.", "danger")
 
-    return redirect(request.referrer or url_for("inventory.dashboard"))
+    return redirect(_safe_internal_redirect_target(request.referrer, url_for("inventory.dashboard")))
 
 
 @inventory_bp.route("/envanter/pdf")
@@ -5012,8 +5050,34 @@ def tatbikat_sil(document_id):
     return redirect(url_for("inventory.tatbikat_listesi", airport_id=document.havalimani_id))
 
 
+@inventory_bp.route("/google-drive/oauth/baslat")
+@login_required
+def google_drive_oauth_start():
+    oauth_state = secrets.token_urlsafe(32)
+    session[GOOGLE_DRIVE_OAUTH_STATE_SESSION_KEY] = oauth_state
+    session.modified = True
+    try:
+        auth_url = get_drill_drive_service().build_authorization_url(oauth_state)
+    except GoogleDriveError as exc:
+        current_app.logger.warning(
+            "Google Drive OAuth başlatılamadı: %s",
+            compact_log_detail(exc, limit=160),
+        )
+        flash("Google Drive yetkilendirme bağlantısı oluşturulamadı.", "danger")
+        return _redirect_after_google_oauth()
+    return redirect(auth_url)
+
+
 @inventory_bp.route("/google-drive/oauth/callback")
+@login_required
 def google_drive_oauth_callback():
+    require_state = bool(current_app.config.get("GOOGLE_DRIVE_OAUTH_REQUIRE_STATE", True))
+    request_state = request.args.get("state")
+    if require_state and not _google_drive_oauth_state_matches(request_state):
+        current_app.logger.warning("Google Drive OAuth callback state doğrulaması başarısız.")
+        flash("Google Drive oturum doğrulaması başarısız oldu. Lütfen işlemi tekrar başlatın.", "danger")
+        return _redirect_after_google_oauth()
+
     error_code = str(request.args.get("error") or "").strip()
     if error_code:
         current_app.logger.warning("Google Drive OAuth reddedildi: %s", error_code)

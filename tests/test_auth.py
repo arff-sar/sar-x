@@ -23,6 +23,39 @@ def _extract_challenge_answer(client, app):
         assert fallback is not None
         return fallback["code"]
 
+
+def test_client_ip_ignores_forwarded_header_when_proxy_trust_disabled(app):
+    app.config["TRUST_PROXY_HEADERS"] = False
+    app.config["TRUSTED_PROXY_IPS"] = ("127.0.0.1",)
+    with app.test_request_context(
+        "/login",
+        headers={"X-Forwarded-For": "8.8.8.8"},
+        environ_base={"REMOTE_ADDR": "127.0.0.1"},
+    ):
+        assert auth_module._client_ip() == "127.0.0.1"
+
+
+def test_client_ip_uses_forwarded_header_for_trusted_proxy(app):
+    app.config["TRUST_PROXY_HEADERS"] = True
+    app.config["TRUSTED_PROXY_IPS"] = ("127.0.0.1",)
+    with app.test_request_context(
+        "/login",
+        headers={"X-Forwarded-For": "8.8.8.8, 127.0.0.1"},
+        environ_base={"REMOTE_ADDR": "127.0.0.1"},
+    ):
+        assert auth_module._client_ip() == "8.8.8.8"
+
+
+def test_client_ip_rejects_forwarded_header_for_untrusted_proxy(app):
+    app.config["TRUST_PROXY_HEADERS"] = True
+    app.config["TRUSTED_PROXY_IPS"] = ("10.0.0.1",)
+    with app.test_request_context(
+        "/login",
+        headers={"X-Forwarded-For": "8.8.8.8"},
+        environ_base={"REMOTE_ADDR": "127.0.0.1"},
+    ):
+        assert auth_module._client_ip() == "127.0.0.1"
+
 def test_login_page_loads(client):
     response = client.get('/login')
     assert response.status_code == 200
@@ -41,7 +74,7 @@ def test_login_page_defaults_remember_me_for_mobile_and_pwa_continuity(client):
 def test_login_success(client, app):
     app.config['WTF_CSRF_ENABLED'] = False 
     
-    user = KullaniciFactory(kullanici_adi="admin@sarx.com", is_deleted=False, rol="sahip")
+    user = KullaniciFactory(kullanici_adi="admin@sarx.com", is_deleted=False, rol="ekip_uyesi")
     user.sifre_hash = generate_password_hash('123456', method='pbkdf2:sha256') 
     db.session.add(user)
     db.session.commit() 
@@ -60,7 +93,7 @@ def test_login_success(client, app):
 def test_login_success_for_user_without_airport_does_not_crash_dashboard(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
 
-    user = KullaniciFactory(kullanici_adi="no-airport@sarx.com", is_deleted=False, rol="personel")
+    user = KullaniciFactory(kullanici_adi="no-airport@sarx.com", is_deleted=False, rol="ekip_uyesi")
     user.sifre_hash = generate_password_hash('123456', method='pbkdf2:sha256')
     db.session.add(user)
     db.session.commit()
@@ -162,7 +195,7 @@ def test_logout(client, app):
 
 def test_logout_clears_remember_me_and_stays_on_login(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
-    user = KullaniciFactory(kullanici_adi="remember-logout@sarx.com", is_deleted=False, rol="sahip")
+    user = KullaniciFactory(kullanici_adi="remember-logout@sarx.com", is_deleted=False, rol="ekip_uyesi")
     user.sifre_hash = generate_password_hash('123456', method='pbkdf2:sha256')
     db.session.add(user)
     db.session.commit()
@@ -189,7 +222,7 @@ def test_logout_clears_remember_me_and_stays_on_login(client, app):
 
 def test_logout_invalidates_auth_state_and_expires_remember_cookie(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
-    user = KullaniciFactory(kullanici_adi="remember-expire@sarx.com", is_deleted=False, rol="sahip")
+    user = KullaniciFactory(kullanici_adi="remember-expire@sarx.com", is_deleted=False, rol="ekip_uyesi")
     user.sifre_hash = generate_password_hash('123456', method='pbkdf2:sha256')
     db.session.add(user)
     db.session.commit()
@@ -388,7 +421,7 @@ def test_sifre_yenile_success(client, app):
     email = "basarili@sarx.com"
     old_password = "EskiSifre1!"
     new_password = "YeniSifre1!"
-    user = KullaniciFactory(kullanici_adi=email, is_deleted=False, rol="sahip", password=old_password)
+    user = KullaniciFactory(kullanici_adi=email, is_deleted=False, rol="ekip_uyesi", password=old_password)
     db.session.add(user)
     db.session.commit()
 
@@ -493,7 +526,7 @@ def test_login_normalizes_email_lookup_for_legacy_mixed_case_records(client, app
     user = KullaniciFactory(
         kullanici_adi="  MehmetCinocevi@Gmail.com ",
         is_deleted=False,
-        rol="sahip",
+        rol="ekip_uyesi",
     )
     user.sifre_hash = generate_password_hash('123456', method='pbkdf2:sha256')
     db.session.add(user)

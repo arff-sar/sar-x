@@ -90,6 +90,33 @@
         border-bottom: 1px solid var(--border);
     }
     .homepage-demo-panel { margin-bottom: 16px; }
+    .settings-demo-accordion {
+        border: 1px solid var(--border);
+        border-radius: var(--r-lg);
+        background: var(--surface);
+        overflow: hidden;
+    }
+    .settings-demo-accordion summary {
+        list-style: none;
+        cursor: pointer;
+        padding: 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 10px;
+        background: linear-gradient(180deg, rgba(248,250,252,.95) 0%, rgba(255,255,255,1) 100%);
+    }
+    .settings-demo-accordion summary::-webkit-details-marker { display: none; }
+    .settings-demo-accordion summary::after {
+        content: "▾";
+        font-size: 14px;
+        color: var(--text3);
+        line-height: 1;
+        margin-left: auto;
+        transition: transform .2s ease, color .2s ease;
+    }
+    .settings-demo-accordion[open] summary::after { transform: rotate(180deg); color: var(--navy); }
+    .settings-demo-accordion > .settings-demo-accordion-body { border-top: 1px solid var(--border); }
     .demo-actions-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -205,82 +232,85 @@
     </div>
     {% if demo_tools_enabled %}
     <div class="panel">
-        <div class="panel-header">
-            <div class="panel-title">
-                <div class="panel-title-icon pi-navy">Demo</div>
-                Demo Veri Araçları
+        <details class="settings-demo-accordion settings-demo-accordion-platform">
+            <summary>
+                <div class="panel-title">
+                    <div class="panel-title-icon pi-navy">Demo</div>
+                    Demo Veri Araçları
+                </div>
+            </summary>
+            <div class="settings-demo-accordion-body panel-body">
+                <div class="grid-two-equal">
+                    <form method="POST" action="{{ url_for('admin.demo_veri_olustur') }}" class="stack">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div style="font-size: 13px; color: var(--text3); line-height: 1.55;">
+                            3 havalimanı, her biri için 20 personel ve ilişkili operasyonel test kayıtları üretir. Aynı demo set zaten varsa tekrar çoğaltmaz.
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Onay Metni</label>
+                            <input type="text" name="confirm_demo_seed" class="form-control" placeholder="DEMO">
+                        </div>
+                        <label style="display:flex; align-items:center; gap:8px; font-size:12px; text-transform:none; letter-spacing:0;">
+                            <input type="checkbox" name="demo_reset" value="1" style="width:auto; margin:0;">
+                            Önce mevcut demo verileri temizlensin
+                        </label>
+                        <button type="submit" class="btn btn-primary" style="justify-content:center;">Demo Veriyi Oluştur</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('admin.demo_veri_temizle') }}" class="stack">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div style="font-size: 13px; color: var(--text3); line-height: 1.55;">
+                            Sadece demo seed ile oluşturulmuş kayıtları siler. Gerçek operasyon verilerini hedeflemez.
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Onay Metni</label>
+                            <input type="text" name="confirm_demo_clear" class="form-control" placeholder="DEMO-SIL">
+                        </div>
+                        <button type="submit" class="btn btn-danger" style="justify-content:center;">Demo Veriyi Temizle</button>
+                    </form>
+                </div>
+                <div class="demo-status-grid" style="margin-top: 16px;">
+                    <div class="demo-status-box">
+                        <div class="demo-status-label">Platform Demo</div>
+                        <div class="demo-status-value">{{ 'Aktif' if platform_demo_status and platform_demo_status.active else 'Pasif' }}</div>
+                        <div class="demo-status-copy">Operasyonel modüller demo seed kaydıyla filtrelenir.</div>
+                    </div>
+                    <div class="demo-status-box">
+                        <div class="demo-status-label">Asset</div>
+                        <div class="demo-status-value">{{ platform_demo_status.summary.asset if platform_demo_status else 0 }}</div>
+                        <div class="demo-status-copy">Demo varlık sayısı</div>
+                    </div>
+                    <div class="demo-status-box">
+                        <div class="demo-status-label">KKD</div>
+                        <div class="demo-status-value">{{ platform_demo_status.summary.kkd if platform_demo_status else 0 }}</div>
+                        <div class="demo-status-copy">Demo KKD kayıtları</div>
+                    </div>
+                    <div class="demo-status-box">
+                        <div class="demo-status-label">KKD Tahsis</div>
+                        <div class="demo-status-value">{{ platform_demo_status.summary.kkd_tahsis if platform_demo_status else 0 }}</div>
+                        <div class="demo-status-copy">Demo KKD zimmet/tahsis kayıtları</div>
+                    </div>
+                    <div class="demo-status-box">
+                        <div class="demo-status-label">Son Güncelleme</div>
+                        <div class="demo-status-value">{{ platform_demo_status.updated_at if platform_demo_status else '-' }}</div>
+                        <div class="demo-status-copy">Platform demo state metadata</div>
+                    </div>
+                </div>
             </div>
-        </div>
-        <div class="panel-body">
-            <div class="grid-two-equal">
-                <form method="POST" action="{{ url_for('admin.demo_veri_olustur') }}" class="stack">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <div style="font-size: 13px; color: var(--text3); line-height: 1.55;">
-                        3 havalimanı, her biri için 20 personel ve ilişkili operasyonel test kayıtları üretir. Aynı demo set zaten varsa tekrar çoğaltmaz.
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label>Onay Metni</label>
-                        <input type="text" name="confirm_demo_seed" class="form-control" placeholder="DEMO">
-                    </div>
-                    <label style="display:flex; align-items:center; gap:8px; font-size:12px; text-transform:none; letter-spacing:0;">
-                        <input type="checkbox" name="demo_reset" value="1" style="width:auto; margin:0;">
-                        Önce mevcut demo verileri temizlensin
-                    </label>
-                    <button type="submit" class="btn btn-primary" style="justify-content:center;">Demo Veriyi Oluştur</button>
-                </form>
-                <form method="POST" action="{{ url_for('admin.demo_veri_temizle') }}" class="stack">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <div style="font-size: 13px; color: var(--text3); line-height: 1.55;">
-                        Sadece demo seed ile oluşturulmuş kayıtları siler. Gerçek operasyon verilerini hedeflemez.
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label>Onay Metni</label>
-                        <input type="text" name="confirm_demo_clear" class="form-control" placeholder="DEMO-SIL">
-                    </div>
-                    <button type="submit" class="btn btn-danger" style="justify-content:center;">Demo Veriyi Temizle</button>
-                </form>
-            </div>
-            <div class="demo-status-grid" style="margin-top: 16px;">
-                <div class="demo-status-box">
-                    <div class="demo-status-label">Platform Demo</div>
-                    <div class="demo-status-value">{{ 'Aktif' if platform_demo_status and platform_demo_status.active else 'Pasif' }}</div>
-                    <div class="demo-status-copy">Operasyonel modüller demo seed kaydıyla filtrelenir.</div>
-                </div>
-                <div class="demo-status-box">
-                    <div class="demo-status-label">Asset</div>
-                    <div class="demo-status-value">{{ platform_demo_status.summary.asset if platform_demo_status else 0 }}</div>
-                    <div class="demo-status-copy">Demo varlık sayısı</div>
-                </div>
-                <div class="demo-status-box">
-                    <div class="demo-status-label">KKD</div>
-                    <div class="demo-status-value">{{ platform_demo_status.summary.kkd if platform_demo_status else 0 }}</div>
-                    <div class="demo-status-copy">Demo KKD kayıtları</div>
-                </div>
-                <div class="demo-status-box">
-                    <div class="demo-status-label">KKD Tahsis</div>
-                    <div class="demo-status-value">{{ platform_demo_status.summary.kkd_tahsis if platform_demo_status else 0 }}</div>
-                    <div class="demo-status-copy">Demo KKD zimmet/tahsis kayıtları</div>
-                </div>
-                <div class="demo-status-box">
-                    <div class="demo-status-label">Son Güncelleme</div>
-                    <div class="demo-status-value">{{ platform_demo_status.updated_at if platform_demo_status else '-' }}</div>
-                    <div class="demo-status-copy">Platform demo state metadata</div>
-                </div>
-            </div>
-        </div>
+        </details>
     </div>
     {% endif %}
 </div>
 
 {% if demo_tools_enabled %}
 <div class="panel homepage-demo-panel">
-    <div class="panel-header">
+    <details class="settings-demo-accordion settings-demo-accordion-homepage">
+        <summary>
             <div class="panel-title">
                 <div class="panel-title-icon pi-orange">Home</div>
                 Anasayfa Demo Araçları
             </div>
-        </div>
-        <div class="panel-body stack">
+        </summary>
+        <div class="settings-demo-accordion-body panel-body stack">
             <div class="pwa-banner" style="background: var(--blue-light); border-color: #bfdbfe;">
                 <div class="pwa-icon" style="background: var(--blue);">i</div>
                 <div class="pwa-text" style="color: var(--blue);">
@@ -370,7 +400,8 @@
             <a href="{{ url_for('content.homepage_dashboard') }}" class="row-btn">Anasayfa İçerik Yönetimini Aç</a>
             <a href="{{ url_for('ana_sayfa') }}" class="row-btn" target="_blank">Public Anasayfayı Aç</a>
         </div>
-    </div>
+        </div>
+    </details>
 </div>
 {% endif %}
 
@@ -383,6 +414,9 @@
     </button>
     <button type="button" class="settings-tab-btn {% if aktif_sekme == 'icerik' %}active{% endif %}" data-tab-target="icerik">
         İçerik
+    </button>
+    <button type="button" class="settings-tab-btn {% if aktif_sekme == 'silme' %}active{% endif %}" data-tab-target="silme">
+        Havalimanı Toplu Silme
     </button>
 </div>
 
@@ -665,6 +699,77 @@
     </div>
 </div>
 
+<div class="settings-pane {% if aktif_sekme == 'silme' %}active{% endif %}" id="pane-silme">
+    <div class="grid-two-equal">
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <div class="panel-title-icon pi-orange">7</div>
+                    Havalimanı Bazlı Toplu Silme
+                </div>
+            </div>
+            <div class="panel-body stack">
+                <div class="pwa-banner" style="background: var(--red-light); border-color: var(--red-border);">
+                    <div class="pwa-icon" style="background: #fee2e2; color: #b91c1c;">!</div>
+                    <div class="pwa-text" style="color: #991b1b;">
+                        <strong>Bu işlem geri alınamaz.</strong>
+                        Seçilen havalimanındaki malzeme, personel, KKD ve iş emri kayıtları sistem yöneticisi şifresi ile toplu olarak arşive alınır.
+                    </div>
+                </div>
+
+                <form method="POST" action="{{ url_for('admin.havalimani_toplu_silme') }}" class="stack">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>Havalimanı Seçimi</label>
+                        <select name="airport_id" id="bulkDeleteAirportSelect" class="form-control" required>
+                            <option value="">Silinecek havalimanını seçin</option>
+                            {% for h in havalimanlari %}
+                                {% set stats = airport_cleanup_stats.get(h.id, {}) %}
+                            <option value="{{ h.id }}" data-airport-code="{{ h.kodu }}">
+                                {{ h.kodu }} - {{ h.ad }} | Malzeme: {{ stats.get('materials', 0) }} | Personel: {{ stats.get('personnel', 0) }} | KKD: {{ stats.get('ppe', 0) }} | İş Emri: {{ stats.get('work_orders', 0) }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <div class="mini-help">Yalnız seçtiğiniz havalimanının operasyon verileri etkilenir.</div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>Onay Metni</label>
+                        <input type="text" name="confirm_text" id="bulkDeleteConfirmText" class="form-control" placeholder="Örn: SIL-ESB" required autocomplete="off">
+                        <div class="mini-help" id="bulkDeleteConfirmHint">Seçim yaptıktan sonra beklenen onay metni burada görünür.</div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>Sistem Yöneticisi Şifresi</label>
+                        <input type="password" name="confirm_password" class="form-control" required autocomplete="current-password">
+                        <div class="mini-help">İşlem yalnızca aktif oturum sahibinin şifresi doğrulanırsa çalışır.</div>
+                    </div>
+
+                    <button type="submit" class="btn btn-danger" style="width: 100%; justify-content: center;" onclick="return confirm('Seçili havalimanı için toplu silme işlemini başlatmak istediğinize emin misiniz?')">
+                        Havalimanı Verilerini Toplu Sil
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <div class="panel-title-icon pi-navy">Bilgi</div>
+                    Güvenlik Koşulları
+                </div>
+            </div>
+            <div class="panel-body stack" style="font-size: 12.5px; color: var(--text2); line-height: 1.65;">
+                <div>1) Bu ekran yalnız <strong>sistem sorumlusu</strong> tarafından çalıştırılır.</div>
+                <div>2) İşlem için havalimanı seçimi, onay metni ve mevcut şifre birlikte zorunludur.</div>
+                <div>3) Seçim dışındaki havalimanlarının verileri etkilenmez.</div>
+                <div>4) İşlem özeti işlem loglarında <span class="tag-navy">admin.airport.bulk_cleanup</span> event’i ile izlenir.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="settings-pane {% if aktif_sekme == 'icerik' %}active{% endif %}" id="pane-icerik">
     <div class="grid-two-equal">
         <div class="stack">
@@ -805,6 +910,15 @@ document.querySelectorAll('.settings-tab-btn').forEach(btn => {
     btn.addEventListener('click', () => sekmeAc(btn.dataset.tabTarget));
 });
 
+function closeSettingsDemoAccordions() {
+    document.querySelectorAll('.settings-demo-accordion').forEach(item => {
+        item.removeAttribute('open');
+        item.open = false;
+    });
+}
+closeSettingsDemoAccordions();
+window.addEventListener('pageshow', closeSettingsDemoAccordions);
+
 function havalimaniDuzenle(id, ad, kodu) {
     document.getElementById('h_islem').value = 'guncelle';
     document.getElementById('h_id').value = id;
@@ -844,5 +958,27 @@ function sliderFormReset() {
 document.getElementById('h_kodu')?.addEventListener('input', function () {
     this.value = this.value.toUpperCase();
 });
+
+function updateBulkDeleteConfirmationHint() {
+    const airportSelect = document.getElementById('bulkDeleteAirportSelect');
+    const hint = document.getElementById('bulkDeleteConfirmHint');
+    const input = document.getElementById('bulkDeleteConfirmText');
+    if (!airportSelect || !hint || !input) {
+        return;
+    }
+    const selectedOption = airportSelect.options[airportSelect.selectedIndex];
+    const airportCode = (selectedOption?.dataset?.airportCode || '').trim().toUpperCase();
+    if (!airportCode) {
+        hint.textContent = 'Seçim yaptıktan sonra beklenen onay metni burada görünür.';
+        input.placeholder = 'Örn: SIL-ESB';
+        return;
+    }
+    const expected = `SIL-${airportCode}`;
+    hint.textContent = `Devam etmek için onay metnine tam olarak ${expected} yazın.`;
+    input.placeholder = expected;
+}
+
+document.getElementById('bulkDeleteAirportSelect')?.addEventListener('change', updateBulkDeleteConfirmationHint);
+updateBulkDeleteConfirmationHint();
 </script>
 {% endblock %}

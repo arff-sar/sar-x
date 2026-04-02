@@ -18,6 +18,12 @@ from datetime import date
 from models import AssignmentRecord, AssignmentRecipient, BakimKaydi, InventoryAsset, Malzeme, PPERecord # ✅ Sorgular için ekledik
 
 
+def _login(client, user_id):
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(user_id)
+        sess["_fresh"] = True
+
+
 def test_safe_display_filename_preserves_turkish_names_for_visible_downloads():
     assert safe_display_filename("Şule Işık.pdf", fallback="fallback.pdf", default_extension=".pdf") == "Şule Işık.pdf"
     assert safe_display_filename("Çağrı Göğüş Formu.pdf", fallback="fallback.pdf", default_extension=".pdf") == "Çağrı Göğüş Formu.pdf"
@@ -78,6 +84,43 @@ def test_havalimani_isolation(client, app):
     assert response.status_code == 200
     assert "Ankara Cihazı" in data_str
     assert "İstanbul Cihazı" not in data_str
+
+
+def test_malzeme_sil_restricts_deletion_to_user_airport_scope(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    airport_a = HavalimaniFactory(kodu="AAA")
+    airport_b = HavalimaniFactory(kodu="BBB")
+    box_b = KutuFactory(havalimani=airport_b)
+    scoped_manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport_a, is_deleted=False)
+    foreign_material = MalzemeFactory(ad="Kapsam Dışı Malzeme", kutu=box_b, is_deleted=False)
+    db.session.add_all([airport_a, airport_b, box_b, scoped_manager, foreign_material])
+    db.session.commit()
+
+    _login(client, scoped_manager.id)
+    response = client.post(f"/malzeme-sil/{foreign_material.id}", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert "Hata: Malzeme bulunamadı veya zaten silinmiş." in response.data.decode("utf-8")
+    db.session.refresh(foreign_material)
+    assert foreign_material.is_deleted is False
+
+
+def test_malzeme_sil_rejects_external_referrer_redirect(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False)
+    material = MalzemeFactory(ad="Redirect Test Malzeme", is_deleted=False)
+    db.session.add_all([owner, material])
+    db.session.commit()
+
+    _login(client, owner.id)
+    response = client.post(
+        f"/malzeme-sil/{material.id}",
+        headers={"Referer": "https://attacker.example/phish"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/dashboard")
 
 # 4. YAZMA YETKİSİ: Yetkili kullanıcı malzeme ekleyebilir (Kapsam Artırıcı)
 def test_malzeme_ekle_success(client, app):

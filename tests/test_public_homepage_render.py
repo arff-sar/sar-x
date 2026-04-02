@@ -250,10 +250,11 @@ def test_homepage_about_cards_render_requested_order(client, app):
     assert "Odak" not in page
     assert "Bakış" not in page
     assert "İlke" not in page
-    assert 'data-card-height="320"' in page
+    assert "--about-card-min-height:" not in page
+    assert "data-card-height=" not in page
 
 
-def test_homepage_about_cards_use_section_card_height_and_fallback(client, app):
+def test_homepage_about_cards_auto_height_layout_ignores_panel_height_metadata(client, app):
     db.session.add_all(
         [
             HomeSection(section_key="about", title="Biz Kimiz?", content="About içerik", icon="400", order_index=0, is_active=True),
@@ -268,9 +269,9 @@ def test_homepage_about_cards_use_section_card_height_and_fallback(client, app):
     page = response.data.decode("utf-8")
 
     assert response.status_code == 200
-    assert '--about-card-min-height: 400px;' in page
-    assert '--about-card-min-height: 320px;' in page
-    assert '--about-card-min-height: 140px;' in page
+    assert "--about-card-min-height:" not in page
+    assert "data-card-height=" not in page
+    assert "align-items: stretch;" in page
 
 
 def test_homepage_handles_missing_public_tables_without_crashing(client, monkeypatch):

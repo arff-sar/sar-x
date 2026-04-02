@@ -117,6 +117,11 @@ def test_site_settings_shows_homepage_demo_panel(client, app):
     assert "Anasayfa Demosunu Kur" in page
     assert "Anasayfa Demosunu Temizle" in page
     assert "Oluşan içerik sayfaları" in page
+    assert 'class="settings-demo-accordion settings-demo-accordion-platform"' in page
+    assert 'class="settings-demo-accordion settings-demo-accordion-homepage"' in page
+    assert '<details class="settings-demo-accordion settings-demo-accordion-platform" open' not in page
+    assert '<details class="settings-demo-accordion settings-demo-accordion-homepage" open' not in page
+    assert "window.addEventListener('pageshow', closeSettingsDemoAccordions);" in page
 
 
 def test_homepage_demo_routes_render_demo_content_without_mixing_real_content(client, app):

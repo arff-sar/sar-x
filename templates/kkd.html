@@ -347,7 +347,7 @@
             </div>
             <div class="panel-body">
                 <div class="ppe-create-accordion">
-                    <details class="ppe-create-item" open>
+                    <details class="ppe-create-item">
                         <summary>
                             <div>
                                 <div class="ppe-create-title">Yeni KKD Ekle</div>
@@ -467,7 +467,7 @@
                         </div>
                     </details>
 
-                    <details class="ppe-create-item" {% if can_create_ppe_assignment %}open{% endif %}>
+                    <details class="ppe-create-item">
                         <summary>
                             <div>
                                 <div class="ppe-create-title">Yeni KKD Tahsisi</div>
@@ -579,6 +579,19 @@
                         <div style="display:flex; gap:8px; flex-wrap:wrap;">
                             <a href="{{ url_for('inventory.kkd_tahsis_detay', assignment_id=assignment.id) }}" class="row-btn">Detay</a>
                             <a href="{{ url_for('inventory.kkd_tahsis_pdf', assignment_id=assignment.id) }}" class="row-btn">PDF</a>
+                            {% if can_create_ppe_assignment and assignment.status == 'active' %}
+                            <form method="POST" action="{{ url_for('inventory.kkd_tahsis_iade', assignment_id=assignment.id) }}" style="display:inline-flex;" onsubmit="return confirm('Bu KKD tahsisi iade olarak kaydedilecek. Devam edilsin mi?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="return_note" value="">
+                                <button type="submit" class="row-btn">İade Al</button>
+                            </form>
+                            {% endif %}
+                            {% if can_create_ppe_assignment and assignment.status != 'active' %}
+                            <form method="POST" action="{{ url_for('inventory.kkd_tahsis_sil', assignment_id=assignment.id) }}" style="display:inline-flex;" onsubmit="return confirm('Bu KKD tahsis kaydı arşive taşınacak. Devam edilsin mi?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="row-btn">Sil</button>
+                            </form>
+                            {% endif %}
                         </div>
                     </div>
                     {% endfor %}
@@ -696,6 +709,17 @@
 
   initUserAccordions();
   window.addEventListener('pageshow', initUserAccordions);
+
+  const initCreateAccordions = function () {
+    const createAccordions = Array.from(document.querySelectorAll('.ppe-create-item'));
+    createAccordions.forEach(function (item) {
+      item.removeAttribute('open');
+      item.open = false;
+    });
+  };
+
+  initCreateAccordions();
+  window.addEventListener('pageshow', initCreateAccordions);
 
   const catalog = {{ ppe_catalog_json|safe }};
   const categorySelect = document.getElementById('ppeCategorySelect');
