@@ -15,10 +15,16 @@
     background: #07192d;
     border: 1px solid rgba(197, 212, 229, .28);
     box-shadow: 0 30px 70px rgba(8, 27, 49, .16);
+    display: flex;
+    flex-direction: column;
+  }
+  .hero-media {
+    position: relative;
   }
   .hero-stage {
     position: relative;
-    min-height: 520px;
+    aspect-ratio: var(--hero-stage-ratio, 2752 / 1536);
+    transition: aspect-ratio .25s ease;
   }
   .hero-slide {
     position: absolute;
@@ -82,7 +88,7 @@
     z-index: 4;
     left: 50%;
     transform: translateX(-50%);
-    bottom: 132px;
+    bottom: 22px;
     display: flex;
     gap: 10px;
   }
@@ -104,27 +110,27 @@
 
   .about-strip {
     position: relative;
-    z-index: 3;
-    width: min(1120px, calc(100% - 40px));
-    margin: -70px auto 0;
-    padding-bottom: 24px;
+    z-index: 2;
+    width: 100%;
+    margin: 18px 0 0;
+    padding: 0;
+    background: transparent;
   }
   .about-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 16px;
+    gap: 18px;
     align-items: stretch;
   }
   .about-card {
     position: relative;
     overflow: hidden;
-    height: 188px;
+    min-height: 184px;
     padding: 20px 20px 18px;
-    border-radius: 24px;
-    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(249,251,254,.95));
-    border: 1px solid rgba(197,212,229,.84);
-    box-shadow: 0 20px 36px rgba(8,27,49,.09);
-    backdrop-filter: blur(14px);
+    border-radius: 22px;
+    background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+    border: 1px solid rgba(197,212,229,.92);
+    box-shadow: 0 14px 28px rgba(8,27,49,.1);
     scroll-margin-top: 110px;
     display: flex;
     flex-direction: column;
@@ -158,13 +164,12 @@
     margin: 12px 0 0;
     color: var(--ink-500);
     font-size: 13.5px;
-    line-height: 1.68;
-    display: -webkit-box;
-    -webkit-line-clamp: 4;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+    line-height: 1.72;
+    display: block;
+    overflow: visible;
+    white-space: pre-wrap;
+    word-break: break-word;
   }
-
   .announcement-shell {
     position: relative;
   }
@@ -551,9 +556,6 @@
   }
 
   @media (max-width: 1100px) {
-    .hero-stage {
-      min-height: 480px;
-    }
     .about-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -575,15 +577,16 @@
       border-radius: 24px;
     }
     .hero-stage {
-      min-height: 400px;
+      aspect-ratio: auto;
+      min-height: 300px;
     }
     .hero-dots {
-      bottom: 96px;
+      bottom: 14px;
     }
     .about-strip {
-      width: calc(100% - 24px);
-      margin-top: -52px;
-      padding-bottom: 20px;
+      width: 100%;
+      margin-top: 14px;
+      padding: 0;
     }
     .about-grid,
     .stats-grid {
@@ -598,10 +601,13 @@
     }
     .about-card {
       height: auto;
-      min-height: 156px;
+      min-height: 162px;
     }
     .about-card p {
+      display: -webkit-box;
       -webkit-line-clamp: 5;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
     }
     .stat-card {
       min-height: 170px;
@@ -676,46 +682,47 @@
 <section class="hero" id="anasayfa">
   <div class="container">
     <div class="hero-shell">
-      <div class="hero-stage">
-        <div class="hero-stage-badge" data-hero-label>
-          <span>ARFF Özel Arama Kurtarma Timi</span>
-        </div>
-        {% for slide in sliders %}
-          {% set slide_bg = safe_media(slide.image_path if slide.image_path is defined else slide.image_url, hero_fallback_image) %}
-          <article
-            class="hero-slide {% if loop.first %}active{% endif %}"
-            data-slide-title="{{ slide.title }}"
-            data-bg="{{ slide_bg }}"
-            data-bg-loaded="{% if loop.first %}true{% else %}false{% endif %}"
-            {% if loop.first %}style="background-image:url('{{ slide_bg }}')"{% endif %}
-          ></article>
-        {% else %}
-          <article
-            class="hero-slide active"
-            data-bg="{{ hero_fallback_image }}"
-            data-bg-loaded="true"
-            style="background-image:url('{{ hero_fallback_image }}')"
-          ></article>
-        {% endfor %}
-
-        {% if sliders|length > 1 %}
-          <div class="hero-dots" aria-label="Hero slider kontrolleri">
-            {% for slide in sliders %}
-              <button type="button" class="hero-dot {% if loop.first %}active{% endif %}" data-slide="{{ loop.index0 }}" aria-label="Slider {{ loop.index }}"></button>
-            {% endfor %}
+      <div class="hero-media">
+        <div class="hero-stage">
+          <div class="hero-stage-badge" data-hero-label>
+            <span>ÖZEL ARFF ARAMA KURTARMA TİMİ</span>
           </div>
-        {% endif %}
-      </div>
-
-      <div class="about-strip" id="hakkimizda">
-        <div class="about-grid">
-          {% for card in about_cards %}
-            <article class="about-card public-card" id="{{ card.anchor_id }}">
-              <div class="about-card-kicker">{{ card.title }}</div>
-              <p>{{ card.description }}</p>
-            </article>
+          {% for slide in sliders %}
+            {% set slide_bg = safe_media(slide.image_path if slide.image_path is defined else slide.image_url, hero_fallback_image) %}
+            <article
+              class="hero-slide {% if loop.first %}active{% endif %}"
+              data-bg="{{ slide_bg }}"
+              data-bg-loaded="{% if loop.first %}true{% else %}false{% endif %}"
+              {% if loop.first %}style="background-image:url('{{ slide_bg }}')"{% endif %}
+            ></article>
+          {% else %}
+            <article
+              class="hero-slide active"
+              data-bg="{{ hero_fallback_image }}"
+              data-bg-loaded="true"
+              style="background-image:url('{{ hero_fallback_image }}')"
+            ></article>
           {% endfor %}
+
+          {% if sliders|length > 1 %}
+            <div class="hero-dots" aria-label="Hero slider kontrolleri">
+              {% for slide in sliders %}
+                <button type="button" class="hero-dot {% if loop.first %}active{% endif %}" data-slide="{{ loop.index0 }}" aria-label="Slider {{ loop.index }}"></button>
+              {% endfor %}
+            </div>
+          {% endif %}
         </div>
+      </div>
+    </div>
+
+    <div class="about-strip" id="hakkimizda">
+      <div class="about-grid">
+        {% for card in about_cards %}
+          <article class="about-card public-card" id="{{ card.anchor_id }}">
+            <div class="about-card-kicker">{{ card.title }}</div>
+            <p>{{ card.description }}</p>
+          </article>
+        {% endfor %}
       </div>
     </div>
   </div>
@@ -815,28 +822,30 @@
     <div class="stats-grid" data-stats-grid>
       {% for card in stats[:4] %}
         {% if card.metric_key == "total_assets" %}
-          {% set stat_image = url_for('static', filename='img/sayisal-ozet/simge_1_malzeme.png') %}
           {% set display_title = "Toplam Malzeme" %}
+          {% set fallback_stat_image = url_for('static', filename='img/sayisal-ozet/simge_1_malzeme.png') %}
         {% elif card.metric_key == "total_personnel" %}
-          {% set stat_image = url_for('static', filename='img/sayisal-ozet/simge_2_personel.png') %}
           {% set display_title = "Toplam Personel" %}
+          {% set fallback_stat_image = url_for('static', filename='img/sayisal-ozet/simge_2_personel.png') %}
         {% elif card.metric_key == "total_airports" %}
-          {% set stat_image = url_for('static', filename='img/sayisal-ozet/simge_3_aktif_tim.png') %}
           {% set display_title = "Aktif Tim" %}
+          {% set fallback_stat_image = url_for('static', filename='img/sayisal-ozet/simge_3_aktif_tim.png') %}
         {% elif card.metric_key == "completed_trainings" %}
-          {% set stat_image = url_for('static', filename='img/sayisal-ozet/simge_4_egitim.png') %}
           {% set display_title = "Tamamlanan Eğitimler" %}
+          {% set fallback_stat_image = url_for('static', filename='img/sayisal-ozet/simge_4_egitim.png') %}
         {% else %}
-          {% set stat_image = "" %}
-          {% set display_title = card.title %}
+          {% set display_title = "Sayısal Özet" %}
+          {% set fallback_stat_image = "" %}
         {% endif %}
+        {% set stat_image = safe_media(card.image_url, fallback_stat_image) %}
+        {% set stat_alt = card.image_alt_text or (display_title ~ " simgesi") %}
         <article class="stat-card public-card" data-homepage-stat="{{ card.metric_key or 'custom' }}">
           <div class="stat-copy">
             <h3 class="stat-title">{{ display_title }}</h3>
             <div class="stat-inline">
               <div class="stat-media">
                 {% if stat_image %}
-                  <img src="{{ stat_image }}" alt="{{ display_title }} simgesi" loading="lazy">
+                  <img src="{{ stat_image }}" alt="{{ stat_alt }}" loading="lazy">
                 {% endif %}
               </div>
               <div class="stat-value" data-stat-final="{{ card.value_text }}">{{ card.value_text }}</div>
@@ -848,10 +857,16 @@
   </div>
 </section>
 
-<script>
+  <script>
   (function () {
     const slides = Array.from(document.querySelectorAll(".hero-slide"));
     const dots = Array.from(document.querySelectorAll(".hero-dot"));
+    const heroStage = document.querySelector(".hero-stage");
+    const desktopHeroMedia = window.matchMedia("(min-width: 761px)");
+    const defaultHeroRatio = 2752 / 1536;
+    let activeIndex = 0;
+    let timer = null;
+
     function ensureSlideBackground(index) {
       const slide = slides[index];
       if (!slide || slide.dataset.bgLoaded === "true") return;
@@ -859,6 +874,57 @@
       if (!bg) return;
       slide.style.backgroundImage = 'url("' + bg + '")';
       slide.dataset.bgLoaded = "true";
+    }
+
+    function setHeroStageRatioFromSlide(index) {
+      if (!heroStage) return;
+      if (!desktopHeroMedia.matches) {
+        heroStage.style.removeProperty("aspect-ratio");
+        return;
+      }
+
+      const slide = slides[index];
+      if (!slide) {
+        heroStage.style.aspectRatio = String(defaultHeroRatio);
+        return;
+      }
+
+      const knownRatio = Number(slide.dataset.ratio || 0);
+      if (Number.isFinite(knownRatio) && knownRatio > 0) {
+        heroStage.style.aspectRatio = String(knownRatio);
+        return;
+      }
+
+      const bg = (slide.dataset.bg || "").trim();
+      if (!bg) {
+        heroStage.style.aspectRatio = String(defaultHeroRatio);
+        return;
+      }
+      if (slide.dataset.ratioLoading === "true") return;
+
+      slide.dataset.ratioLoading = "true";
+      const probe = new Image();
+      probe.decoding = "async";
+      probe.onload = function () {
+        const width = Number(probe.naturalWidth || 0);
+        const height = Number(probe.naturalHeight || 0);
+        const ratio = width > 0 && height > 0 ? width / height : defaultHeroRatio;
+        slide.dataset.ratio = String(ratio);
+        slide.dataset.ratioLoading = "false";
+        if (slides[activeIndex] === slide) {
+          heroStage.style.aspectRatio = String(ratio);
+        }
+      };
+      probe.onerror = function () {
+        slide.dataset.ratioLoading = "false";
+        if (!slide.dataset.ratio) {
+          slide.dataset.ratio = String(defaultHeroRatio);
+        }
+        if (slides[activeIndex] === slide) {
+          heroStage.style.aspectRatio = String(slide.dataset.ratio);
+        }
+      };
+      probe.src = bg;
     }
 
     function prewarmNext(index) {
@@ -876,31 +942,40 @@
       window.setTimeout(warm, 300);
     }
 
+    function setActive(index) {
+      activeIndex = (index + slides.length) % slides.length;
+      ensureSlideBackground(activeIndex);
+      setHeroStageRatioFromSlide(activeIndex);
+      slides.forEach((slide, idx) => slide.classList.toggle("active", idx === activeIndex));
+      dots.forEach((dot, idx) => dot.classList.toggle("active", idx === activeIndex));
+      prewarmNext(activeIndex);
+    }
+
+    function startTimer() {
+      timer = window.setInterval(function () {
+        setActive(activeIndex + 1);
+      }, 6500);
+    }
+
+    function resetTimer() {
+      if (timer) window.clearInterval(timer);
+      startTimer();
+    }
+
     ensureSlideBackground(0);
+    setHeroStageRatioFromSlide(0);
     prewarmNext(0);
+
+    const handleViewportChange = function () {
+      setHeroStageRatioFromSlide(activeIndex);
+    };
+    if (desktopHeroMedia.addEventListener) {
+      desktopHeroMedia.addEventListener("change", handleViewportChange);
+    } else if (desktopHeroMedia.addListener) {
+      desktopHeroMedia.addListener(handleViewportChange);
+    }
+
     if (slides.length > 1 && dots.length) {
-      let activeIndex = 0;
-      let timer = null;
-
-      function setActive(index) {
-        activeIndex = (index + slides.length) % slides.length;
-        ensureSlideBackground(activeIndex);
-        slides.forEach((slide, idx) => slide.classList.toggle("active", idx === activeIndex));
-        dots.forEach((dot, idx) => dot.classList.toggle("active", idx === activeIndex));
-        prewarmNext(activeIndex);
-      }
-
-      function startTimer() {
-        timer = window.setInterval(function () {
-          setActive(activeIndex + 1);
-        }, 6500);
-      }
-
-      function resetTimer() {
-        if (timer) window.clearInterval(timer);
-        startTimer();
-      }
-
       dots.forEach((dot) => {
         dot.addEventListener("click", function () {
           setActive(Number(this.dataset.slide || 0));

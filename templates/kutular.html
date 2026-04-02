@@ -4,11 +4,11 @@
 {% block extra_css %}
 <style>
   .box-toolbar { display:grid; gap:14px; margin-bottom:18px; }
-  .box-toolbar-row { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(320px, .9fr); gap:12px; align-items:end; }
-  .box-filter-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; gap:12px; align-items:end; }
-  .box-create-form { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:end; }
+  .box-toolbar-row { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(320px, .9fr); gap:12px; align-items:stretch; }
+  .box-filter-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; gap:12px; align-items:end; height:100%; }
+  .box-create-form { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:end; height:100%; }
   .box-create-form .form-group { margin:0; }
-  .box-filter-actions { display:flex; gap:8px; align-items:center; }
+  .box-filter-actions { display:flex; gap:8px; align-items:stretch; }
   .box-filter-actions .btn { min-height:44px; display:inline-flex; align-items:center; justify-content:center; }
   .box-create-form .btn { min-height:44px; display:inline-flex; align-items:center; justify-content:center; }
   .box-content-col { width:92px; text-align:center; }

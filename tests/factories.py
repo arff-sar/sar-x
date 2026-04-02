@@ -19,6 +19,8 @@ from models import (
     MaintenanceHistory,
     MaintenancePlan,
     Malzeme,
+    PPEAssignmentItem,
+    PPEAssignmentRecord,
     PPERecord,
     SparePart,
     SparePartStock,
@@ -138,6 +140,18 @@ class AssignmentRecordFactory(factory.alchemy.SQLAlchemyModelFactory):
     status = "active"
 
 
+class PPEAssignmentRecordFactory(factory.alchemy.SQLAlchemyModelFactory):
+    class Meta:
+        model = PPEAssignmentRecord
+        sqlalchemy_session = db.session
+    assignment_no = factory.Sequence(lambda n: f"KKD-ZMT-{20260000 + n}")
+    delivered_by = factory.SubFactory(KullaniciFactory)
+    delivered_by_name = factory.LazyAttribute(lambda o: o.delivered_by.tam_ad)
+    recipient_user = factory.SubFactory(KullaniciFactory)
+    airport = factory.LazyAttribute(lambda o: o.recipient_user.havalimani or HavalimaniFactory())
+    status = "active"
+
+
 class PPERecordFactory(factory.alchemy.SQLAlchemyModelFactory):
     class Meta:
         model = PPERecord
@@ -147,6 +161,19 @@ class PPERecordFactory(factory.alchemy.SQLAlchemyModelFactory):
     item_name = "Baret"
     quantity = 1
     status = "aktif"
+
+
+class PPEAssignmentItemFactory(factory.alchemy.SQLAlchemyModelFactory):
+    class Meta:
+        model = PPEAssignmentItem
+        sqlalchemy_session = db.session
+    assignment = factory.SubFactory(PPEAssignmentRecordFactory)
+    ppe_record = factory.SubFactory(PPERecordFactory)
+    item_name = factory.LazyAttribute(lambda o: o.ppe_record.item_name)
+    category = factory.LazyAttribute(lambda o: o.ppe_record.category)
+    subcategory = factory.LazyAttribute(lambda o: o.ppe_record.subcategory)
+    quantity = 1
+    unit = "adet"
 
 
 class MaintenanceHistoryFactory(factory.alchemy.SQLAlchemyModelFactory):

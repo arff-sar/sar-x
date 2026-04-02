@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}ARFF SAR{% endblock %}</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="shortcut icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/static/img/icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -26,6 +30,7 @@
       --radius-lg: 16px;
       --radius: 12px;
       --font: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+      --public-header-height: 78px;
     }
 
     * { box-sizing: border-box; }
@@ -39,6 +44,7 @@
       color: var(--ink-900);
       font-family: var(--font);
       overflow-x: hidden;
+      padding-top: calc(var(--public-header-height) + env(safe-area-inset-top, 0px));
     }
     a { color: inherit; }
     button, input, textarea { font: inherit; }
@@ -56,15 +62,18 @@
     }
 
     .public-header {
-      position: sticky;
+      position: fixed;
       top: 0;
+      left: 0;
+      right: 0;
       z-index: 40;
       background: rgba(8, 27, 49, .86);
       border-bottom: 1px solid rgba(255, 255, 255, .1);
       backdrop-filter: blur(14px);
+      padding-top: env(safe-area-inset-top, 0px);
     }
     .public-header-inner {
-      min-height: 78px;
+      min-height: var(--public-header-height);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -82,21 +91,23 @@
     .public-brand-mark {
       width: 48px;
       height: 48px;
-      border-radius: 15px;
+      border-radius: 12px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(145deg, rgba(249,115,22,.96), rgba(234,88,12,.9));
-      box-shadow: 0 10px 22px rgba(249, 115, 22, .28);
+      background: transparent;
+      border: 0;
+      box-shadow: none;
       flex-shrink: 0;
       overflow: hidden;
     }
     .public-brand-logo {
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
       display: block;
-      background: #fff;
+      background: transparent;
+      padding: 0;
     }
     .public-brand-fallback {
       width: 24px;
@@ -201,7 +212,7 @@
     }
     .public-dropdown-menu {
       position: absolute;
-      top: calc(100% + 10px);
+      top: 100%;
       left: 0;
       width: min(280px, calc(100vw - 32px));
       padding: 10px;
@@ -474,6 +485,7 @@
     }
 
     @media (max-width: 760px) {
+      :root { --public-header-height: 72px; }
       .container { width: min(100vw - 20px, 100%); }
       .public-header-inner {
         min-height: 72px;
@@ -495,8 +507,22 @@
 </head>
 <body>
   {% set site_settings = public_site_settings or (ayarlar if ayarlar is defined else none) %}
-  {% set raw_logo = (site_logo_url or '')|trim %}
-  {% set public_logo = raw_logo if raw_logo and not (raw_logo|lower).startswith('javascript:') and not (raw_logo|lower).startswith('data:') and not (raw_logo|lower).startswith('vbscript:') else '' %}
+  {% set footer_meta = site_meta if site_meta is defined and site_meta else {} %}
+  {% set configured_logo = (site_logo_url if site_logo_url is defined else '')|trim %}
+  {% set lowered_logo = configured_logo|lower %}
+  {% set public_logo = configured_logo if configured_logo and not lowered_logo.startswith('javascript:') and not lowered_logo.startswith('data:') and not lowered_logo.startswith('vbscript:') else url_for('static', filename='img/logo.son-Photoroom.png') %}
+  {% set footer_brand_kicker = (footer_meta.get('footer_brand_kicker') or 'ARFF SAR')|trim %}
+  {% set footer_brand_title = (footer_meta.get('footer_brand_title') or 'ARFF Özel Arama Kurtarma Timi')|trim %}
+  {% set footer_brand_description = (footer_meta.get('footer_brand_description') or 'Sahada birbirine güvenen, birlikte öğrenen ve ihtiyaç anında hızla kenetlenen gönüllü timin dijital vitrini.')|trim %}
+  {% set footer_contact_kicker = (footer_meta.get('footer_contact_kicker') or 'İletişim')|trim %}
+  {% set footer_contact_title = (footer_meta.get('footer_contact_title') or 'Bizimle iletişime geçin')|trim %}
+  {% set footer_contact_description = (footer_meta.get('footer_contact_description') or footer_meta.get('public_contact_note') or footer_meta.get('site_notu') or 'Eğitim, iş birliği ya da duyuru paylaşımı için bize kısa bir e-posta bırakabilirsiniz.')|trim %}
+  {% set footer_contact_email = (footer_meta.get('footer_contact_email') or 'iletisim@sarx.org')|trim %}
+  {% if footer_contact_email and footer_contact_email.lower().startswith('mailto:') %}
+    {% set footer_contact_email = footer_contact_email[7:] %}
+  {% endif %}
+  {% set footer_copyright = (footer_meta.get('footer_copyright') or '© 2026 ARFF SAR')|trim %}
+  {% set footer_bottom_slogan = (footer_meta.get('footer_bottom_slogan') or 'Gönüllü tim ruhu, sade iletişim ve hazır koordinasyon')|trim %}
   {% set footer_note = '' %}
   {% if site_settings and site_settings.alt_metin %}
     {% set lowered_footer_note = site_settings.alt_metin|lower %}
@@ -505,6 +531,42 @@
     {% endif %}
   {% endif %}
   {% set home_url = url_for('ana_sayfa') %}
+  {% set raw_menuler = menuler if menuler is defined and menuler else [] %}
+  {% set nav = namespace(home_label='Anasayfa', home_link=home_url, about=[], activities=[]) %}
+  {% for menu in raw_menuler %}
+    {% set menu_label = (menu.ad or '')|trim %}
+    {% set raw_link = (menu.link or '')|trim %}
+    {% set lowered_link = raw_link|lower %}
+    {% if lowered_link.startswith('javascript:') or lowered_link.startswith('data:') or lowered_link.startswith('vbscript:') %}
+      {% set safe_link = '#' %}
+    {% elif raw_link %}
+      {% set safe_link = raw_link %}
+    {% else %}
+      {% set safe_link = '#' %}
+    {% endif %}
+    {% set item = {'label': menu_label or 'Bağlantı', 'link': safe_link} %}
+    {% if safe_link == '/' or safe_link == home_url %}
+      {% set nav.home_label = item.label %}
+      {% set nav.home_link = item.link %}
+    {% elif safe_link.startswith('/hakkimizda/') %}
+      {% set _ = nav.about.append(item) %}
+    {% elif safe_link.startswith('/faaliyetlerimiz/') %}
+      {% set _ = nav.activities.append(item) %}
+    {% endif %}
+  {% endfor %}
+  {% if not nav.about %}
+    {% set nav.about = [
+      {'label': 'Biz Kimiz?', 'link': url_for('content.public_about_who_we_are')},
+      {'label': 'Misyon ve Vizyon', 'link': url_for('content.public_about_mission_vision')},
+      {'label': 'Etik Değerler', 'link': url_for('content.public_about_ethics')}
+    ] %}
+  {% endif %}
+  {% if not nav.activities %}
+    {% set nav.activities = [
+      {'label': 'Eğitimler', 'link': url_for('content.public_training_page')},
+      {'label': 'Tatbikatlar', 'link': url_for('content.public_drills_page')}
+    ] %}
+  {% endif %}
   <header class="public-header" id="publicHeader">
     <div class="container public-header-inner">
       <a href="{{ home_url }}" class="public-brand" aria-label="ARFF SAR anasayfa">
@@ -529,35 +591,41 @@
 
       <div class="public-nav-shell" id="publicNavShell">
         <nav class="public-nav" aria-label="Ana menü">
-          <a class="public-link" href="{{ home_url }}">Anasayfa</a>
+          <a class="public-link" href="{{ nav.home_link }}">{{ nav.home_label }}</a>
           <details class="public-dropdown" data-public-dropdown>
             <summary class="public-dropdown-summary" aria-expanded="false">Hakkımızda</summary>
             <div class="public-dropdown-menu">
-              <a class="public-dropdown-item" href="{{ url_for('content.public_about_who_we_are') }}">
-                <strong>Biz Kimiz?</strong>
-                <span>Timin kısa hikayesini ve çalışma biçimini keşfedin.</span>
-              </a>
-              <a class="public-dropdown-item" href="{{ url_for('content.public_about_mission_vision') }}">
-                <strong>Misyon ve Vizyon</strong>
-                <span>Ekip olarak neden yola çıktığımızı ve nereye baktığımızı görün.</span>
-              </a>
-              <a class="public-dropdown-item" href="{{ url_for('content.public_about_ethics') }}">
-                <strong>Etik Değerler</strong>
-                <span>Güven, gönüllülük ve ekip ruhunu taşıyan yaklaşımımız.</span>
-              </a>
+              {% for item in nav.about %}
+                <a class="public-dropdown-item" href="{{ item.link }}">
+                  <strong>{{ item.label }}</strong>
+                  {% if item.link == '/hakkimizda/biz-kimiz' %}
+                    <span>Timin kısa hikayesini ve çalışma biçimini keşfedin.</span>
+                  {% elif item.link == '/hakkimizda/misyon-ve-vizyon' %}
+                    <span>Ekip olarak neden yola çıktığımızı ve nereye baktığımızı görün.</span>
+                  {% elif item.link == '/hakkimizda/etik-degerler' %}
+                    <span>Güven, gönüllülük ve ekip ruhunu taşıyan yaklaşımımız.</span>
+                  {% else %}
+                    <span>Public içerik modülüne hızlı geçiş sağlar.</span>
+                  {% endif %}
+                </a>
+              {% endfor %}
             </div>
           </details>
           <details class="public-dropdown" data-public-dropdown>
             <summary class="public-dropdown-summary" aria-expanded="false">Faaliyetlerimiz</summary>
             <div class="public-dropdown-menu">
-              <a class="public-dropdown-item" href="{{ url_for('content.public_training_page') }}">
-                <strong>Eğitimler</strong>
-                <span>Yakın dönem eğitim içeriklerine ve paylaşımlarına göz atın.</span>
-              </a>
-              <a class="public-dropdown-item" href="{{ url_for('content.public_drills_page') }}">
-                <strong>Tatbikatlar</strong>
-                <span>Tatbikat odaklı saha notları ve ekip hazırlıklarına ulaşın.</span>
-              </a>
+              {% for item in nav.activities %}
+                <a class="public-dropdown-item" href="{{ item.link }}">
+                  <strong>{{ item.label }}</strong>
+                  {% if item.link == '/faaliyetlerimiz/egitimler' %}
+                    <span>Yakın dönem eğitim içeriklerine ve paylaşımlarına göz atın.</span>
+                  {% elif item.link == '/faaliyetlerimiz/tatbikatlar' %}
+                    <span>Tatbikat odaklı saha notları ve ekip hazırlıklarına ulaşın.</span>
+                  {% else %}
+                    <span>Public faaliyet modülüne hızlı geçiş sağlar.</span>
+                  {% endif %}
+                </a>
+              {% endfor %}
             </div>
           </details>
         </nav>
@@ -571,29 +639,26 @@
   <footer class="public-footer">
     <div class="container public-footer-inner">
       <div class="footer-brand">
-        <div class="footer-brand-subtitle">ARFF SAR</div>
-        <div class="footer-brand-title">ARFF Özel Arama Kurtarma Timi</div>
+        <div class="footer-brand-subtitle">{{ footer_brand_kicker }}</div>
+        <div class="footer-brand-title">{{ footer_brand_title }}</div>
         <div class="footer-divider"></div>
-        <div class="footer-brand-copy">Sahada birbirine güvenen, birlikte öğrenen ve ihtiyaç anında hızla kenetlenen gönüllü timin dijital vitrini.</div>
+        <div class="footer-brand-copy">{{ footer_brand_description }}</div>
         {% if footer_note %}
           <div class="footer-brand-note">{{ footer_note }}</div>
         {% endif %}
       </div>
       <div class="footer-contact">
-        <div class="footer-contact-kicker">İletişim</div>
-        <h3>Bizimle iletişime geçin</h3>
-        <p>Eğitim, iş birliği ya da duyuru paylaşımı için bize kısa bir e-posta bırakabilirsiniz.</p>
-        {% if site_contact_note %}
-          <p class="footer-contact-note">{{ site_contact_note }}</p>
-        {% endif %}
+        <div class="footer-contact-kicker">{{ footer_contact_kicker }}</div>
+        <h3>{{ footer_contact_title }}</h3>
+        <p>{{ footer_contact_description }}</p>
         <div class="footer-contact-actions">
-          <a class="footer-mail" href="mailto:iletisim@sarx.org">✉️ iletisim@sarx.org</a>
+          <a class="footer-mail" href="mailto:{{ footer_contact_email }}">✉️ {{ footer_contact_email }}</a>
         </div>
       </div>
     </div>
     <div class="container public-copy" data-public-footer>
-      <span>© {{ now().year if now is defined else 2026 }} ARFF SAR</span>
-      <span>Gönüllü tim ruhu, sade iletişim ve hazır koordinasyon</span>
+      <span>{{ footer_copyright }}</span>
+      <span>{{ footer_bottom_slogan }}</span>
     </div>
   </footer>
 
@@ -685,13 +750,25 @@
 
         dropdown.addEventListener("mouseenter", function () {
           if (!isDesktopHoverMode()) return;
+          if (dropdown._hoverCloseTimer) {
+            window.clearTimeout(dropdown._hoverCloseTimer);
+            dropdown._hoverCloseTimer = null;
+          }
           closeAllDropdowns(dropdown);
           setDropdownOpen(dropdown, true);
         });
 
-        dropdown.addEventListener("mouseleave", function () {
+        dropdown.addEventListener("mouseleave", function (event) {
           if (!isDesktopHoverMode()) return;
-          setDropdownOpen(dropdown, false);
+          const relatedTarget = event.relatedTarget;
+          if (relatedTarget && dropdown.contains(relatedTarget)) return;
+          if (dropdown._hoverCloseTimer) {
+            window.clearTimeout(dropdown._hoverCloseTimer);
+          }
+          dropdown._hoverCloseTimer = window.setTimeout(function () {
+            setDropdownOpen(dropdown, false);
+            dropdown._hoverCloseTimer = null;
+          }, 120);
         });
 
         summary.addEventListener("focus", function () {

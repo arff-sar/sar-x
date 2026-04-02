@@ -1,7 +1,7 @@
 {
   "name": "Airport SAR-X Yönetim",
   "short_name": "SAR-X",
-  "start_url": "/dashboard",
+  "start_url": "/login",
   "display": "standalone",
   "background_color": "#1a237e",
   "theme_color": "#1a237e",
@@ -15,6 +15,12 @@
       "src": "/static/img/icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
+    },
+    {
+      "src": "/static/img/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }

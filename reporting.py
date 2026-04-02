@@ -1,6 +1,9 @@
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 
+from sqlalchemy import and_, func
+from sqlalchemy.orm import joinedload
+
 from decorators import has_permission
 from extensions import table_exists
 from models import (
@@ -430,7 +433,11 @@ def manager_summary(user, filters):
 
 
 def _asset_rows(user, filters):
-    query = InventoryAsset.query.filter_by(is_deleted=False)
+    query = InventoryAsset.query.filter_by(is_deleted=False).options(
+        joinedload(InventoryAsset.equipment_template),
+        joinedload(InventoryAsset.airport),
+        joinedload(InventoryAsset.operational_state),
+    )
     if not _can_view_all(user):
         query = query.filter_by(havalimani_id=user.havalimani_id)
     rows = query.all()
@@ -463,7 +470,11 @@ def _asset_rows(user, filters):
 
 
 def _work_order_rows(user, filters):
-    query = WorkOrder.query.filter_by(is_deleted=False)
+    query = WorkOrder.query.filter_by(is_deleted=False).options(
+        joinedload(WorkOrder.asset).joinedload(InventoryAsset.airport),
+        joinedload(WorkOrder.asset).joinedload(InventoryAsset.equipment_template),
+        joinedload(WorkOrder.assigned_user),
+    )
     if not _can_view_all(user):
         query = query.join(InventoryAsset).filter(InventoryAsset.havalimani_id == user.havalimani_id)
     rows = query.all()
@@ -490,7 +501,10 @@ def _work_order_rows(user, filters):
 
 
 def _stock_rows(user, filters):
-    query = SparePartStock.query.filter_by(is_deleted=False, is_active=True)
+    query = SparePartStock.query.filter_by(is_deleted=False, is_active=True).options(
+        joinedload(SparePartStock.spare_part),
+        joinedload(SparePartStock.airport_stock),
+    )
     if not _can_view_all(user):
         query = query.filter_by(airport_id=user.havalimani_id)
     rows = query.all()
@@ -728,20 +742,57 @@ def _meter_upcoming_count(assets, filters):
     asset_ids = {asset.id for asset in assets}
     if not asset_ids:
         return 0
-    rules = MaintenanceTriggerRule.query.filter_by(is_deleted=False, is_active=True).all()
+    rules = [
+        row
+        for row in MaintenanceTriggerRule.query.filter_by(is_deleted=False, is_active=True).all()
+        if row.asset_id and row.asset_id in asset_ids and row.meter_definition_id
+    ]
+    if not rules:
+        return 0
+
+    rule_pairs = {(row.asset_id, row.meter_definition_id): row for row in rules}
+    pair_asset_ids = {item[0] for item in rule_pairs.keys()}
+    pair_meter_ids = {item[1] for item in rule_pairs.keys()}
+
+    base_reading_query = AssetMeterReading.query.filter(
+        AssetMeterReading.is_deleted.is_(False),
+        AssetMeterReading.asset_id.in_(pair_asset_ids),
+        AssetMeterReading.meter_definition_id.in_(pair_meter_ids),
+    )
+    latest_reading_subquery = (
+        base_reading_query.with_entities(
+            AssetMeterReading.asset_id.label("asset_id"),
+            AssetMeterReading.meter_definition_id.label("meter_definition_id"),
+            func.max(AssetMeterReading.reading_at).label("max_reading_at"),
+        )
+        .group_by(AssetMeterReading.asset_id, AssetMeterReading.meter_definition_id)
+        .subquery()
+    )
+
+    latest_rows = (
+        AssetMeterReading.query.join(
+            latest_reading_subquery,
+            and_(
+                AssetMeterReading.asset_id == latest_reading_subquery.c.asset_id,
+                AssetMeterReading.meter_definition_id == latest_reading_subquery.c.meter_definition_id,
+                AssetMeterReading.reading_at == latest_reading_subquery.c.max_reading_at,
+            ),
+        )
+        .with_entities(
+            AssetMeterReading.asset_id,
+            AssetMeterReading.meter_definition_id,
+            AssetMeterReading.reading_value,
+        )
+        .all()
+    )
+
     count = 0
-    for rule in rules:
-        if not rule.asset_id or rule.asset_id not in asset_ids or not rule.meter_definition_id:
-            continue
-        last_reading = AssetMeterReading.query.filter_by(
-            is_deleted=False,
-            asset_id=rule.asset_id,
-            meter_definition_id=rule.meter_definition_id,
-        ).order_by(AssetMeterReading.reading_at.desc()).first()
-        if not last_reading:
+    for asset_id, meter_definition_id, reading_value in latest_rows:
+        rule = rule_pairs.get((asset_id, meter_definition_id))
+        if not rule:
             continue
         warning_threshold = float(rule.threshold_value or 0) - float(rule.warning_lead_value or 0)
-        if last_reading.reading_value >= max(warning_threshold, 0):
+        if float(reading_value or 0) >= max(warning_threshold, 0):
             count += 1
     return count
 

@@ -25,6 +25,27 @@ from decorators import (
     permission_required,
 )
 
+FOOTER_CONTENT_DEFAULTS = {
+    "footer_brand_kicker": "ARFF SAR",
+    "footer_brand_title": "ARFF Özel Arama Kurtarma Timi",
+    "footer_brand_description": "Sahada birbirine güvenen, birlikte öğrenen ve ihtiyaç anında hızla kenetlenen gönüllü timin dijital vitrini.",
+    "footer_contact_kicker": "İletişim",
+    "footer_contact_title": "Bizimle iletişime geçin",
+    "footer_contact_description": "Eğitim, iş birliği ya da duyuru paylaşımı için bize kısa bir e-posta bırakabilirsiniz.",
+    "footer_contact_email": "iletisim@sarx.org",
+    "footer_copyright": "© 2026 ARFF SAR",
+    "footer_bottom_slogan": "Gönüllü tim ruhu, sade iletişim ve hazır koordinasyon",
+}
+
+DEFAULT_PUBLIC_NAV_MENUS = [
+    {"ad": "Anasayfa", "link": "/", "sira": 0},
+    {"ad": "Biz Kimiz?", "link": "/hakkimizda/biz-kimiz", "sira": 1},
+    {"ad": "Misyon ve Vizyon", "link": "/hakkimizda/misyon-ve-vizyon", "sira": 2},
+    {"ad": "Etik Değerler", "link": "/hakkimizda/etik-degerler", "sira": 3},
+    {"ad": "Eğitimler", "link": "/faaliyetlerimiz/egitimler", "sira": 4},
+    {"ad": "Tatbikatlar", "link": "/faaliyetlerimiz/tatbikatlar", "sira": 5},
+]
+
 
 def _load_site_meta(ayarlar):
     """SiteAyarlari.iletisim_notu alanından JSON metadata okur."""
@@ -42,6 +63,81 @@ def _load_site_meta(ayarlar):
 
 def _save_site_meta(ayarlar, meta):
     ayarlar.iletisim_notu = json.dumps(meta, ensure_ascii=False)
+
+
+def _clean_site_text(value):
+    return guvenli_metin(value or "").strip()
+
+
+def _resolve_footer_content(meta):
+    source = meta if isinstance(meta, dict) else {}
+
+    def _pick(primary_key, *legacy_keys):
+        for key in (primary_key, *legacy_keys):
+            cleaned = _clean_site_text(source.get(key, ""))
+            if cleaned:
+                return cleaned
+        return FOOTER_CONTENT_DEFAULTS[primary_key]
+
+    return {
+        "footer_brand_kicker": _pick("footer_brand_kicker"),
+        "footer_brand_title": _pick("footer_brand_title"),
+        "footer_brand_description": _pick("footer_brand_description"),
+        "footer_contact_kicker": _pick("footer_contact_kicker"),
+        "footer_contact_title": _pick("footer_contact_title"),
+        "footer_contact_description": _pick("footer_contact_description", "public_contact_note", "site_notu"),
+        "footer_contact_email": _pick("footer_contact_email"),
+        "footer_copyright": _pick("footer_copyright"),
+        "footer_bottom_slogan": _pick("footer_bottom_slogan"),
+    }
+
+
+def _normalize_menu_link(value):
+    cleaned = guvenli_metin(value or "").strip()
+    if not cleaned:
+        return "/"
+    lowered = cleaned.lower()
+    if lowered.startswith(("http://", "https://", "mailto:", "tel:", "#")):
+        return cleaned
+    if not cleaned.startswith("/"):
+        cleaned = f"/{cleaned.lstrip('/')}"
+    if cleaned != "/" and cleaned.endswith("/"):
+        cleaned = cleaned.rstrip("/")
+    return cleaned
+
+
+def _ensure_default_public_nav_menus():
+    rows = NavMenu.query.order_by(NavMenu.sira.asc(), NavMenu.id.asc()).all()
+    existing_links = {}
+    existing_labels = set()
+    for row in rows:
+        normalized_link = _normalize_menu_link(row.link)
+        existing_links[normalized_link] = row
+        label = guvenli_metin(row.ad or "").strip().casefold()
+        if label:
+            existing_labels.add(label)
+
+    changed = False
+    for default in DEFAULT_PUBLIC_NAV_MENUS:
+        normalized_link = _normalize_menu_link(default["link"])
+        normalized_label = default["ad"].strip().casefold()
+        if normalized_link in existing_links or normalized_label in existing_labels:
+            continue
+        db.session.add(
+            NavMenu(
+                ad=default["ad"],
+                link=default["link"],
+                sira=default["sira"],
+            )
+        )
+        existing_links[normalized_link] = True
+        existing_labels.add(normalized_label)
+        changed = True
+
+    if changed:
+        db.session.commit()
+        rows = NavMenu.query.order_by(NavMenu.sira.asc(), NavMenu.id.asc()).all()
+    return rows
 
 
 def _clean_role_label(value, fallback):
@@ -87,6 +183,12 @@ def _can_manage_demo_mode():
     except (TypeError, ValueError):
         return False
     return _is_demo_manager(db.session.get(Kullanici, session_user_id))
+
+
+def _demo_tools_runtime_enabled():
+    if not current_app.config.get("DEMO_TOOLS_ENABLED", False):
+        return False
+    return str(current_app.config.get("ENV") or "").strip().lower() != "production"
 
 
 # --- HAVALİMANI YÖNETİMİ (SİTE AYARLARI İÇİNE TAŞINDI) ---
@@ -225,6 +327,7 @@ def site_yonetimi():
 
     ayarlar = SiteAyarlari.query.first()
     meta = _load_site_meta(ayarlar)
+    footer_content = _resolve_footer_content(meta)
     rol_etiketleri = _resolve_role_labels(ayarlar)
     role_catalog = []
     role_usage_counts = {}
@@ -238,27 +341,30 @@ def site_yonetimi():
     aktif_sekme = request.args.get('tab', 'genel')
     if aktif_sekme not in ['genel', 'organizasyon', 'icerik']:
         aktif_sekme = 'genel'
-    platform_demo_status = get_platform_demo_status() if current_app.config.get("DEMO_TOOLS_ENABLED", False) else None
-    homepage_demo_status = get_homepage_demo_status() if current_app.config.get("DEMO_TOOLS_ENABLED", False) else None
+    demo_tools_enabled = _demo_tools_runtime_enabled()
+    platform_demo_status = get_platform_demo_status() if demo_tools_enabled else None
+    homepage_demo_status = get_homepage_demo_status() if demo_tools_enabled else None
 
-    return render_template(
-        'admin/site_yonetimi.html',
-        menuler=NavMenu.query.all(),
-        sliderlar=SliderResim.query.all(),
-        ayarlar=ayarlar,
-        site_notu=meta.get("site_notu", ""),
-        public_contact_note=meta.get("public_contact_note", meta.get("site_notu", "")),
-        public_logo_url=meta.get("public_logo_url", ""),
-        rol_etiketleri=rol_etiketleri,
-        role_catalog=role_catalog,
-        core_role_keys={item["key"] for item in get_role_options()},
-        permission_catalog=get_permission_catalog(),
-        havalimanlari=Havalimani.query.filter_by(is_deleted=False).all(),
-        aktif_sekme=aktif_sekme,
-        demo_tools_enabled=current_app.config.get("DEMO_TOOLS_ENABLED", False),
-        platform_demo_status=platform_demo_status,
-        homepage_demo_status=homepage_demo_status,
-    )
+    page_context = {
+        "menuler": _ensure_default_public_nav_menus(),
+        "sliderlar": SliderResim.query.all(),
+        "ayarlar": ayarlar,
+        "site_notu": meta.get("site_notu", ""),
+        "public_contact_note": meta.get("public_contact_note", meta.get("site_notu", "")),
+        "public_logo_url": meta.get("public_logo_url", ""),
+        # Template footer alanları bu context'e bağlıdır; her zaman gönderilir.
+        "footer_content": footer_content if isinstance(footer_content, dict) else _resolve_footer_content({}),
+        "rol_etiketleri": rol_etiketleri,
+        "role_catalog": role_catalog,
+        "core_role_keys": {item["key"] for item in get_role_options()},
+        "permission_catalog": get_permission_catalog(),
+        "havalimanlari": Havalimani.query.filter_by(is_deleted=False).all(),
+        "aktif_sekme": aktif_sekme,
+        "demo_tools_enabled": demo_tools_enabled,
+        "platform_demo_status": platform_demo_status,
+        "homepage_demo_status": homepage_demo_status,
+    }
+    return render_template('admin/site_yonetimi.html', **page_context)
 
 
 @admin_bp.route('/demo-veri/olustur', methods=['POST'])
@@ -267,7 +373,7 @@ def site_yonetimi():
 def demo_veri_olustur():
     if not _can_manage_demo_mode():
         abort(403)
-    if not current_app.config.get("DEMO_TOOLS_ENABLED", False):
+    if not _demo_tools_runtime_enabled():
         abort(404)
     if guvenli_metin(request.form.get("confirm_demo_seed")).strip().upper() != "DEMO":
         flash("Demo veri üretimi için onay alanına DEMO yazmalısınız.", "danger")
@@ -298,7 +404,7 @@ def demo_veri_olustur():
 def demo_veri_temizle():
     if not _can_manage_demo_mode():
         abort(403)
-    if not current_app.config.get("DEMO_TOOLS_ENABLED", False):
+    if not _demo_tools_runtime_enabled():
         abort(404)
     if guvenli_metin(request.form.get("confirm_demo_clear")).strip().upper() != "DEMO-SIL":
         flash("Demo veri temizliği için onay alanına DEMO-SIL yazmalısınız.", "danger")
@@ -318,8 +424,25 @@ def demo_veri_temizle():
         flash("Demo veri temizliği sırasında bir hata oluştu. İşlem geri alındı.", "danger")
         return redirect(url_for('admin.site_yonetimi', tab='genel'))
 
-    log_kaydet("Demo Veri", f"Demo verileri temizlendi. Silinen kayıt: {result['deleted']}", event_key="demo.seed.clear")
-    flash("Demo verileri temizlendi.", "info")
+    platform_deleted = int(result.get("deleted") or 0)
+    homepage_deleted = int(result.get("homepage_deleted") or 0)
+    warnings = [str(item).strip() for item in (result.get("warnings") or []) if str(item).strip()]
+    total_deleted = platform_deleted + homepage_deleted
+
+    log_lines = [
+        f"Platform demo silinen kayıt: {platform_deleted}",
+        f"Anasayfa demo silinen kayıt: {homepage_deleted}",
+    ]
+    if warnings:
+        log_lines.append(f"Uyarılar: {' | '.join(warnings)}")
+    log_kaydet("Demo Veri", "\n".join(log_lines), event_key="demo.seed.clear")
+
+    if warnings:
+        flash(f"Demo temizliği kısmi tamamlandı: {' | '.join(warnings)}", "warning")
+    elif total_deleted == 0:
+        flash("Temizlenecek demo kaydı bulunamadı.", "info")
+    else:
+        flash("Demo verileri temizlendi.", "info")
     return redirect(url_for('admin.site_yonetimi', tab='genel'))
 
 
@@ -329,7 +452,7 @@ def demo_veri_temizle():
 def anasayfa_demo_olustur():
     if not _can_manage_demo_mode():
         abort(403)
-    if not current_app.config.get("DEMO_TOOLS_ENABLED", False):
+    if not _demo_tools_runtime_enabled():
         abort(404)
 
     try:
@@ -363,7 +486,7 @@ def anasayfa_demo_olustur():
 def anasayfa_demo_temizle():
     if not _can_manage_demo_mode():
         abort(403)
-    if not current_app.config.get("DEMO_TOOLS_ENABLED", False):
+    if not _demo_tools_runtime_enabled():
         abort(404)
 
     try:
@@ -437,7 +560,20 @@ def site_ayarlarini_guncelle():
         return redirect(url_for('admin.site_yonetimi', tab='genel'))
 
     meta["public_logo_url"] = logo_url
-    meta["public_contact_note"] = guvenli_metin(request.form.get("public_contact_note") or request.form.get("iletisim_notu"))
+
+    footer_content = _resolve_footer_content(meta)
+    for key in FOOTER_CONTENT_DEFAULTS:
+        if key == "footer_contact_email":
+            email_value = _clean_site_text(request.form.get(key))
+            if email_value.lower().startswith("mailto:"):
+                email_value = email_value[7:].strip()
+            meta[key] = email_value or footer_content[key]
+        else:
+            incoming = _clean_site_text(request.form.get(key))
+            meta[key] = incoming or footer_content[key]
+
+    # Geri uyumluluk: eski şema bu alanı kullanmaya devam ederse aynı içerik taşınsın.
+    meta["public_contact_note"] = meta.get("footer_contact_description", "")
     if "role_labels" not in meta:
         meta["role_labels"] = _resolve_role_labels(ayarlar)
     _save_site_meta(ayarlar, meta)
@@ -523,9 +659,11 @@ def menu_ekle():
     if not current_user.is_sahip:
         abort(403)
 
+    next_sira = (db.session.query(db.func.max(NavMenu.sira)).scalar() or -1) + 1
     yeni = NavMenu(
-        ad=guvenli_metin(request.form.get('menu_ad')),
-        link=guvenli_metin(request.form.get('menu_link'))
+        ad=guvenli_metin(request.form.get('menu_ad')).strip(),
+        link=_normalize_menu_link(request.form.get('menu_link')),
+        sira=next_sira,
     )
     db.session.add(yeni)
     db.session.commit()

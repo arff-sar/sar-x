@@ -41,8 +41,7 @@ class BaseConfig:
     MAX_FORM_PARTS = int(os.getenv("MAX_FORM_PARTS", "200"))
 
     # Rate limiting
-    REDIS_URL = os.getenv("REDIS_URL")
-    RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI") or REDIS_URL or "memory://"
+    RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI") or "memory://"
     RATELIMIT_DEFAULT = os.getenv("RATELIMIT_DEFAULT", "120 per hour")
     RATELIMIT_HEADERS_ENABLED = True
 

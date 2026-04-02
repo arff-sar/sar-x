@@ -29,6 +29,15 @@ def test_login_page_loads(client):
     assert "Giriş" in response.data.decode('utf-8')
     assert "GÜVENLİK DOĞRULAMASI" in response.data.decode('utf-8')
 
+
+def test_login_page_defaults_remember_me_for_mobile_and_pwa_continuity(client):
+    response = client.get('/login')
+    html = response.data.decode('utf-8')
+
+    assert response.status_code == 200
+    assert 'name="remember_me"' in html
+    assert 'name="remember_me" value="on" checked' in html
+
 def test_login_success(client, app):
     app.config['WTF_CSRF_ENABLED'] = False 
     
@@ -46,6 +55,68 @@ def test_login_success(client, app):
     assert response.status_code == 200
     assert "Şifre veya Kullanıcı Adı yanlış" not in response.data.decode('utf-8')
     assert response.request.path == '/dashboard'
+
+
+def test_login_success_for_user_without_airport_does_not_crash_dashboard(client, app):
+    app.config['WTF_CSRF_ENABLED'] = False
+
+    user = KullaniciFactory(kullanici_adi="no-airport@sarx.com", is_deleted=False, rol="personel")
+    user.sifre_hash = generate_password_hash('123456', method='pbkdf2:sha256')
+    db.session.add(user)
+    db.session.commit()
+
+    answer = _extract_challenge_answer(client, app)
+    response = client.post('/login', data={
+        'kullanici_adi': 'no-airport@sarx.com',
+        'sifre': '123456',
+        'security_verification': answer,
+    }, follow_redirects=True)
+
+    html = response.data.decode('utf-8')
+    assert response.status_code == 200
+    assert response.request.path == '/dashboard'
+    assert "Atanmamış Birim" in html
+
+
+def test_login_redirects_to_internal_next_target(client, app):
+    app.config['WTF_CSRF_ENABLED'] = False
+
+    user = KullaniciFactory(kullanici_adi="next-ok@sarx.com", is_deleted=False, rol="sahip")
+    user.sifre_hash = generate_password_hash('123456', method='pbkdf2:sha256')
+    db.session.add(user)
+    db.session.commit()
+
+    answer = _extract_challenge_answer(client, app)
+    response = client.post('/login', data={
+        'kullanici_adi': 'next-ok@sarx.com',
+        'sifre': '123456',
+        'security_verification': answer,
+        'next': '/envanter',
+    }, follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers.get('Location', '').endswith('/envanter')
+
+
+def test_login_rejects_external_next_target(client, app):
+    app.config['WTF_CSRF_ENABLED'] = False
+
+    user = KullaniciFactory(kullanici_adi="next-block@sarx.com", is_deleted=False, rol="sahip")
+    user.sifre_hash = generate_password_hash('123456', method='pbkdf2:sha256')
+    db.session.add(user)
+    db.session.commit()
+
+    answer = _extract_challenge_answer(client, app)
+    response = client.post('/login', data={
+        'kullanici_adi': 'next-block@sarx.com',
+        'sifre': '123456',
+        'security_verification': answer,
+        'next': 'https://evil.example/phish',
+    }, follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers.get('Location', '').endswith('/dashboard')
+
 
 def test_deleted_user_cannot_login(client, app):
     app.config['WTF_CSRF_ENABLED'] = False 
@@ -157,6 +228,25 @@ def test_logout_rejects_get_method(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
     response = client.get('/logout', follow_redirects=False)
     assert response.status_code in [405, 302]
+
+
+def test_authenticated_user_can_fetch_csrf_token_from_api(client, app):
+    user = KullaniciFactory(kullanici_adi="csrf-api@sarx.com", is_deleted=False, rol="sahip")
+    db.session.add(user)
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(user.id)
+        sess["_fresh"] = True
+
+    response = client.get("/api/csrf-token")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["status"] == "success"
+    assert isinstance(payload.get("csrf_token"), str)
+    assert len(payload["csrf_token"]) > 10
+
 
 def test_sifre_sifirla_talep_success(client, app):
     """Geçerli bir e-posta için şifre sıfırlama talebi"""

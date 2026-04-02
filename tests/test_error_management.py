@@ -210,6 +210,41 @@ def test_db_connection_error_returns_safe_message(client, app):
     assert "postgres://" not in html
 
 
+def test_authenticated_schema_mismatch_error_shows_manual_report_button(client, app):
+    app.config["PROPAGATE_EXCEPTIONS"] = False
+
+    with app.app_context():
+        airport = HavalimaniFactory(ad="İzmir Adnan Menderes Havalimanı", kodu="ADB")
+        owner = KullaniciFactory(rol="sahip", kullanici_adi="owner-db-schema@sarx.com", is_deleted=False, havalimani=airport)
+        db.session.add_all([airport, owner])
+        db.session.commit()
+        owner_id = owner.id
+
+    def boom_db_schema():
+        raise OperationalError(
+            "SELECT 1",
+            {},
+            Exception("no such column: kullanici.kan_grubu_harf"),
+        )
+
+    app.add_url_rule("/__test-db-schema-boom", "test_db_schema_boom", boom_db_schema)
+    _login(client, owner_id)
+    response = client.get("/__test-db-schema-boom")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 503
+    assert "SAR-X-DB-2103" in html
+    assert "Sistem yöneticisine bildir" in html
+
+    with client.session_transaction() as session:
+        pending = session.get("pending_error_report")
+
+    assert pending is not None
+    assert pending["error_code"] == "SAR-X-DB-2103"
+    assert pending["path"] == "/__test-db-schema-boom"
+    assert pending["request_id"]
+
+
 def test_error_listing_uses_tr_module_labels_summary_and_timezone(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Adana Havalimanı", kodu="ADA")

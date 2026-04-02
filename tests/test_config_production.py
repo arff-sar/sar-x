@@ -34,16 +34,25 @@ def test_production_scheduler_disabled_by_default(monkeypatch):
     assert app.config["ENABLE_SCHEDULER"] is False
 
 
-def test_production_requires_explicit_override_when_redis_is_missing(monkeypatch):
+def test_production_defaults_to_memory_rate_limit_storage_when_unset(monkeypatch):
     monkeypatch.setenv("SECRET_KEY", "x" * 48)
     monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
     monkeypatch.setenv("ALLOW_SQLITE_IN_PRODUCTION", "1")
-    monkeypatch.delenv("REDIS_URL", raising=False)
     monkeypatch.delenv("RATELIMIT_STORAGE_URI", raising=False)
     monkeypatch.delenv("ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION", raising=False)
 
-    with pytest.raises(RuntimeError, match="memory:// rate-limit storage kullanılamaz"):
-        create_app("production")
+    app = create_app("production")
+    assert app.config["RATELIMIT_STORAGE_URI"] == "memory://"
+
+
+def test_production_uses_explicit_rate_limit_storage_uri(monkeypatch):
+    monkeypatch.setenv("SECRET_KEY", "x" * 48)
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+    monkeypatch.setenv("ALLOW_SQLITE_IN_PRODUCTION", "1")
+    monkeypatch.setenv("RATELIMIT_STORAGE_URI", "memory://")
+
+    app = create_app("production")
+    assert app.config["RATELIMIT_STORAGE_URI"] == "memory://"
 
 
 def test_production_passkey_requires_explicit_rp_id(monkeypatch):
@@ -102,3 +111,24 @@ def test_production_passkey_accepts_valid_rollout_config(monkeypatch):
 
     assert app.config["PASSKEY_ENABLED"] is True
     assert app.config["PASSKEY_RP_ID"] == "example.com"
+
+
+def test_production_rejects_demo_tools_enabled(monkeypatch):
+    monkeypatch.setenv("SECRET_KEY", "x" * 48)
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+    monkeypatch.setenv("ALLOW_SQLITE_IN_PRODUCTION", "1")
+    monkeypatch.setenv("DEMO_TOOLS_ENABLED", "1")
+    monkeypatch.setenv("ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION", "1")
+
+    with pytest.raises(RuntimeError, match="DEMO_TOOLS_ENABLED"):
+        create_app("production")
+
+
+def test_production_rejects_memory_rate_limit_storage_for_non_sqlite(monkeypatch):
+    monkeypatch.setenv("SECRET_KEY", "x" * 48)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/sarx")
+    monkeypatch.delenv("RATELIMIT_STORAGE_URI", raising=False)
+    monkeypatch.setenv("DEMO_TOOLS_ENABLED", "0")
+
+    with pytest.raises(RuntimeError, match="memory rate-limit storage"):
+        create_app("production")

@@ -1,13 +1,15 @@
 
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="tr" data-current-endpoint="{{ request.endpoint or '' }}">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
 <title>SAR-X Panel - {% block title %}{% endblock %}</title>
 <meta name="csrf-token" content="{{ csrf_token() }}">
 
 <link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="shortcut icon" href="/favicon.ico">
 <meta name="theme-color" content="#0f2d4a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -35,7 +37,7 @@
   --topbar-action-height: 40px;
   --topbar-base-height: 56px;
   --safe-area-top: 0px;
-  --safe-area-bottom: 0px;
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --shell-top-offset: var(--topbar-base-height);
 }
 html, body { height: 100%; font-family: var(--sans); background: var(--bg); color: var(--text); overflow: hidden; }
@@ -54,13 +56,12 @@ body[data-display-mode="standalone"] {
 .sidebar-toggle { display: none; width: 38px; height: 38px; border-radius: 10px; border: 1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.08); color: #fff; font-size: 18px; cursor: pointer; }
 .sidebar-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(249,115,22,.2); }
 .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; min-width: 0; }
-.logo-mark { width: 32px; height: 32px; background: var(--orange); border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.logo-mark svg { width: 18px; height: 18px; stroke: #fff; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-.logo-text-main { font-size: 17px; font-weight: 800; color: #fff; letter-spacing: -0.01em; line-height: 1; }
-.logo-text-sub { font-size: 11px; font-weight: 500; color: #94a3b8; margin-top: 2px; }
+.logo-mark { width: 48px; height: 48px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; }
+.logo-image { width: 100%; height: 100%; object-fit: contain; display: block; }
+.logo-text-main { font-size: 15px; font-weight: 700; color: #e2e8f0; letter-spacing: .01em; line-height: 1; white-space: nowrap; }
 .topbar-end { margin-left: auto; display: flex; align-items: center; gap: 10px; min-width: 0; position: relative; z-index: 180; }
 .notification-wrap { position: relative; }
-.notification-btn { width: var(--topbar-action-height); height: var(--topbar-action-height); border-radius: 10px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.08); color: #fff; cursor: pointer; position: relative; display: inline-flex; align-items: center; justify-content: center; }
+.notification-btn { width: var(--topbar-action-height); height: var(--topbar-action-height); border-radius: 10px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.08); color: #fff; cursor: pointer; position: relative; display: inline-flex; align-items: center; justify-content: center; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .notification-count { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; border-radius: 999px; background: var(--orange); color: #fff; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
 .notification-panel { display: none; position: absolute; right: 0; top: calc(100% + 8px); width: 320px; background: #fff; border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 20px 40px rgba(15,23,42,.16); padding: 10px; z-index: 120; }
 .notification-panel.is-open { display: block; }
@@ -86,6 +87,8 @@ body[data-display-mode="standalone"] {
 .impersonation-banner strong { color: var(--orange); }
 .logout-btn { color: #fca5a5; font-size: 12px; font-weight: 700; text-decoration: none; margin-left: 10px; padding: 0 12px; min-height: var(--topbar-action-height); border-radius: 8px; border: 1px solid rgba(248, 113, 113, 0.2); transition: 0.2s; background: transparent; cursor: pointer; font-family: var(--sans); display: inline-flex; align-items: center; justify-content: center;}
 .logout-btn:hover { background: rgba(248, 113, 113, 0.1); color: #f87171;}
+.topbar-settings-link { min-height: var(--topbar-action-height); border-radius: 8px; border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.08); color: #dbeafe; padding: 0 12px; font-size: 12px; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+.topbar-settings-link:hover { background: rgba(255,255,255,.15); color: #fff; }
 
 /* Sidebar Navigation */
 .sidebar-backdrop { display: none; position: fixed; inset: var(--shell-top-offset) 0 0 0; background: rgba(15, 23, 42, 0.45); z-index: 80; }
@@ -113,20 +116,56 @@ body[data-display-mode="standalone"] {
 .nav-item.active { background: var(--navy); color: #fff; box-shadow: 0 8px 20px rgba(15,45,74,.18); }
 .nav-icon { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; background: #e2e8f0; color: var(--navy); flex-shrink: 0; }
 .nav-item.active .nav-icon { background: rgba(255,255,255,.12); }
-.sidebar-footer { flex: 0 0 auto; padding: 10px 12px calc(4px + var(--safe-area-bottom)); border-top: 1px solid var(--border); background: linear-gradient(180deg, rgba(248,250,252,.55) 0%, rgba(248,250,252,.95) 100%); position: sticky; bottom: 0; z-index: 2; }
-.sidebar-footer-actions { display: grid; gap: 10px; }
-.pwa-banner { background: #f8fafc; border: 1px solid var(--border); border-radius: var(--r); padding: 9px 10px; display: flex; align-items: flex-start; gap: 8px; }
+.sidebar-footer { flex: 0 0 auto; padding: 10px 12px calc(4px + var(--safe-area-bottom)); border-top: 1px solid var(--border); background: linear-gradient(180deg, rgba(248,250,252,.55) 0%, rgba(248,250,252,.95) 100%); position: sticky; bottom: 0; z-index: 2; pointer-events: auto; }
+.sidebar-footer-actions { display: grid; gap: 10px; position: relative; z-index: 3; pointer-events: auto; }
+.pwa-banner { width: 100%; background: #f8fafc; border: 1px solid var(--border); border-radius: var(--r); padding: 9px 10px; display: flex; align-items: flex-start; gap: 8px; font-family: var(--sans); text-align: left; cursor: pointer; transition: border-color .16s ease, background .16s ease; }
+.pwa-banner:hover { background: #eef6ff; border-color: #bfdbfe; }
+.pwa-banner:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(37,99,235,.18); border-color: #93c5fd; }
 .pwa-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
 .pwa-text { font-size: 10.5px; color: var(--text3); line-height: 1.4; }
 .pwa-text strong { display: block; font-weight: 700; margin-bottom: 2px; }
+.pwa-action { margin-left: auto; align-self: center; border-radius: 999px; border: 1px solid rgba(37, 99, 235, 0.26); background: #eff6ff; color: #1d4ed8; font-size: 10.5px; font-weight: 800; padding: 4px 9px; white-space: nowrap; }
 .sidebar-passkey-btn { width: 100%; min-height: 40px; border-radius: 10px; border: 1px solid rgba(15,45,74,.14); background: rgba(239,246,255,.96); color: var(--navy); font-family: var(--sans); font-size: 12px; font-weight: 800; cursor: pointer; }
 .sidebar-passkey-btn:hover { background: #dbeafe; }
 .sidebar-passkey-btn.is-loading { opacity: .72; cursor: wait; }
-.sidebar-qr-scan-btn { display: none; width: 100%; min-height: 40px; border-radius: 10px; border: 1px solid rgba(14, 116, 144, 0.22); background: rgba(236, 254, 255, 0.95); color: #155e75; font-family: var(--sans); font-size: 12px; font-weight: 800; cursor: pointer; align-items: center; justify-content: center; gap: 6px; }
+.sidebar-qr-scan-btn { display: none; width: 100%; min-height: 44px; border-radius: 10px; border: 1px solid rgba(14, 116, 144, 0.22); background: rgba(236, 254, 255, 0.95); color: #155e75; font-family: var(--sans); font-size: 12px; font-weight: 800; cursor: pointer; align-items: center; justify-content: center; gap: 6px; position: relative; z-index: 10; pointer-events: auto; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .sidebar-qr-scan-btn:hover { background: #cffafe; }
+.sidebar-settings-link { display: inline-flex; width: 100%; min-height: 40px; border-radius: 10px; border: 1px solid rgba(37, 99, 235, 0.2); background: #eff6ff; color: #1d4ed8; font-family: var(--sans); font-size: 12px; font-weight: 800; cursor: pointer; align-items: center; justify-content: center; text-decoration: none; }
+.sidebar-settings-link:hover { background: #dbeafe; }
 .sidebar-logout-form { display: none; }
 .sidebar-logout-btn { width: 100%; min-height: 40px; border-radius: 10px; border: 1px solid rgba(248, 113, 113, 0.24); background: rgba(254, 242, 242, 0.96); color: var(--red); font-family: var(--sans); font-size: 12px; font-weight: 800; cursor: pointer; }
 .sidebar-logout-btn:hover { background: var(--red-light); }
+.message-launch-btn { position: fixed; right: 18px; bottom: calc(20px + var(--safe-area-bottom)); z-index: 9999; min-height: 52px; padding: 0 16px; border-radius: 999px; border: 1px solid rgba(15,45,74,.12); background: linear-gradient(135deg, #0f2d4a 0%, #1e4d78 100%); color: #fff; font-family: var(--sans); font-size: 13px; font-weight: 800; box-shadow: 0 18px 36px rgba(15,23,42,.22); cursor: pointer; display: inline-flex; align-items: center; gap: 10px; touch-action: manipulation; -webkit-tap-highlight-color: transparent; pointer-events: auto; }
+.message-launch-btn:hover { transform: translateY(-1px); box-shadow: 0 22px 42px rgba(15,23,42,.26); }
+body.message-panel-open .message-launch-btn { opacity: 0; pointer-events: none; }
+.message-launch-icon { width: 28px; height: 28px; border-radius: 999px; background: rgba(255,255,255,.14); display: inline-flex; align-items: center; justify-content: center; font-size: 14px; }
+.message-launch-badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: #f97316; color: #fff; font-size: 10px; font-weight: 900; display: none; align-items: center; justify-content: center; line-height: 1; }
+.message-launch-badge.is-visible { display: inline-flex; }
+.message-panel[hidden] { display: none !important; }
+.message-panel { position: fixed; inset: 0; z-index: 230; background: rgba(15,23,42,.58); display: flex; align-items: flex-end; justify-content: flex-end; padding: 18px; backdrop-filter: blur(1px); }
+.message-dialog { width: min(420px, 100%); max-height: min(720px, calc(100vh - 36px)); max-height: min(720px, calc(100dvh - 36px)); background: #fff; border: 1px solid var(--border); border-radius: 20px; box-shadow: 0 24px 56px rgba(15,23,42,.28); display: grid; grid-template-rows: auto auto 1fr auto; overflow: hidden; }
+.message-head { padding: 16px 18px 12px; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; border-bottom:1px solid var(--border); background:linear-gradient(180deg, rgba(248,250,252,.98) 0%, rgba(255,255,255,.98) 100%); }
+.message-title { font-size: 16px; font-weight: 900; color: var(--navy); }
+.message-subtitle { font-size: 11.5px; color: var(--text3); line-height: 1.5; margin-top: 4px; }
+.message-close { min-height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--border); background: #fff; color: var(--text2); font-size: 12px; font-weight: 700; cursor: pointer; }
+.message-toolbar { padding: 12px 18px; display:grid; gap:10px; border-bottom:1px solid var(--border); background: var(--surface2); }
+.message-toolbar-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.message-airport-select { margin-bottom: 0 !important; }
+.message-status { border-radius: 10px; border:1px solid var(--border); background:#fff; color:var(--text3); padding:10px 12px; font-size:12px; font-weight:700; line-height:1.5; }
+.message-status[data-level="success"] { border-color:#86efac; background:#f0fdf4; color:#166534; }
+.message-status[data-level="danger"] { border-color:#fecaca; background:#fef2f2; color:#991b1b; }
+.message-status[data-level="warning"] { border-color:#fed7aa; background:#fff7ed; color:#9a3412; }
+.message-list { padding: 16px 18px; overflow:auto; display:grid; gap:12px; background: linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,250,252,.98) 100%); }
+.message-empty { border:1px dashed var(--border-dark); border-radius:16px; padding:24px 18px; text-align:center; color:var(--text3); font-size:12.5px; line-height:1.6; background:#fff; }
+.message-card { border:1px solid var(--border); border-radius:16px; padding:12px 14px; background:#fff; display:grid; gap:8px; }
+.message-card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.message-author { font-size:13px; font-weight:800; color:var(--navy); }
+.message-meta { font-size:11px; color:var(--text4); line-height:1.4; }
+.message-body { font-size:13px; color:var(--text2); line-height:1.6; white-space:pre-wrap; word-break:break-word; }
+.message-delete { min-height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid rgba(220,38,38,.16); background: #fff; color: var(--red); font-size: 11px; font-weight: 800; cursor: pointer; }
+.message-compose { border-top:1px solid var(--border); padding:14px 18px 16px; background:#fff; display:grid; gap:10px; }
+.message-compose textarea { min-height: 88px; resize: vertical; margin-bottom: 0 !important; }
+.message-compose-actions { display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; }
 .qr-scan-panel[hidden] { display: none !important; }
 .qr-scan-panel { position: fixed; inset: 0; z-index: 240; background: rgba(15, 23, 42, 0.72); display: flex; align-items: center; justify-content: center; padding: 16px; backdrop-filter: blur(1px); }
 .qr-scan-dialog { width: min(460px, 100%); background: #ffffff; border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 24px 56px rgba(15, 23, 42, 0.34); padding: 14px; display: grid; gap: 10px; }
@@ -139,6 +178,8 @@ body[data-display-mode="standalone"] {
 .qr-scan-video { width: 100%; height: 100%; min-height: 230px; max-height: 62svh; object-fit: cover; display: none; }
 .qr-scan-video.is-active { display: block; }
 .qr-scan-placeholder { color: #e2e8f0; text-align: center; padding: 18px; font-size: 12px; line-height: 1.5; position: relative; z-index: 3; }
+.qr-scan-permission-alert[hidden] { display: none !important; }
+.qr-scan-permission-alert { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 6; border-radius: 10px; border: 1px solid var(--red-border); background: var(--red-light); color: #991b1b; padding: 10px 12px; font-size: 12px; font-weight: 700; line-height: 1.45; box-shadow: 0 10px 24px rgba(153, 27, 27, 0.16); }
 .qr-scan-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 4; display: none; }
 .qr-scan-overlay.is-active { display: block; }
 .qr-scan-guide { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.78); color: #f8fafc; border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 999px; font-size: 11px; font-weight: 700; padding: 6px 10px; white-space: nowrap; }
@@ -235,6 +276,38 @@ form input[type="text"], form input[type="password"], form input[type="date"], f
 form input:focus, form select:focus, form textarea:focus, .form-control:focus { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(249,115,22,0.15); }
 select { cursor: pointer; appearance: none; background-image: url('data:image/svg+xml;utf8,<svg fill="%2364748b" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/></svg>'); background-repeat: no-repeat; background-position: right 12px center; background-size: 20px; padding-right: 40px; }
 
+/* Filtre satırlarındaki form alanları ve aksiyon butonları aynı hizada kalır. */
+.inventory-filter-form .form-control,
+.assignment-filter-form .form-control,
+.logs-filter-form .form-control,
+.error-log-filters .form-control,
+.ppe-filter-form .form-control,
+.drill-filter-row .form-control,
+.box-filter-grid .form-control,
+.box-create-form .form-control {
+  margin-bottom: 0;
+}
+.inventory-filter-actions,
+.assignment-filter-actions,
+.logs-filter-actions,
+.error-log-actions,
+.ppe-filter-actions,
+.drill-filter-actions,
+.box-filter-actions {
+  align-items: stretch;
+}
+.inventory-filter-actions .btn,
+.assignment-filter-actions .btn,
+.logs-filter-actions .btn,
+.error-log-actions .btn,
+.ppe-filter-actions .btn,
+.drill-filter-actions .btn,
+.box-filter-actions .btn,
+.box-create-form .btn {
+  min-height: 44px;
+  margin-bottom: 0;
+}
+
 /* Butonlar */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 12px 20px; border-radius: var(--r); font-size: 13.5px; font-weight: 700; cursor: pointer; transition: all 0.2s; border: none; text-decoration: none; font-family: var(--sans); }
 .btn-primary { background: var(--orange); color: white; box-shadow: 0 2px 10px rgba(249,115,22,0.28); }
@@ -283,10 +356,34 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
   .role-switch-launch { width: 38px; min-width: 38px; height: 38px; }
   .user-role { display: none; }
   .logout-btn { margin-left: 0; min-height: 36px; padding: 0 9px; font-size: 11px; }
+  .topbar-settings-link { display: none !important; }
   .topbar-end > form { display: none !important; }
   .sidebar-footer { padding-bottom: 10px; }
-  .sidebar-qr-scan-btn.is-visible { display: inline-flex; }
+  .sidebar-qr-scan-btn { display: inline-flex; }
   .sidebar-logout-form { display: block; }
+  .notification-panel {
+    position: fixed;
+    top: calc(var(--shell-top-offset) + 8px);
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100vh - var(--shell-top-offset) - 24px);
+    max-height: calc(100dvh - var(--shell-top-offset) - 24px);
+    overflow-y: auto;
+  }
+  .message-launch-btn ~ .main-content .main-inner {
+    padding-bottom: calc(82px + var(--safe-area-bottom));
+  }
+  body.sidebar-open .message-launch-btn {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .message-launch-btn { right: 12px; bottom: calc(20px + var(--safe-area-bottom)); min-height: 48px; padding: 0 14px; z-index: 9999; }
+  .message-launch-label { display: none; }
+  .message-launch-badge { min-width: 18px; height: 18px; padding: 0 5px; font-size: 9.5px; }
+  .message-panel { padding: 12px; align-items: flex-end; justify-content: stretch; }
+  .message-dialog { width: 100%; max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); }
   .user-name { max-width: 102px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .main-inner { padding: 14px; }
   .page-title { font-size: 20px; }
@@ -305,7 +402,7 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
 }
 
 @media (max-width: 480px) {
-  .logo-text-main { font-size: 15px; }
+  .logo-mark { width: 40px; height: 40px; }
   .main-inner { padding: 10px; }
   .page-title { font-size: 18px; }
   .panel-title { font-size: 14px; }
@@ -316,7 +413,7 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
   .qr-scan-status { font-size: 11.5px; }
   table, .data-table { min-width: 520px; }
   .topbar-end { gap: 8px; }
-  .notification-panel { width: min(300px, calc(100vw - 24px)); right: 0; }
+  .message-launch-btn { min-width: 52px; padding: 0 14px; }
   .user-chip { min-width: 0; flex: 0 1 auto; max-width: 44vw; }
   .user-menu-actions { width: auto; justify-content: flex-start; }
   .role-switch-launch { flex: 0 0 38px; }
@@ -339,6 +436,33 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
   .page-header > :last-child .status-pill { flex: 1 1 100%; }
 }
 
+@media (max-width: 900px) {
+  .logo { gap: 0; }
+  .logo-text-main { display: none; }
+}
+
+@media (min-width: 901px) {
+  .logo-mark { width: 52px; height: 52px; }
+  html[data-current-endpoint="inventory.dashboard"] body[data-display-mode="browser"] .logo {
+    gap: 12px;
+  }
+  html[data-current-endpoint="inventory.dashboard"] body[data-display-mode="browser"] .logo-mark {
+    width: 72px;
+    height: 48px;
+    flex: 0 0 72px;
+  }
+  html[data-current-endpoint="inventory.dashboard"] body[data-display-mode="browser"] .logo-image {
+    transform: none;
+  }
+}
+
+body[data-display-mode="standalone"] .logo {
+  gap: 0;
+}
+body[data-display-mode="standalone"] .logo-text-main {
+  display: none;
+}
+
 {% block extra_css %}{% endblock %}
 </style>
 </head>
@@ -350,17 +474,16 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
     <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Menüyü Aç" aria-controls="sidebarNav" aria-expanded="false">☰</button>
     <a href="{{ url_for(home_endpoint) }}" class="logo">
       <div class="logo-mark">
-        <svg viewBox="0 0 24 24"><path d="M12 2L3 7v5c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7L12 2z"/><path d="M9 12l2 2 4-4"/></svg>
+        <img src="{{ url_for('static', filename='img/sarx-logo.png') }}" alt="SAR-X logo" class="logo-image">
       </div>
       <div>
-        <div class="logo-text-main">SAR-X</div>
-        <div class="logo-text-sub">ARFF Envanter Yönetim Sistemi</div>
+        <div class="logo-text-main">ARFF Envanter Yönetim Sistemi</div>
       </div>
     </a>
     
     <div class="topbar-end">
       <div class="notification-wrap">
-        <button type="button" class="notification-btn" id="notificationToggle" aria-label="Bildirimler">
+        <button type="button" class="notification-btn" id="notificationToggle" aria-label="Bildirimler" aria-haspopup="dialog" aria-controls="notificationPanel" aria-expanded="false">
           🔔
           {% if unread_notification_count %}
           <span class="notification-count">{{ unread_notification_count }}</span>
@@ -469,18 +592,20 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
 
     <div class="sidebar-footer">
       <div class="sidebar-footer-actions">
-        <div class="pwa-banner">
+        <button type="button" class="pwa-banner" id="pwaInstallButton">
           <div class="pwa-icon">📲</div>
           <div class="pwa-text">
             <strong>Saha Modu</strong>
-            Telefona ekleyin, hızlı erişim sağlayın.
+            <span id="pwaInstallHint">Telefona ekleyin, hızlı erişim sağlayın.</span>
           </div>
-        </div>
+          <span class="pwa-action" id="pwaInstallAction">Yükle</span>
+        </button>
         {% if passkey_enabled %}
         <button type="button" class="sidebar-passkey-btn" id="passkeyRegisterButton" hidden>Biyometrik Giriş Ekle</button>
         <button type="button" class="sidebar-passkey-btn" id="passkeyManageButton" hidden>Kayıtlı Passkeyleri Yönet</button>
         {% endif %}
-        <button type="button" class="sidebar-qr-scan-btn" id="qrScanLaunchButton" hidden>QR ile Tara</button>
+        <button type="button" class="sidebar-qr-scan-btn" id="qrScanLaunchButton">QR ile Tara</button>
+        <a href="{{ url_for('auth.ayarlar') }}" class="sidebar-settings-link">Ayarlar</a>
         <form method="POST" action="{{ url_for('auth.logout') }}" class="sidebar-logout-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="sidebar-logout-btn">Çıkış Yap</button>
@@ -509,10 +634,45 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
           </div>
         </div>
         <div class="qr-scan-placeholder" id="qrScanPlaceholder">Kamera erişimi bekleniyor.</div>
+        <div class="qr-scan-permission-alert" id="qrScanPermissionAlert" hidden role="alert" aria-live="assertive"></div>
       </div>
       <div class="qr-scan-status" id="qrScanStatus" data-level="info">Hazırlanıyor.</div>
     </div>
   </div>
+  {% if current_user.is_authenticated %}
+  <button type="button" class="message-launch-btn" id="airportMessageLaunchButton" aria-label="Ortak mesajlaşmayı aç" aria-haspopup="dialog" aria-controls="airportMessagePanel" aria-expanded="false">
+    <span class="message-launch-icon">✉</span>
+    <span class="message-launch-label">Mesajlar</span>
+    <span class="message-launch-badge" id="airportMessageBadge" aria-live="polite"></span>
+  </button>
+  <div class="message-panel" id="airportMessagePanel" hidden aria-hidden="true">
+    <div class="message-dialog" role="dialog" aria-modal="true" aria-labelledby="airportMessageTitle">
+      <div class="message-head">
+        <div>
+          <div class="message-title" id="airportMessageTitle">Ortak Mesajlaşma</div>
+          <div class="message-subtitle">Mesajlar havalimanı kapsamına göre ayrılır. Yetkisiz görüntüleme ve silme engellenir.</div>
+        </div>
+        <button type="button" class="message-close" id="airportMessageCloseButton">Kapat</button>
+      </div>
+      <div class="message-toolbar">
+        <div class="message-toolbar-row">
+          <select id="airportMessageAirportSelect" class="form-control message-airport-select" hidden></select>
+          <button type="button" class="btn btn-secondary" id="airportMessageBulkDeleteButton" hidden>Toplu Sil</button>
+        </div>
+        <div class="message-status" id="airportMessageStatus">Mesajlar yükleniyor.</div>
+      </div>
+      <div class="message-list" id="airportMessageList">
+        <div class="message-empty">Ortak mesajlar burada görünecek.</div>
+      </div>
+      <form class="message-compose" id="airportMessageForm">
+        <textarea id="airportMessageInput" class="form-control" maxlength="1000" placeholder="Havalimanı ortak mesaj alanına not bırakın..."></textarea>
+        <div class="message-compose-actions">
+          <button type="submit" class="btn btn-primary">Gönder</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
 
   <main class="main-content">
     <div class="main-inner">
@@ -611,6 +771,14 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
         window.showToast = function (options) {
             const config = options || {};
             const category = String(config.type || 'info').toLowerCase();
+            const escapeToastHtml = function (value) {
+                return String(value == null ? '' : value)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/\"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            };
             const titleMap = {
                 success: 'İşlem tamamlandı',
                 warning: 'Dikkat',
@@ -640,8 +808,8 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
             toast.innerHTML = [
                 '<div class="flash-icon">' + (iconMap[category] || iconMap.info) + '</div>',
                 '<div class="flash-body">',
-                '<div class="flash-title">' + (config.title || titleMap[category] || titleMap.info) + '</div>',
-                '<div class="flash-text">' + (config.message || '') + '</div>',
+                '<div class="flash-title">' + escapeToastHtml(config.title || titleMap[category] || titleMap.info) + '</div>',
+                '<div class="flash-text">' + escapeToastHtml(config.message || '') + '</div>',
                 '</div>',
                 '<button type="button" class="flash-close" data-toast-close aria-label="Bildirimi kapat">×</button>'
             ].join('');
@@ -713,7 +881,47 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
     })();
 
     if ('serviceWorker' in navigator) {
+        const disableServiceWorkerInLocalDev = {{ (config.DEBUG or config.TESTING)|tojson }};
+        navigator.serviceWorker.addEventListener('message', function (event) {
+            const payload = event && event.data ? event.data : {};
+            if (!payload || !payload.type || typeof window.showToast !== 'function') return;
+
+            if (payload.type === 'offline-sync-error') {
+                window.showToast({
+                    type: 'warning',
+                    title: 'Senkronizasyon beklemede',
+                    message: payload.message || 'Çevrimdışı bakım kayıtları henüz gönderilemedi.',
+                });
+                return;
+            }
+            if (payload.type === 'offline-sync-success') {
+                window.showToast({
+                    type: 'success',
+                    title: 'Senkronizasyon tamamlandı',
+                    message: payload.message || 'Çevrimdışı bakım kayıtları başarıyla gönderildi.',
+                });
+            }
+        });
         window.addEventListener('load', function() {
+            if (disableServiceWorkerInLocalDev) {
+                navigator.serviceWorker.getRegistrations().then(function (registrations) {
+                    return Promise.all(registrations.map(function (registration) {
+                        return registration.unregister();
+                    }));
+                }).catch(function () {
+                    return null;
+                });
+                if (window.caches && typeof window.caches.keys === 'function') {
+                    window.caches.keys().then(function (keys) {
+                        return Promise.all(keys.map(function (key) {
+                            return window.caches.delete(key);
+                        }));
+                    }).catch(function () {
+                        return null;
+                    });
+                }
+                return;
+            }
             navigator.serviceWorker.register('/sw.js').then(function(registration) {
                 console.log('SW Kaydı Başarılı: ', registration.scope);
             });
@@ -725,6 +933,17 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
         const toggle = document.getElementById('sidebarToggle');
         const backdrop = document.getElementById('sidebarBackdrop');
         const mobileSidebarMedia = window.matchMedia('(max-width: 900px)');
+        const pwaStandaloneMedia = typeof window.matchMedia === 'function'
+            ? window.matchMedia('(display-mode: standalone)')
+            : null;
+        const pwaInstallButton = document.getElementById('pwaInstallButton');
+        const pwaInstallHint = document.getElementById('pwaInstallHint');
+        const pwaInstallAction = document.getElementById('pwaInstallAction');
+        let deferredInstallPrompt = null;
+
+        const isStandaloneMode = function () {
+            return document.body && document.body.getAttribute('data-display-mode') === 'standalone';
+        };
 
         const syncSidebarState = function (isOpen) {
             if (!sidebar || !toggle || !backdrop) return;
@@ -737,6 +956,87 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
         const closeSidebar = () => {
             syncSidebarState(false);
         };
+
+        const syncPwaInstallState = function () {
+            if (!pwaInstallButton || !pwaInstallAction || !pwaInstallHint) return;
+            if (isStandaloneMode()) {
+                pwaInstallAction.textContent = 'Yüklü';
+                pwaInstallHint.textContent = 'Saha modu ana ekrana yüklendi.';
+                return;
+            }
+            if (deferredInstallPrompt) {
+                pwaInstallAction.textContent = 'Yükle';
+                pwaInstallHint.textContent = 'Telefona ekleyin, hızlı erişim sağlayın.';
+                return;
+            }
+            pwaInstallAction.textContent = 'Yardım';
+            pwaInstallHint.textContent = 'Tarayıcı menüsünden “Ana ekrana ekle” adımını kullanın.';
+        };
+
+        if (pwaInstallButton) {
+            pwaInstallButton.addEventListener('click', async function () {
+                closeSidebar();
+                if (isStandaloneMode()) {
+                    if (typeof window.showToast === 'function') {
+                        window.showToast({
+                            type: 'info',
+                            title: 'Saha Modu aktif',
+                            message: 'Uygulama bu cihazda zaten yüklü.',
+                        });
+                    }
+                    return;
+                }
+
+                if (deferredInstallPrompt) {
+                    try {
+                        deferredInstallPrompt.prompt();
+                        const choice = await deferredInstallPrompt.userChoice;
+                        const accepted = choice && choice.outcome === 'accepted';
+                        if (typeof window.showToast === 'function') {
+                            window.showToast({
+                                type: accepted ? 'success' : 'warning',
+                                title: accepted ? 'Kurulum başlatıldı' : 'Kurulum ertelendi',
+                                message: accepted
+                                    ? 'Saha modu cihazınıza ekleniyor.'
+                                    : 'Dilerseniz daha sonra Saha Modu üzerinden yeniden deneyebilirsiniz.',
+                            });
+                        }
+                    } finally {
+                        deferredInstallPrompt = null;
+                        syncPwaInstallState();
+                    }
+                    return;
+                }
+
+                if (typeof window.showToast === 'function') {
+                    window.showToast({
+                        type: 'info',
+                        title: 'PWA kurulumu',
+                        message: 'Android: tarayıcı menüsü > Ana ekrana ekle. iOS: Paylaş > Ana Ekrana Ekle.',
+                        duration: 6200,
+                    });
+                }
+            });
+
+            window.addEventListener('beforeinstallprompt', function (event) {
+                event.preventDefault();
+                deferredInstallPrompt = event;
+                syncPwaInstallState();
+            });
+            window.addEventListener('appinstalled', function () {
+                deferredInstallPrompt = null;
+                syncPwaInstallState();
+            });
+            if (pwaStandaloneMedia) {
+                if (typeof pwaStandaloneMedia.addEventListener === 'function') {
+                    pwaStandaloneMedia.addEventListener('change', syncPwaInstallState);
+                } else if (typeof pwaStandaloneMedia.addListener === 'function') {
+                    pwaStandaloneMedia.addListener(syncPwaInstallState);
+                }
+            }
+            window.addEventListener('pageshow', syncPwaInstallState);
+            syncPwaInstallState();
+        }
 
         if (toggle && sidebar && backdrop) {
             toggle.addEventListener('click', function () {
@@ -751,6 +1051,7 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
             document.addEventListener('keydown', function (event) {
                 if (event.key === 'Escape') {
                     closeSidebar();
+                    setMessagePanelOpen(false);
                 }
             });
         }
@@ -841,19 +1142,187 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
             });
         });
 
+        const messageLaunchButton = document.getElementById('airportMessageLaunchButton');
+        const messageBadge = document.getElementById('airportMessageBadge');
+        const messagePanel = document.getElementById('airportMessagePanel');
+        const messageCloseButton = document.getElementById('airportMessageCloseButton');
+        const messageAirportSelect = document.getElementById('airportMessageAirportSelect');
+        const messageBulkDeleteButton = document.getElementById('airportMessageBulkDeleteButton');
+        const messageStatus = document.getElementById('airportMessageStatus');
+        const messageList = document.getElementById('airportMessageList');
+        const messageForm = document.getElementById('airportMessageForm');
+        const messageInput = document.getElementById('airportMessageInput');
+        let messagePollTimer = 0;
+        let messageBadgeTimer = 0;
+        let messageState = {
+            canViewAll: false,
+            canModerate: false,
+            selectedAirportId: '',
+            airports: []
+        };
+
         const notificationToggle = document.getElementById('notificationToggle');
         const notificationPanel = document.getElementById('notificationPanel');
         if (notificationToggle && notificationPanel) {
+            const setNotificationPanelOpen = function (isOpen) {
+                notificationPanel.classList.toggle('is-open', Boolean(isOpen));
+                notificationToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            };
+
+            setNotificationPanelOpen(false);
             notificationToggle.addEventListener('click', function (event) {
                 event.stopPropagation();
-                notificationPanel.classList.toggle('is-open');
+                const willOpen = !notificationPanel.classList.contains('is-open');
+                if (willOpen && mobileSidebarMedia.matches && sidebar && sidebar.classList.contains('is-open')) {
+                    closeSidebar();
+                    window.setTimeout(function () {
+                        setNotificationPanelOpen(true);
+                    }, 190);
+                    return;
+                }
+                setNotificationPanelOpen(willOpen);
             });
             document.addEventListener('click', function () {
-                notificationPanel.classList.remove('is-open');
+                setNotificationPanelOpen(false);
             });
             notificationPanel.addEventListener('click', function (event) {
                 event.stopPropagation();
             });
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape') {
+                    setNotificationPanelOpen(false);
+                }
+            });
+        }
+
+        if (messageLaunchButton && messagePanel) {
+            const startMessagePanel = function () {
+                if (notificationPanel && notificationPanel.classList.contains('is-open')) {
+                    notificationPanel.classList.remove('is-open');
+                    if (notificationToggle) {
+                        notificationToggle.setAttribute('aria-expanded', 'false');
+                    }
+                }
+                setMessagePanelOpen(true);
+                fetchMessages().then(function () {
+                    if (!messagePollTimer) {
+                        messagePollTimer = window.setInterval(fetchMessages, 25000);
+                    }
+                });
+            };
+
+            function openMessagePanel() {
+                if (mobileSidebarMedia.matches && sidebar && sidebar.classList.contains('is-open')) {
+                    closeSidebar();
+                    window.setTimeout(startMessagePanel, 190);
+                    return;
+                }
+                startMessagePanel();
+            }
+
+            function closeMessagePanel() {
+                setMessagePanelOpen(false);
+            }
+
+            messageLaunchButton.addEventListener('click', openMessagePanel);
+            if (messageCloseButton) {
+                messageCloseButton.addEventListener('click', closeMessagePanel);
+            }
+            messagePanel.addEventListener('click', function (event) {
+                if (event.target === messagePanel) {
+                    closeMessagePanel();
+                }
+            });
+            if (messageAirportSelect) {
+                messageAirportSelect.addEventListener('change', function () {
+                    messageState.selectedAirportId = messageAirportSelect.value || '';
+                    fetchMessages();
+                });
+            }
+            if (messageForm) {
+                messageForm.addEventListener('submit', function (event) {
+                    event.preventDefault();
+                    const messageText = String(messageInput && messageInput.value || '').trim();
+                    if (!messageText) {
+                        updateMessageStatus('Göndermek için bir mesaj yazın.', 'warning');
+                        return;
+                    }
+                    const airportId = currentMessageAirportId();
+                    if (messageState.canViewAll && !airportId) {
+                        updateMessageStatus('Mesaj göndermek için bir havalimanı seçin.', 'warning');
+                        return;
+                    }
+                    updateMessageStatus('Mesaj gönderiliyor.', 'info');
+                    window.fetch('/api/mesajlar', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ airport_id: airportId, message_text: messageText })
+                    }).then(function (response) {
+                        return response.json().then(function (data) {
+                            return { ok: response.ok, data: data };
+                        });
+                    }).then(function (result) {
+                        if (!result.ok || !result.data || result.data.status !== 'success') {
+                            throw new Error(result.data && result.data.message ? result.data.message : 'Mesaj gönderilemedi.');
+                        }
+                        if (messageInput) {
+                            messageInput.value = '';
+                        }
+                        updateMessageStatus('Mesaj gönderildi.', 'success');
+                        return fetchMessages();
+                    }).catch(function (error) {
+                        updateMessageStatus(error && error.message ? error.message : 'Mesaj gönderilemedi.', 'danger');
+                    });
+                });
+            }
+            if (messageList) {
+                messageList.addEventListener('click', function (event) {
+                    const deleteButton = event.target.closest('[data-message-id]');
+                    if (!deleteButton) return;
+                    if (!window.confirm('Bu mesaj silinsin mi?')) return;
+                    window.fetch('/api/mesajlar/' + deleteButton.dataset.messageId + '/sil', {
+                        method: 'POST'
+                    }).then(function (response) {
+                        if (!response.ok) {
+                            throw new Error('Mesaj silinemedi.');
+                        }
+                        updateMessageStatus('Mesaj silindi.', 'success');
+                        return fetchMessages();
+                    }).catch(function () {
+                        updateMessageStatus('Mesaj silinemedi.', 'danger');
+                    });
+                });
+            }
+            if (messageBulkDeleteButton) {
+                messageBulkDeleteButton.addEventListener('click', function () {
+                    const airportId = currentMessageAirportId();
+                    const confirmationText = airportId
+                        ? 'Seçili havalimanındaki mesajlar temizlenecek. Devam edilsin mi?'
+                        : 'Tüm görünür mesajlar temizlenecek. Devam edilsin mi?';
+                    if (!window.confirm(confirmationText)) return;
+                    window.fetch('/api/mesajlar/toplu-sil', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ airport_id: airportId })
+                    }).then(function (response) {
+                        return response.json().then(function (data) {
+                            return { ok: response.ok, data: data };
+                        });
+                    }).then(function (result) {
+                        if (!result.ok || !result.data || result.data.status !== 'success') {
+                            throw new Error('Toplu silme tamamlanamadı.');
+                        }
+                        updateMessageStatus((result.data.deleted_count || 0) + ' mesaj temizlendi.', 'success');
+                        return fetchMessages();
+                    }).catch(function () {
+                        updateMessageStatus('Toplu silme tamamlanamadı.', 'danger');
+                    });
+                });
+            }
+            fetchMessageBadge();
+            if (!messageBadgeTimer) {
+                messageBadgeTimer = window.setInterval(fetchMessageBadge, 30000);
+            }
         }
 
         const qrScanButton = document.getElementById('qrScanLaunchButton');
@@ -861,9 +1330,9 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
         const qrScanCloseButton = document.getElementById('qrScanCloseButton');
         const qrScanVideo = document.getElementById('qrScanVideo');
         const qrScanPlaceholder = document.getElementById('qrScanPlaceholder');
+        const qrScanPermissionAlert = document.getElementById('qrScanPermissionAlert');
         const qrScanOverlay = document.getElementById('qrScanOverlay');
         const qrScanStatus = document.getElementById('qrScanStatus');
-        const standaloneMedia = window.matchMedia('(display-mode: standalone)');
         const allowedQrPathPatterns = [
             /^\/asset\/\d+\/(quick|detay)$/i,
             /^\/kutu\/[^/?#]+$/i,
@@ -875,11 +1344,207 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
         let qrDetectBusy = false;
         let qrRedirectTimer = 0;
 
+        function updateMessageStatus(message, level) {
+            if (!messageStatus) return;
+            messageStatus.textContent = message;
+            messageStatus.dataset.level = level || 'info';
+        }
+
+        function updateMessageBadge(count) {
+            if (!messageBadge) return;
+            const safeCount = Math.max(Number(count) || 0, 0);
+            if (!safeCount) {
+                messageBadge.textContent = '';
+                messageBadge.classList.remove('is-visible');
+                messageBadge.setAttribute('aria-hidden', 'true');
+                if (messageLaunchButton) {
+                    messageLaunchButton.removeAttribute('data-message-badge');
+                }
+                return;
+            }
+            messageBadge.textContent = safeCount > 99 ? '99+' : String(safeCount);
+            messageBadge.classList.add('is-visible');
+            messageBadge.setAttribute('aria-hidden', 'false');
+            if (messageLaunchButton) {
+                messageLaunchButton.setAttribute('data-message-badge', messageBadge.textContent);
+            }
+        }
+
+        function syncMessageBadge(count) {
+            updateMessageBadge(count);
+        }
+
+        function setMessagePanelOpen(isOpen) {
+            if (!messagePanel) return;
+            messagePanel.hidden = !isOpen;
+            messagePanel.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+            if (messageLaunchButton) {
+                messageLaunchButton.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            }
+            document.body.classList.toggle('message-panel-open', Boolean(isOpen));
+            if (!isOpen && messagePollTimer) {
+                window.clearInterval(messagePollTimer);
+                messagePollTimer = 0;
+            }
+        }
+
+        function currentMessageAirportId() {
+            if (!messageAirportSelect || messageAirportSelect.hidden) {
+                return messageState.selectedAirportId || '';
+            }
+            return messageAirportSelect.value || '';
+        }
+
+        function renderMessageAirports(data) {
+            if (!messageAirportSelect) return;
+            const airports = Array.isArray(data.airports) ? data.airports : [];
+            messageState.airports = airports;
+            messageState.canViewAll = Boolean(data.can_view_all);
+            messageState.canModerate = Boolean(data.can_moderate);
+            messageState.selectedAirportId = data.selected_airport_id == null ? '' : String(data.selected_airport_id);
+
+            if (!airports.length) {
+                messageAirportSelect.hidden = true;
+                if (messageBulkDeleteButton) {
+                    messageBulkDeleteButton.hidden = true;
+                }
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+            if (messageState.canViewAll) {
+                const allOption = document.createElement('option');
+                allOption.value = '';
+                allOption.textContent = 'Tüm havalimanları';
+                fragment.appendChild(allOption);
+            }
+            airports.forEach(function (airport) {
+                const option = document.createElement('option');
+                option.value = String(airport.id);
+                option.textContent = airport.name;
+                fragment.appendChild(option);
+            });
+            messageAirportSelect.innerHTML = '';
+            messageAirportSelect.appendChild(fragment);
+            messageAirportSelect.hidden = !messageState.canViewAll && airports.length <= 1;
+            if (messageState.selectedAirportId && messageAirportSelect.querySelector('option[value="' + messageState.selectedAirportId + '"]')) {
+                messageAirportSelect.value = messageState.selectedAirportId;
+            } else if (!messageState.canViewAll && airports[0]) {
+                messageAirportSelect.value = String(airports[0].id);
+                messageState.selectedAirportId = messageAirportSelect.value;
+            }
+            if (messageBulkDeleteButton) {
+                messageBulkDeleteButton.hidden = !messageState.canModerate;
+            }
+        }
+
+        function renderMessages(messages) {
+            if (!messageList) return;
+            messageList.innerHTML = '';
+            if (!messages.length) {
+                const empty = document.createElement('div');
+                empty.className = 'message-empty';
+                empty.textContent = 'Bu kapsamda henüz ortak mesaj yok.';
+                messageList.appendChild(empty);
+                return;
+            }
+
+            messages.forEach(function (item) {
+                const card = document.createElement('article');
+                card.className = 'message-card';
+
+                const head = document.createElement('div');
+                head.className = 'message-card-head';
+
+                const meta = document.createElement('div');
+                const author = document.createElement('div');
+                author.className = 'message-author';
+                author.textContent = item.author || 'Sistem';
+                const info = document.createElement('div');
+                info.className = 'message-meta';
+                info.textContent = (item.airport_label || '-') + ' • ' + (item.created_at || '-');
+                meta.appendChild(author);
+                meta.appendChild(info);
+                head.appendChild(meta);
+
+                if (item.can_delete) {
+                    const deleteButton = document.createElement('button');
+                    deleteButton.type = 'button';
+                    deleteButton.className = 'message-delete';
+                    deleteButton.textContent = 'Sil';
+                    deleteButton.dataset.messageId = String(item.id);
+                    head.appendChild(deleteButton);
+                }
+
+                const body = document.createElement('div');
+                body.className = 'message-body';
+                body.textContent = item.text || '';
+
+                card.appendChild(head);
+                card.appendChild(body);
+                messageList.appendChild(card);
+            });
+            messageList.scrollTop = messageList.scrollHeight;
+        }
+
+        function fetchMessages() {
+            if (!messagePanel || messagePanel.hidden) return Promise.resolve();
+            const airportId = currentMessageAirportId();
+            const query = airportId ? ('?airport_id=' + encodeURIComponent(airportId)) : '';
+            updateMessageStatus('Mesajlar yenileniyor.', 'info');
+            return window.fetch('/api/mesajlar' + query)
+                .then(function (response) { return response.json(); })
+                .then(function (data) {
+                    if (!data || data.status !== 'success') {
+                        throw new Error('Mesajlar alınamadı.');
+                    }
+                    renderMessageAirports(data);
+                    renderMessages(Array.isArray(data.messages) ? data.messages : []);
+                    updateMessageBadge(data.new_count);
+                    updateMessageStatus('Mesajlar güncel.', 'success');
+                })
+                .catch(function () {
+                    updateMessageStatus('Mesajlar yüklenemedi. Lütfen tekrar deneyin.', 'danger');
+                });
+        }
+
+        function fetchMessageBadge() {
+            if (!messageLaunchButton) return Promise.resolve();
+            const airportId = currentMessageAirportId();
+            const params = new URLSearchParams();
+            params.set('summary', '1');
+            if (airportId) {
+                params.set('airport_id', airportId);
+            }
+            return window.fetch('/api/mesajlar?' + params.toString())
+                .then(function (response) { return response.json(); })
+                .then(function (data) {
+                    if (!data || data.status !== 'success') return;
+                    renderMessageAirports(data);
+                    syncMessageBadge(data.new_count);
+                })
+                .catch(function () {
+                    // Badge yüklenemediğinde sessiz devam.
+                });
+        }
+
         const updateQrStatus = function (message, level) {
             if (!qrScanStatus) return;
             qrScanStatus.textContent = message;
             qrScanStatus.dataset.level = level || "info";
         };
+
+        function hideQrPermissionAlert() {
+            if (!qrScanPermissionAlert) return;
+            qrScanPermissionAlert.hidden = true;
+            qrScanPermissionAlert.textContent = "";
+        }
+
+        function showQrPermissionAlert(message) {
+            if (!qrScanPermissionAlert) return;
+            qrScanPermissionAlert.textContent = message;
+            qrScanPermissionAlert.hidden = false;
+        }
 
         const setScanVisualState = function (state) {
             if (!qrScanPanel) return;
@@ -895,6 +1560,9 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
             }
             if (qrScanPlaceholder) {
                 qrScanPlaceholder.hidden = Boolean(isActive);
+            }
+            if (isActive) {
+                hideQrPermissionAlert();
             }
         };
 
@@ -1041,6 +1709,7 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
             qrScanPanel.setAttribute("aria-hidden", "false");
             setScanVisualState("preparing");
             toggleQrVideoState(false);
+            hideQrPermissionAlert();
             updateQrStatus("Hazırlanıyor.", "info");
             qrScanPlaceholder.textContent = "Kamera başlatılıyor.";
 
@@ -1077,7 +1746,7 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
                 qrDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
                 qrMediaStream = await navigator.mediaDevices.getUserMedia({
                     video: {
-                        facingMode: { ideal: "environment" },
+                        facingMode: "environment",
                     },
                     audio: false,
                 });
@@ -1091,37 +1760,62 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
             } catch (error) {
                 stopQrStream();
                 setScanVisualState("warning");
-                const message = error && error.name === "NotAllowedError"
-                    ? "Kamera izni reddedildi. Tarayıcı izinlerinden kamera erişimini açın."
-                    : "Kamera açılamadı. Cihaz veya tarayıcı bu özelliği desteklemiyor.";
+                const errorName = String((error && error.name) || "");
+                if (errorName === "NotAllowedError" || errorName === "PermissionDeniedError") {
+                    const deniedGuidance = "Kamera erişim izni reddedildi. Tarama yapabilmek için lütfen tarayıcınızın adres çubuğundaki kilit (🔒) simgesine veya ayarlar menüsüne tıklayarak kameraya izin verin.";
+                    updateQrStatus("Kamera erişim izni reddedildi.", "warning");
+                    if (qrScanPlaceholder) {
+                        qrScanPlaceholder.hidden = true;
+                    }
+                    showQrPermissionAlert(deniedGuidance);
+                    return;
+                }
+                if (errorName === "NotFoundError") {
+                    const noCameraMessage = "Cihazınızda kullanıma uygun bir kamera bulunamadı.";
+                    updateQrStatus(noCameraMessage, "warning");
+                    if (qrScanPlaceholder) {
+                        qrScanPlaceholder.hidden = true;
+                    }
+                    showQrPermissionAlert(noCameraMessage);
+                    return;
+                }
+                hideQrPermissionAlert();
+                const message = "Kamera açılamadı. Cihaz veya tarayıcı bu özelliği desteklemiyor.";
                 updateQrStatus(message, "warning");
                 qrScanPlaceholder.textContent = message;
             }
         };
 
-        const isStandaloneMode = function () {
-            return Boolean(
-                (standaloneMedia && standaloneMedia.matches) ||
-                window.navigator.standalone === true ||
-                document.body.getAttribute("data-display-mode") === "standalone"
-            );
-        };
-
         const syncQrScanButtonVisibility = function () {
             if (!qrScanButton) return;
-            const shouldShow = Boolean(mobileSidebarMedia.matches && isStandaloneMode());
+            const standaloneMode = isStandaloneMode();
+            const shouldShow = Boolean(mobileSidebarMedia.matches || standaloneMode);
             qrScanButton.hidden = !shouldShow;
-            qrScanButton.classList.toggle("is-visible", shouldShow);
+            qrScanButton.disabled = !shouldShow;
             if (!shouldShow) {
                 closeQrPanel();
             }
         };
 
         if (qrScanButton && qrScanPanel) {
-            qrScanButton.addEventListener("click", function () {
+            let qrLaunchHandledAt = 0;
+            const triggerQrPanel = function (event) {
+                if (qrScanButton.hidden || qrScanButton.disabled) return;
+                if (event) {
+                    if (event.cancelable) {
+                        event.preventDefault();
+                    }
+                    event.stopPropagation();
+                }
+                const now = Date.now();
+                if (now - qrLaunchHandledAt < 450) return;
+                qrLaunchHandledAt = now;
                 closeSidebar();
                 openQrPanel();
-            });
+            };
+
+            qrScanButton.addEventListener("touchstart", triggerQrPanel, { passive: false });
+            qrScanButton.addEventListener("click", triggerQrPanel);
             if (qrScanCloseButton) {
                 qrScanCloseButton.addEventListener("click", closeQrPanel);
             }
@@ -1140,11 +1834,6 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
                 mobileSidebarMedia.addEventListener("change", syncQrScanButtonVisibility);
             } else if (typeof mobileSidebarMedia.addListener === "function") {
                 mobileSidebarMedia.addListener(syncQrScanButtonVisibility);
-            }
-            if (standaloneMedia && typeof standaloneMedia.addEventListener === "function") {
-                standaloneMedia.addEventListener("change", syncQrScanButtonVisibility);
-            } else if (standaloneMedia && typeof standaloneMedia.addListener === "function") {
-                standaloneMedia.addListener(syncQrScanButtonVisibility);
             }
             window.addEventListener("pageshow", syncQrScanButtonVisibility);
         }

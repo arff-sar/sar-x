@@ -41,7 +41,7 @@ def test_draft_slider_not_visible_until_published(client, app):
 
     public_before = client.get("/")
     assert public_before.status_code == 200
-    assert "Taslak Hero İçeriği" not in public_before.data.decode("utf-8")
+    assert "https://example.com/hero.jpg" not in public_before.data.decode("utf-8")
 
     publish_resp = client.post(
         "/admin/homepage/slider/bulk",
@@ -57,7 +57,7 @@ def test_draft_slider_not_visible_until_published(client, app):
 
     public_after = client.get("/")
     assert public_after.status_code == 200
-    assert "Taslak Hero İçeriği" in public_after.data.decode("utf-8")
+    assert "https://example.com/hero.jpg" in public_after.data.decode("utf-8")
 
 
 def test_reorder_updates_slider_order_indices(client, app):

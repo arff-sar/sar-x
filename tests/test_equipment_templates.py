@@ -1,5 +1,7 @@
+import json
+
 from extensions import db
-from models import EquipmentTemplate, InventoryAsset, InventoryCategory
+from models import EquipmentTemplate, InventoryAsset, InventoryCategory, MaintenanceFormField, MaintenanceFormTemplate
 from tests.factories import HavalimaniFactory, KullaniciFactory
 
 
@@ -81,6 +83,14 @@ def test_equipment_template_form_renders_select_fields_and_hides_critical_label(
     assert 'id="instructionNameSelect"' in html
     assert 'id="instructionBrandSelect"' in html
     assert 'id="instructionModelSelect"' in html
+    assert 'data-maintenance-accordion="central-template"' in html
+    assert 'data-maintenance-accordion="central-catalog"' in html
+    assert 'data-maintenance-accordion="maintenance-form-create"' in html
+    assert 'data-maintenance-accordion="maintenance-form-delete"' in html
+    assert 'data-maintenance-accordion="central-template" open' not in html
+    assert 'data-maintenance-accordion="central-catalog" open' not in html
+    assert 'data-maintenance-accordion="maintenance-form-create" open' not in html
+    assert 'data-maintenance-accordion="maintenance-form-delete" open' not in html
     assert "Kritik Seviyesi" not in html
 
 
@@ -187,3 +197,221 @@ def test_non_owner_cannot_create_central_template_in_maintenance_panel(client, a
         data={"name": "Yetkisiz Şablon", "category": "Elektronik", "maintenance_period_days": 120},
     )
     assert response.status_code == 403
+
+
+def test_cannot_create_maintenance_form_when_no_equipment_template_exists(client, app):
+    admin = KullaniciFactory(rol="sahip")
+    db.session.add(admin)
+    db.session.commit()
+    _login(client, admin)
+
+    response = client.post(
+        "/bakim/ekipman-sablonlari",
+        data={
+            "form_action": "create_maintenance_form",
+            "form_equipment_template_id": "",
+            "periyot_turu": "gunluk",
+            "maintenance_steps_payload": json.dumps(["Kontrol adımı"]),
+        },
+        follow_redirects=True,
+    )
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Önce merkezi ekipman şablonu oluşturulmalıdır." in html
+    assert MaintenanceFormTemplate.query.count() == 0
+
+
+def test_can_create_maintenance_form_with_equipment_period_and_steps(client, app):
+    admin = KullaniciFactory(rol="sahip")
+    template = EquipmentTemplate(
+        name="Jeneratör",
+        category="Elektrik",
+        brand="CAT",
+        model_code="X1",
+        is_active=True,
+    )
+    db.session.add_all([admin, template])
+    db.session.commit()
+    _login(client, admin)
+
+    response = client.post(
+        "/bakim/ekipman-sablonlari",
+        data={
+            "form_action": "create_maintenance_form",
+            "form_equipment_template_id": template.id,
+            "periyot_turu": "aylik",
+            "maintenance_steps_payload": json.dumps(
+                [
+                    "  Yağ seviyesini kontrol et  ",
+                    "Filtreyi kontrol et",
+                    "yağ   seviyesini kontrol et",
+                ]
+            ),
+        },
+        follow_redirects=True,
+    )
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Bakım formu oluşturuldu." in html
+
+    created = MaintenanceFormTemplate.query.filter_by(
+        equipment_template_id=template.id,
+        period_type="aylik",
+        is_deleted=False,
+    ).first()
+    assert created is not None
+    assert created.name.startswith("Jeneratör - Aylık Bakım Formu")
+    assert len(created.fields) == 2
+    assert [field.label for field in created.fields] == ["Yağ seviyesini kontrol et", "Filtreyi kontrol et"]
+    assert [field.order_index for field in created.fields] == [1, 2]
+    assert all(field.field_type == "yes_no" for field in created.fields)
+
+
+def test_maintenance_form_requires_at_least_one_non_empty_step(client, app):
+    admin = KullaniciFactory(rol="sahip")
+    template = EquipmentTemplate(name="Kompresör", category="Mekanik", is_active=True)
+    db.session.add_all([admin, template])
+    db.session.commit()
+    _login(client, admin)
+
+    response = client.post(
+        "/bakim/ekipman-sablonlari",
+        data={
+            "form_action": "create_maintenance_form",
+            "form_equipment_template_id": template.id,
+            "periyot_turu": "gunluk",
+            "maintenance_steps_payload": json.dumps(["", "   "]),
+        },
+        follow_redirects=True,
+    )
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "En az 1 bakım adımı eklemelisiniz." in html
+    assert MaintenanceFormTemplate.query.filter_by(
+        equipment_template_id=template.id,
+        period_type="gunluk",
+        is_deleted=False,
+    ).count() == 0
+
+
+def test_duplicate_equipment_and_period_is_blocked_for_maintenance_form(client, app):
+    admin = KullaniciFactory(rol="sahip")
+    template = EquipmentTemplate(name="Kompresör", category="Mekanik", is_active=True)
+    existing_form = MaintenanceFormTemplate(
+        name="Kompresör - Günlük Bakım Formu",
+        equipment_template=template,
+        period_type="gunluk",
+        is_active=True,
+    )
+    db.session.add_all([admin, template, existing_form])
+    db.session.commit()
+    _login(client, admin)
+
+    response = client.post(
+        "/bakim/ekipman-sablonlari",
+        data={
+            "form_action": "create_maintenance_form",
+            "form_equipment_template_id": template.id,
+            "periyot_turu": "gunluk",
+            "maintenance_steps_payload": json.dumps(["Basınç göstergesini kontrol et"]),
+        },
+        follow_redirects=True,
+    )
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Bu ekipman ve periyot için bakım formu zaten kayıtlı." in html
+    assert MaintenanceFormTemplate.query.filter_by(
+        equipment_template_id=template.id,
+        period_type="gunluk",
+        is_deleted=False,
+    ).count() == 1
+
+
+def test_team_lead_can_create_and_delete_maintenance_form(client, app):
+    leader = KullaniciFactory(rol="yetkili")
+    template = EquipmentTemplate(name="Kule Fanı", category="Elektrik", is_active=True)
+    db.session.add_all([leader, template])
+    db.session.commit()
+    _login(client, leader)
+
+    create_response = client.post(
+        "/bakim/ekipman-sablonlari",
+        data={
+            "form_action": "create_maintenance_form",
+            "form_equipment_template_id": template.id,
+            "periyot_turu": "yillik",
+            "maintenance_steps_payload": json.dumps(["Kanatları kontrol et", "Elektrik bağlantısını kontrol et"]),
+        },
+        follow_redirects=True,
+    )
+    create_html = create_response.data.decode("utf-8")
+
+    assert create_response.status_code == 200
+    assert "Bakım formu oluşturuldu." in create_html
+
+    created = MaintenanceFormTemplate.query.filter_by(
+        equipment_template_id=template.id,
+        period_type="yillik",
+        is_deleted=False,
+    ).first()
+    assert created is not None
+    assert len(created.fields) == 2
+
+    delete_response = client.post(
+        "/bakim/ekipman-sablonlari",
+        data={
+            "form_action": "delete_maintenance_form",
+            "form_template_id": created.id,
+        },
+        follow_redirects=True,
+    )
+    delete_html = delete_response.data.decode("utf-8")
+
+    assert delete_response.status_code == 200
+    assert "Bakım formu silindi." in delete_html
+
+    deleted_form = MaintenanceFormTemplate.query.get(created.id)
+    assert deleted_form is not None
+    assert deleted_form.is_deleted is True
+    assert deleted_form.is_active is False
+    assert MaintenanceFormField.query.filter_by(form_template_id=created.id, is_deleted=False).count() == 0
+
+
+def test_team_member_cannot_create_or_delete_maintenance_form(client, app):
+    maintenance_member = KullaniciFactory(rol="bakim_sorumlusu")
+    template = EquipmentTemplate(name="Jeneratör", category="Elektrik", is_active=True)
+    existing_form = MaintenanceFormTemplate(
+        name="Jeneratör - Günlük Bakım Formu",
+        equipment_template=template,
+        period_type="gunluk",
+        is_active=True,
+    )
+    db.session.add_all([maintenance_member, template, existing_form])
+    db.session.commit()
+    _login(client, maintenance_member)
+
+    create_response = client.post(
+        "/bakim/ekipman-sablonlari",
+        data={
+            "form_action": "create_maintenance_form",
+            "form_equipment_template_id": template.id,
+            "periyot_turu": "aylik",
+            "maintenance_steps_payload": json.dumps(["Yakıt seviyesini kontrol et"]),
+        },
+        follow_redirects=False,
+    )
+    assert create_response.status_code == 403
+
+    delete_response = client.post(
+        "/bakim/ekipman-sablonlari",
+        data={
+            "form_action": "delete_maintenance_form",
+            "form_template_id": existing_form.id,
+        },
+        follow_redirects=False,
+    )
+    assert delete_response.status_code == 403

@@ -132,6 +132,20 @@
     color: var(--blue);
     border-color: rgba(30, 64, 175, 0.28);
 }
+.inventory-action-disabled {
+    opacity: .55;
+    cursor: not-allowed;
+}
+.inventory-mobile-card {
+    display: none;
+}
+.inventory-material-name {
+    color: var(--navy);
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.35;
+    word-break: break-word;
+}
 
 @media (max-width: 900px) {
     .inventory-page-actions {
@@ -189,14 +203,18 @@
     }
     #inventoryTable tr.inventory-summary-row {
         display: block;
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        background: #fff;
-        padding: 12px;
-        margin-bottom: 10px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        padding: 0;
+        margin-bottom: 12px;
+    }
+    #inventoryTable tbody tr.inventory-summary-row:hover,
+    #inventoryTable tbody tr.inventory-detail-row:hover {
+        background: transparent;
     }
     #inventoryTable tr.inventory-summary-row > td {
-        display: block;
+        display: none;
         border: 0;
         padding: 0;
         text-align: left;
@@ -205,60 +223,186 @@
         display: none;
     }
     #inventoryTable tr.inventory-summary-row .col-material {
+        display: block;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+    }
+    .inventory-material-name {
+        display: none;
+    }
+    .inventory-mobile-card {
+        display: grid;
+        gap: 9px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: #fff;
+        padding: 16px !important;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
+    .inventory-mobile-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+    }
+    .inventory-mobile-title {
         color: var(--navy);
         font-size: 14px;
         font-weight: 800;
-        line-height: 1.35;
+        line-height: 1.28;
         word-break: break-word;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-        margin-bottom: 8px;
     }
-    #inventoryTable tr.inventory-summary-row .col-airport,
-    #inventoryTable tr.inventory-summary-row .col-code,
-    #inventoryTable tr.inventory-summary-row .col-status,
-    #inventoryTable tr.inventory-summary-row .col-maintenance {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        margin-bottom: 6px;
-        font-size: 12px;
+    .inventory-mobile-subtitle {
+        margin-top: 1px;
+        font-size: 11.5px;
         color: var(--text3);
+        line-height: 1.3;
+        word-break: break-word;
     }
-    #inventoryTable tr.inventory-summary-row .col-airport::before {
-        content: "Birim";
-        font-weight: 700;
-        color: var(--text4);
+    .inventory-mobile-status {
+        flex-shrink: 0;
     }
-    #inventoryTable tr.inventory-summary-row .col-code::before {
-        content: "Kod";
-        font-weight: 700;
-        color: var(--text4);
+    .inventory-mobile-status .status-pill {
+        white-space: nowrap;
+        font-size: 10.5px;
+        padding: 4px 8px;
     }
-    #inventoryTable tr.inventory-summary-row .col-status::before {
-        content: "Durum";
-        font-weight: 700;
-        color: var(--text4);
+    .inventory-mobile-grid {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
     }
-    #inventoryTable tr.inventory-summary-row .col-maintenance::before {
-        content: "Bakım";
-        font-weight: 700;
+    .inventory-mobile-grid-item {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #fff;
+        padding: 7px 8px;
+        min-height: 0;
+        display: grid;
+        gap: 1px;
+        align-content: start;
+    }
+    .inventory-mobile-grid-item strong {
+        display: block;
+        font-size: 10px;
+        font-weight: 800;
         color: var(--text4);
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        line-height: 1.2;
+    }
+    .inventory-mobile-grid-item span {
+        display: block;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text2);
+        line-height: 1.28;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+    .inventory-mobile-grid-item.is-code span {
+        font-family: var(--mono);
+        font-size: 11px;
+        line-height: 1.24;
+    }
+    .inventory-mobile-chip-row {
+        display: flex !important;
+        flex-direction: row !important;
+        justify-content: flex-start !important;
+        align-items: stretch !important;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 8px 0 2px;
+        border-bottom: 1px solid #f1f5f9;
+        background: transparent;
+        margin: 0;
+        box-shadow: none;
+        min-width: 0;
+        width: 100%;
+        max-width: 100%;
+    }
+    .inventory-mobile-chip {
+        display: block;
+        flex: 1 1 calc(33.333% - 4px);
+        border: 0;
+        background: transparent;
+        border-radius: 0;
+        padding: 0;
+        color: #1e293b;
+        font-size: 12.8px;
+        font-weight: 600;
+        line-height: 1.28;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+        text-align: left;
+        max-width: none;
+        min-width: 0;
+    }
+    .inventory-mobile-chip-label {
+        display: block;
+        font-size: 11px;
+        font-weight: 700;
+        color: #64748b;
+        text-transform: uppercase;
+        margin: 0 0 1px;
+    }
+    .inventory-mobile-actions {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 72px minmax(0, 140px);
+        gap: 8px;
+        align-items: center;
+    }
+    .inventory-mobile-actions .row-btn {
+        min-height: 40px;
+        justify-content: center;
+        width: 100%;
+        margin: 0;
+        font-size: 11.5px;
+    }
+    .inventory-mobile-detail-link {
+        background: var(--navy);
+        color: #fff;
+        border-color: var(--navy);
+        width: 100%;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        padding: 0 4px;
+    }
+    .inventory-mobile-actions .inventory-qr-btn {
+        font-family: var(--mono);
+        font-size: 12px;
+    }
+    .inventory-mobile-detail-link:hover {
+        background: var(--navy2);
+        color: #fff;
+        border-color: var(--navy2);
+    }
+    .inventory-mobile-more-btn {
+        min-width: 0;
+        padding: 0 6px;
+        font-size: 10.8px;
+        line-height: 1.25;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        justify-content: center;
+    }
+    .inventory-mobile-more-btn .caret {
+        margin-left: 4px;
+        font-size: 10px;
     }
     #inventoryTable tr.inventory-summary-row .col-action {
-        margin-top: 8px;
-    }
-    #inventoryTable tr.inventory-summary-row .inventory-row-toggle {
-        width: 100%;
-        justify-content: space-between;
-        min-height: 40px;
+        display: none;
     }
     #inventoryTable tr.inventory-detail-row {
         display: none;
-        margin: -4px 0 10px;
+        margin: 0 0 12px;
     }
     #inventoryTable tr.inventory-detail-row.is-open {
         display: block;
@@ -270,6 +414,28 @@
     }
     .inventory-table-compact .col-action {
         text-align: left;
+    }
+    #inventoryTable tr.inventory-detail-row .inventory-detail-panel {
+        border-radius: 12px;
+        padding: 10px;
+        background: #fff;
+    }
+    #inventoryTable tr.inventory-detail-row .inventory-detail-header,
+    #inventoryTable tr.inventory-detail-row .inventory-detail-grid {
+        display: none;
+    }
+    #inventoryTable tr.inventory-detail-row .inventory-detail-content {
+        gap: 8px;
+    }
+    #inventoryTable tr.inventory-detail-row .inventory-detail-actions-group {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+    }
+    #inventoryTable tr.inventory-detail-row .inventory-detail-actions-group form,
+    #inventoryTable tr.inventory-detail-row .inventory-detail-actions-group .row-btn {
+        width: 100%;
     }
     .inventory-detail-header {
         flex-direction: column;
@@ -394,10 +560,83 @@
                 {% for m in malzemeler %}
                 {% set panel_id = 'inventory-row-' ~ loop.index %}
                 {% set linked_asset = m.linked_asset %}
+                {% set equipment_template = linked_asset.equipment_template if linked_asset and linked_asset.equipment_template else none %}
+                {% set brand_model = (((equipment_template.brand or '') ~ ' ' ~ (equipment_template.model_code or '')).strip() if equipment_template else '') %}
+                {% set category_label = equipment_template.category if equipment_template and equipment_template.category else '-' %}
+                {% set detail_url = url_for('inventory.quick_asset_view', asset_id=linked_asset.id) if linked_asset else '' %}
+                {% set demirbas_no = linked_asset.asset_tag if linked_asset and linked_asset.asset_tag else '-' %}
                 {% set maintenance_label = maintenance_label_tr(m.gelecek_bakim_tarihi, today=today) %}
                 <tr class="inventory-summary-row" data-search-text="{{ m.ad ~ ' ' ~ (m.seri_no or '') ~ ' ' ~ (m.havalimani.kodu if m.havalimani else '') ~ ' ' ~ (linked_asset.asset_code if linked_asset else '') }}">
                     <td class="col-no" data-label="Sıra"><strong>{{ loop.index }}</strong></td>
-                    <td class="col-material" data-label="Malzeme">{{ m.ad }}</td>
+                    <td class="col-material" data-label="Malzeme">
+                        <div class="inventory-material-name">{{ m.ad }}</div>
+                        <article class="inventory-mobile-card">
+                            <div class="inventory-mobile-head">
+                                <div>
+                                    <div class="inventory-mobile-title">{{ m.ad }}</div>
+                                    <div class="inventory-mobile-subtitle">{{ brand_model or '-' }}</div>
+                                </div>
+                                <div class="inventory-mobile-status">
+                                    <span class="status-pill {% if status_label_tr(m.durum) == 'Aktif' %}status-aktif{% else %}status-pasif{% endif %}">
+                                        {{ status_label_tr(m.durum) }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="inventory-mobile-grid">
+                                <div class="inventory-mobile-grid-item">
+                                    <strong>Birim</strong>
+                                    <span>{{ m.havalimani.kodu if m.havalimani else '-' }}</span>
+                                </div>
+                                <div class="inventory-mobile-grid-item is-code">
+                                    <strong>Kod</strong>
+                                    <span>{{ linked_asset.asset_code if linked_asset else '-' }}</span>
+                                </div>
+                                <div class="inventory-mobile-grid-item is-code">
+                                    <strong>Demirbaş No</strong>
+                                    <span>{{ demirbas_no }}</span>
+                                </div>
+                                <div class="inventory-mobile-grid-item">
+                                    <strong>Bakım</strong>
+                                    <span>{{ maintenance_label }}</span>
+                                </div>
+                            </div>
+                            <div class="inventory-mobile-chip-row">
+                                <span class="inventory-mobile-chip"><span class="inventory-mobile-chip-label">Kutu</span>{{ m.kutu.kodu if m.kutu else '-' }}</span>
+                                <span class="inventory-mobile-chip"><span class="inventory-mobile-chip-label">Seri</span>{{ m.seri_no or '-' }}</span>
+                                <span class="inventory-mobile-chip"><span class="inventory-mobile-chip-label">Kategori</span>{{ category_label }}</span>
+                            </div>
+                            <div class="inventory-mobile-actions">
+                                {% if detail_url %}
+                                <a href="{{ detail_url }}" class="row-btn inventory-mobile-detail-link">Detay</a>
+                                {% else %}
+                                <span class="row-btn inventory-mobile-detail-link" aria-disabled="true">Detay</span>
+                                {% endif %}
+                                {% if linked_asset and has_permission('qr.generate') %}
+                                <a
+                                    href="{{ url_for('inventory.qr_uret', asset_id=linked_asset.id) }}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="row-btn inventory-qr-btn"
+                                    data-mobile-qr="1"
+                                    aria-label="{{ m.ad }} için QR etiketini yeni sekmede aç"
+                                >QR</a>
+                                {% else %}
+                                <span class="row-btn inventory-qr-btn inventory-action-disabled" aria-disabled="true" title="Bu kayıt için QR etiketi yok">QR</span>
+                                {% endif %}
+                                <button
+                                    type="button"
+                                    class="row-btn inventory-mobile-more-btn inventory-row-toggle"
+                                    aria-expanded="false"
+                                    aria-controls="{{ panel_id }}"
+                                    data-accordion-target="{{ panel_id }}"
+                                    aria-label="Diğer işlemleri göster"
+                                >
+                                    Diğer işlemleri göster
+                                    <span class="caret">▼</span>
+                                </button>
+                            </div>
+                        </article>
+                    </td>
                     <td class="col-airport" data-label="Birim" title="{{ m.havalimani.ad if m.havalimani else 'Bilinmiyor' }}">
                         <span class="tag-navy" style="font-size: 10px; padding: 4px 8px;">{{ m.havalimani.kodu if m.havalimani else '-' }}</span>
                     </td>
@@ -618,6 +857,240 @@ function filterInventory() {
     });
 
     syncFilterPanelState();
+
+    const table = document.getElementById('inventoryTable');
+    if (table) {
+        table.addEventListener('click', function (event) {
+            const qrLink = event.target.closest('a.inventory-qr-btn[data-mobile-qr="1"]');
+            const mobileOrStandalone = window.matchMedia('(max-width: 900px)').matches
+                || document.body.getAttribute('data-display-mode') === 'standalone';
+
+            if (qrLink && mobileOrStandalone) {
+                event.preventDefault();
+                const qrHref = qrLink.getAttribute('href');
+                if (qrHref) {
+                    window.location.assign(qrHref);
+                }
+                return;
+            }
+
+            const disabledQr = event.target.closest('.inventory-qr-btn[aria-disabled="true"]');
+            if (disabledQr) {
+                event.preventDefault();
+                if (typeof window.showToast === 'function') {
+                    window.showToast({
+                        type: 'warning',
+                        title: 'QR kullanılamıyor',
+                        message: 'Bu kayıt için QR etiketi oluşturulmamış.',
+                        duration: 2600,
+                    });
+                }
+            }
+        });
+    }
+})();
+
+(function () {
+    const OFFLINE_DB_NAME = 'SAR_Offline_DB';
+    const OFFLINE_DB_VERSION = 2;
+    const OFFLINE_STORE_NAME = 'bekleyen_bakimlar';
+    const OFFLINE_SYNC_TAG = 'bakim-senkronize-et';
+    const maintenanceForms = Array.from(document.querySelectorAll('form[action*="/bakim-kaydet/"]'));
+
+    if (!maintenanceForms.length || typeof window.indexedDB === 'undefined') {
+        return;
+    }
+
+    const showQueueToast = function (type, title, message, duration) {
+        if (typeof window.showToast !== 'function') return;
+        window.showToast({
+            type: type,
+            title: title,
+            message: message,
+            duration: duration || 3200,
+        });
+    };
+
+    const parseMaterialId = function (action) {
+        const match = String(action || '').match(/\/bakim-kaydet\/(\d+)/);
+        return match ? parseInt(match[1], 10) : 0;
+    };
+
+    const createOfflineRequestId = function () {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+            return window.crypto.randomUUID();
+        }
+        const randomPart = Math.random().toString(36).slice(2, 12);
+        return 'offline-' + Date.now() + '-' + randomPart;
+    };
+
+    const openOfflineDb = function () {
+        return new Promise(function (resolve, reject) {
+            const request = window.indexedDB.open(OFFLINE_DB_NAME, OFFLINE_DB_VERSION);
+            request.onupgradeneeded = function () {
+                const db = request.result;
+                if (!db.objectStoreNames.contains(OFFLINE_STORE_NAME)) {
+                    db.createObjectStore(OFFLINE_STORE_NAME, { keyPath: 'id', autoIncrement: true });
+                }
+            };
+            request.onsuccess = function () {
+                resolve(request.result);
+            };
+            request.onerror = function () {
+                reject(request.error || new Error('IndexedDB açılamadı.'));
+            };
+        });
+    };
+
+    const transactionResult = function (db, mode, executor) {
+        return new Promise(function (resolve, reject) {
+            const tx = db.transaction(OFFLINE_STORE_NAME, mode);
+            const store = tx.objectStore(OFFLINE_STORE_NAME);
+            let req;
+            try {
+                req = executor(store);
+            } catch (error) {
+                reject(error);
+                return;
+            }
+            tx.oncomplete = function () {
+                resolve(req ? req.result : undefined);
+            };
+            tx.onerror = function () {
+                reject(tx.error || new Error('IndexedDB transaction hatası.'));
+            };
+            tx.onabort = function () {
+                reject(tx.error || new Error('IndexedDB transaction iptal edildi.'));
+            };
+        });
+    };
+
+    const registerBackgroundSync = async function () {
+        if (!('serviceWorker' in navigator)) return false;
+        try {
+            const registration = await navigator.serviceWorker.ready;
+            if (!registration || !registration.sync || typeof registration.sync.register !== 'function') {
+                return false;
+            }
+            await registration.sync.register(OFFLINE_SYNC_TAG);
+            return true;
+        } catch (_error) {
+            return false;
+        }
+    };
+
+    const flushQueueFallback = async function () {
+        if (!navigator.onLine) return;
+        if (!('serviceWorker' in navigator)) return;
+        const syncRegistered = await registerBackgroundSync();
+        if (syncRegistered) return;
+
+        const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+        const csrfToken = csrfMeta ? String(csrfMeta.getAttribute('content') || '').trim() : '';
+        if (!csrfToken) return;
+
+        const db = await openOfflineDb();
+        try {
+            const records = await transactionResult(db, 'readonly', function (store) {
+                return store.getAll();
+            });
+            if (!Array.isArray(records) || !records.length) return;
+
+            let syncedCount = 0;
+            for (const item of records) {
+                const params = new URLSearchParams();
+                params.append('not', String(item.not || 'Envanter panelinden hızlı bakım kaydı.'));
+                params.append('maliyet', String(item.maliyet || '0'));
+                if (item.gelecek_bakim) {
+                    params.append('gelecek_bakim', String(item.gelecek_bakim));
+                }
+
+                const response = await fetch('/bakim-kaydet/' + item.malzeme_id, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRFToken': csrfToken,
+                        'X-SARX-Offline-Sync': '1',
+                        'X-SARX-Offline-Request-Id': String(item.offline_request_id || ''),
+                    },
+                    body: params,
+                });
+
+                if (response.ok || response.redirected) {
+                    await transactionResult(db, 'readwrite', function (store) {
+                        return store.delete(item.id);
+                    });
+                    syncedCount += 1;
+                }
+            }
+
+            if (syncedCount > 0) {
+                showQueueToast('success', 'Senkronizasyon tamamlandı', syncedCount + ' çevrimdışı bakım kaydı sisteme işlendi.');
+            }
+        } finally {
+            db.close();
+        }
+    };
+
+    const queueMaintenanceEntry = async function (form) {
+        const action = form.getAttribute('action') || '';
+        const materialId = parseMaterialId(action);
+        if (!materialId) {
+            throw new Error('Malzeme bilgisi çözümlenemedi.');
+        }
+
+        const formData = new FormData(form);
+        const payload = {
+            malzeme_id: materialId,
+            not: String(formData.get('not') || 'Envanter panelinden hızlı bakım kaydı.').trim(),
+            maliyet: String(formData.get('maliyet') || '0').trim(),
+            gelecek_bakim: String(formData.get('gelecek_bakim') || '').trim(),
+            offline_request_id: createOfflineRequestId(),
+            queued_at: Date.now(),
+        };
+
+        const db = await openOfflineDb();
+        try {
+            await transactionResult(db, 'readwrite', function (store) {
+                return store.add(payload);
+            });
+        } finally {
+            db.close();
+        }
+
+        await registerBackgroundSync();
+    };
+
+    maintenanceForms.forEach(function (form) {
+        form.addEventListener('submit', async function (event) {
+            if (navigator.onLine) return;
+            event.preventDefault();
+            try {
+                await queueMaintenanceEntry(form);
+                showQueueToast(
+                    'warning',
+                    'Bağlantı yok',
+                    'Bakım kaydı cihazda saklandı. Bağlantı gelince otomatik senkronize edilecek.',
+                    4400
+                );
+            } catch (_error) {
+                showQueueToast('danger', 'Kayıt saklanamadı', 'Çevrimdışı bakım kaydı cihazda saklanamadı.');
+            }
+        });
+    });
+
+    window.addEventListener('online', function () {
+        flushQueueFallback().catch(function () {
+            return null;
+        });
+    });
+
+    if (navigator.onLine) {
+        flushQueueFallback().catch(function () {
+            return null;
+        });
+    }
 })();
 </script>
 {% endblock %}

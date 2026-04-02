@@ -72,6 +72,8 @@ class Kullanici(db.Model, UserMixin, TimestampMixin, SoftDeleteMixin):
     kilo_kg = db.Column(db.Integer)
     ayak_numarasi = db.Column(db.Float)
     beden = db.Column(db.String(8))
+    ust_beden = db.Column(db.String(8))
+    alt_beden = db.Column(db.String(8))
     
     sertifika_tarihi = db.Column(db.Date)
     uzmanlik_alani = db.Column(db.String(100))
@@ -93,6 +95,24 @@ class Kullanici(db.Model, UserMixin, TimestampMixin, SoftDeleteMixin):
         backref='user',
         lazy=True,
         cascade="all, delete-orphan",
+    )
+    email_change_tokens = db.relationship(
+        'EmailChangeToken',
+        backref='user',
+        lazy=True,
+        cascade='all, delete-orphan',
+    )
+    notification_preferences = db.relationship(
+        'UserNotificationPreference',
+        backref='user',
+        lazy=True,
+        cascade='all, delete-orphan',
+    )
+    push_device_subscriptions = db.relationship(
+        'PushDeviceSubscription',
+        backref='user',
+        lazy=True,
+        cascade='all, delete-orphan',
     )
 
     @property
@@ -312,6 +332,100 @@ class PasskeyCredential(db.Model, TimestampMixin):
     last_used_at = db.Column(db.DateTime, nullable=True, index=True)
 
 
+class EmailChangeToken(db.Model, TimestampMixin):
+    __tablename__ = "email_change_token"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("kullanici.id"), nullable=False, index=True)
+    old_email = db.Column(db.String(120), nullable=False)
+    new_email = db.Column(db.String(120), nullable=False)
+    token_hash = db.Column(db.String(128), nullable=False, unique=True, index=True)
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)
+    consumed_at = db.Column(db.DateTime, nullable=True, index=True)
+    requested_from_ip = db.Column(db.String(45), nullable=True)
+    requested_user_agent = db.Column(db.String(80), nullable=True)
+
+
+class UserNotificationPreference(db.Model, TimestampMixin):
+    __tablename__ = "user_notification_preference"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("kullanici.id"), nullable=False, index=True)
+    preference_key = db.Column(db.String(64), nullable=False, index=True)
+    is_enabled = db.Column(db.Boolean, nullable=False, default=True, index=True)
+
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "preference_key", name="uq_user_notification_preference_user_key"),
+    )
+
+
+class PushDeviceSubscription(db.Model, TimestampMixin):
+    __tablename__ = "push_device_subscription"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("kullanici.id"), nullable=False, index=True)
+    device_id = db.Column(db.String(64), nullable=False, index=True)
+    platform = db.Column(db.String(20), nullable=False, default="mobile")
+    user_agent = db.Column(db.String(80), nullable=True)
+    notification_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    revoked_at = db.Column(db.DateTime, nullable=True)
+    last_seen_at = db.Column(db.DateTime, nullable=True, index=True)
+
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "device_id", name="uq_push_device_subscription_user_device"),
+    )
+
+
+class AirportMessage(db.Model, TimestampMixin):
+    __tablename__ = "airport_message"
+
+    id = db.Column(db.Integer, primary_key=True)
+    havalimani_id = db.Column(db.Integer, db.ForeignKey("havalimani.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("kullanici.id"), nullable=False, index=True)
+    message_text = db.Column(db.Text, nullable=False)
+
+    havalimani = db.relationship("Havalimani", backref=db.backref("airport_messages", lazy=True))
+    user = db.relationship("Kullanici", backref=db.backref("airport_messages", lazy=True))
+
+    __table_args__ = (
+        db.Index("ix_airport_message_created_at", "created_at"),
+    )
+
+
+class ErrorReport(db.Model, TimestampMixin):
+    __tablename__ = "error_report"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("kullanici.id"), nullable=True, index=True)
+    havalimani_id = db.Column(db.Integer, db.ForeignKey("havalimani.id"), nullable=True, index=True)
+    role_key = db.Column(db.String(40), nullable=True, index=True)
+    path = db.Column(db.String(255), nullable=False)
+    error_code = db.Column(db.String(32), nullable=False, index=True)
+    request_id = db.Column(db.String(64), nullable=True, index=True)
+    error_summary = db.Column(db.String(255), nullable=False)
+
+    user = db.relationship("Kullanici", backref=db.backref("error_reports", lazy=True))
+    havalimani = db.relationship("Havalimani", backref=db.backref("error_reports", lazy=True))
+
+    __table_args__ = (
+        db.Index("ix_error_report_created_at", "created_at"),
+    )
+
+
+class IslemLogArchive(db.Model, TimestampMixin):
+    __tablename__ = "islem_log_archive"
+
+    id = db.Column(db.Integer, primary_key=True)
+    source_log_id = db.Column(db.Integer, nullable=False, index=True)
+    archive_scope = db.Column(db.String(20), nullable=False, index=True)
+    payload_json = db.Column(db.Text, nullable=False)
+    archived_by_user_id = db.Column(db.Integer, db.ForeignKey("kullanici.id"), nullable=False, index=True)
+    archived_at = db.Column(db.DateTime, nullable=False, default=get_tr_now, index=True)
+
+    archived_by = db.relationship("Kullanici", backref=db.backref("archived_log_batches", lazy=True))
+
+
 class Role(db.Model, TimestampMixin):
     __tablename__ = 'role'
 
@@ -423,8 +537,16 @@ class MaintenanceFormTemplate(db.Model, TimestampMixin, SoftDeleteMixin):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False, unique=True)
     description = db.Column(db.Text)
+    equipment_template_id = db.Column(
+        db.Integer,
+        db.ForeignKey('equipment_template.id'),
+        nullable=True,
+        index=True,
+    )
+    period_type = db.Column(db.String(20), nullable=True, index=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
 
+    equipment_template = db.relationship('EquipmentTemplate', foreign_keys=[equipment_template_id])
     fields = db.relationship(
         'MaintenanceFormField',
         backref='form_template',
@@ -1179,9 +1301,10 @@ class PPERecord(db.Model, TimestampMixin, SoftDeleteMixin):
     __tablename__ = 'ppe_record'
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('kullanici.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('kullanici.id'), nullable=True, index=True)
     airport_id = db.Column(db.Integer, db.ForeignKey('havalimani.id'), nullable=False, index=True)
     assignment_id = db.Column(db.Integer, db.ForeignKey('assignment_record.id'), nullable=True, index=True)
+    ppe_assignment_id = db.Column(db.Integer, db.ForeignKey('ppe_assignment_record.id'), nullable=True, index=True)
     category = db.Column(db.String(80), index=True)
     subcategory = db.Column(db.String(120), index=True)
     item_name = db.Column(db.String(160), nullable=False)
@@ -1211,6 +1334,7 @@ class PPERecord(db.Model, TimestampMixin, SoftDeleteMixin):
     user = db.relationship('Kullanici', foreign_keys=[user_id], backref='ppe_records', lazy=True)
     airport = db.relationship('Havalimani', backref='ppe_records', lazy=True)
     assignment = db.relationship('AssignmentRecord', backref='ppe_records', lazy=True)
+    ppe_assignment = db.relationship('PPEAssignmentRecord', backref='linked_ppe_records', lazy=True)
     created_by = db.relationship('Kullanici', foreign_keys=[created_by_id], lazy=True)
     events = db.relationship(
         'PPERecordEvent',
@@ -1245,6 +1369,65 @@ class PPERecordEvent(db.Model, TimestampMixin):
     created_by_id = db.Column(db.Integer, db.ForeignKey('kullanici.id'), nullable=True, index=True)
 
     created_by = db.relationship('Kullanici', lazy=True)
+
+
+class PPEAssignmentRecord(db.Model, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = 'ppe_assignment_record'
+
+    id = db.Column(db.Integer, primary_key=True)
+    assignment_no = db.Column(db.String(40), nullable=False, unique=True, index=True)
+    assignment_date = db.Column(db.Date, default=lambda: get_tr_now().date(), nullable=False, index=True)
+    delivered_by_id = db.Column(db.Integer, db.ForeignKey('kullanici.id'), nullable=True, index=True)
+    delivered_by_name = db.Column(db.String(160), nullable=False)
+    recipient_user_id = db.Column(db.Integer, db.ForeignKey('kullanici.id'), nullable=False, index=True)
+    airport_id = db.Column(db.Integer, db.ForeignKey('havalimani.id'), nullable=True, index=True)
+    note = db.Column(db.Text)
+    status = db.Column(db.String(20), default='active', nullable=False, index=True)
+    returned_at = db.Column(db.DateTime, nullable=True)
+    returned_by_id = db.Column(db.Integer, db.ForeignKey('kullanici.id'), nullable=True, index=True)
+    returned_note = db.Column(db.Text)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('kullanici.id'), nullable=True, index=True)
+    signed_document_key = db.Column(db.String(255))
+    signed_document_url = db.Column(db.String(500))
+    signed_document_name = db.Column(db.String(180))
+    signed_document_drive_file_id = db.Column(db.String(255))
+    signed_document_drive_folder_id = db.Column(db.String(255))
+
+    delivered_by = db.relationship('Kullanici', foreign_keys=[delivered_by_id], lazy=True)
+    recipient_user = db.relationship('Kullanici', foreign_keys=[recipient_user_id], lazy=True)
+    returned_by = db.relationship('Kullanici', foreign_keys=[returned_by_id], lazy=True)
+    created_by = db.relationship('Kullanici', foreign_keys=[created_by_id], lazy=True)
+    airport = db.relationship('Havalimani', backref='ppe_assignment_records', lazy=True)
+    items = db.relationship(
+        'PPEAssignmentItem',
+        backref='assignment',
+        lazy=True,
+        cascade='all, delete-orphan',
+    )
+
+    @property
+    def active_item_count(self):
+        return sum(1 for item in self.items if not item.is_deleted)
+
+
+class PPEAssignmentItem(db.Model, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = 'ppe_assignment_item'
+
+    id = db.Column(db.Integer, primary_key=True)
+    assignment_id = db.Column(db.Integer, db.ForeignKey('ppe_assignment_record.id'), nullable=False, index=True)
+    ppe_record_id = db.Column(db.Integer, db.ForeignKey('ppe_record.id'), nullable=True, index=True)
+    item_name = db.Column(db.String(160), nullable=False)
+    category = db.Column(db.String(80), index=True)
+    subcategory = db.Column(db.String(120), index=True)
+    brand = db.Column(db.String(120))
+    model_name = db.Column(db.String(120))
+    serial_no = db.Column(db.String(120))
+    size_info = db.Column(db.String(80))
+    quantity = db.Column(db.Float, nullable=False, default=1)
+    unit = db.Column(db.String(30), default='adet')
+    note = db.Column(db.Text)
+
+    ppe_record = db.relationship('PPERecord', backref='ppe_assignment_items', lazy=True)
 
 # --- CMS MODELLERİ ---
 

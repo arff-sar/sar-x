@@ -3,7 +3,6 @@
 
 {% block extra_css %}
 <style>
-  .template-grid { display:grid; grid-template-columns:minmax(0, 1.02fr) minmax(0, .98fr); gap:18px; }
   .template-form-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
   .template-form-grid .form-group.full { grid-column:1 / -1; }
   .template-form-note { margin-top:4px; font-size:11.5px; color:var(--text3); line-height:1.5; }
@@ -11,9 +10,136 @@
   .template-kicker { font-size:10.5px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
   .template-meta { margin-top:5px; font-size:11.5px; color:var(--text3); line-height:1.5; }
   .template-links { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+
+  .maintenance-accordion-stack { display:grid; gap:14px; }
+  .maintenance-accordion {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.02);
+    overflow: hidden;
+  }
+  .maintenance-accordion > summary {
+    list-style: none;
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:12px;
+    padding:16px 20px;
+    cursor:pointer;
+    user-select:none;
+    background: var(--surface);
+    border-bottom: 1px solid transparent;
+  }
+  .maintenance-accordion > summary::-webkit-details-marker { display:none; }
+  .maintenance-accordion[open] > summary { border-bottom-color: var(--border); }
+  .maintenance-accordion-title { font-size:16px; font-weight:800; color:var(--navy); }
+  .maintenance-accordion-subtitle { margin-top:4px; font-size:12.5px; color:var(--text3); line-height:1.55; }
+  .maintenance-accordion-chevron {
+    margin-left:auto;
+    color:var(--text4);
+    font-size:14px;
+    line-height:1;
+    transition:transform .18s ease;
+  }
+  .maintenance-accordion[open] .maintenance-accordion-chevron { transform: rotate(180deg); }
+  .maintenance-accordion-body { padding:24px; }
+
+  .maintenance-form-grid { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:14px; }
+  .maintenance-form-grid .full { grid-column:1 / -1; }
+  .maintenance-preview {
+    border:1px dashed var(--border-dark);
+    border-radius:12px;
+    background:var(--surface2);
+    padding:10px 12px;
+    font-size:12px;
+    color:var(--text3);
+    line-height:1.5;
+    margin-bottom:12px;
+  }
+  .maintenance-preview strong { color:var(--navy); }
+
+  .step-builder {
+    border:1px solid var(--border);
+    border-radius:12px;
+    background:var(--surface2);
+    padding:12px;
+    display:grid;
+    gap:10px;
+  }
+  .step-builder-row {
+    display:grid;
+    grid-template-columns:minmax(0, 1fr) auto;
+    gap:10px;
+    align-items:center;
+  }
+  .step-list {
+    display:grid;
+    gap:8px;
+    margin:0;
+    padding:0;
+    list-style:none;
+  }
+  .step-item {
+    border:1px solid var(--border);
+    background:#fff;
+    border-radius:10px;
+    padding:8px 10px;
+    display:grid;
+    grid-template-columns:auto minmax(0, 1fr) auto;
+    align-items:center;
+    gap:10px;
+  }
+  .step-order {
+    width:24px;
+    height:24px;
+    border-radius:999px;
+    background:var(--surface3);
+    color:var(--text2);
+    font-size:11px;
+    font-weight:800;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .step-text {
+    font-size:13px;
+    color:var(--text2);
+    line-height:1.45;
+    word-break:break-word;
+  }
+  .step-actions { display:flex; align-items:center; gap:6px; }
+  .step-action-btn {
+    min-height:30px;
+    min-width:30px;
+    border:1px solid var(--border-dark);
+    border-radius:7px;
+    background:#fff;
+    color:var(--text2);
+    font-size:12px;
+    font-weight:700;
+    cursor:pointer;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    padding:0 8px;
+  }
+  .step-action-btn:hover { background:var(--surface2); }
+  .step-empty {
+    border:1px dashed var(--border-dark);
+    border-radius:10px;
+    padding:12px;
+    text-align:center;
+    color:var(--text3);
+    font-size:12px;
+    background:#fff;
+  }
+  .maintenance-form-list { margin-top:14px; }
+
   @media (max-width: 980px) {
-    .template-grid,
-    .template-form-grid { grid-template-columns:1fr; }
+    .template-form-grid,
+    .maintenance-form-grid,
+    .step-builder-row { grid-template-columns:1fr; }
   }
 </style>
 {% endblock %}
@@ -26,18 +152,20 @@
     </div>
 </div>
 
-<div class="template-grid">
-    {% if giren_user.is_sahip %}
-    <div class="panel">
-        <div class="panel-header">
+<div class="maintenance-accordion-stack" data-maintenance-accordion-root>
+    <details class="maintenance-accordion" data-maintenance-accordion="central-template">
+        <summary>
             <div>
-                <div class="panel-title">Merkezi Şablon Oluştur</div>
-                <div class="panel-subtitle">Ekipman tipini, bakım periyodunu ve ilk talimat alanlarını tek formda tanımlayın.</div>
+                <div class="maintenance-accordion-title">Merkezi Şablon Oluştur</div>
+                <div class="maintenance-accordion-subtitle">Ekipman tipini, bakım periyodunu ve ilk talimat alanlarını tek formda tanımlayın.</div>
             </div>
-        </div>
-        <div class="panel-body">
+            <span class="maintenance-accordion-chevron" aria-hidden="true">▾</span>
+        </summary>
+        <div class="maintenance-accordion-body">
+            {% if giren_user.is_sahip %}
             <form method="POST" action="{{ url_for('maintenance.ekipman_sablonlari') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="form_action" value="save_instruction_template">
                 <input type="hidden" name="selected_template_id" id="instructionTemplateId">
                 <div class="template-form-grid">
                     <div class="form-group">
@@ -125,91 +253,277 @@
             {% if not selectable_catalog %}
             <div class="template-form-note">Bakım şablonu oluşturmak için önce ilgili ekipmanı envantere ekleyin.</div>
             {% endif %}
+            {% else %}
+            <div class="template-form-note">Merkezi şablon oluşturma işlemi yalnızca sistem sorumlusu tarafından yapılabilir.</div>
+            {% endif %}
         </div>
-    </div>
-    {% endif %}
+    </details>
 
-    <div class="panel">
-        <div class="panel-header">
+    <details class="maintenance-accordion" data-maintenance-accordion="central-catalog">
+        <summary>
             <div>
-                <div class="panel-title">Merkezi Katalog</div>
-                <div class="panel-subtitle">Bakım talimatı, aktif checklist ve sahaya kopyalama akışını aynı tabloda yönetin.</div>
+                <div class="maintenance-accordion-title">Merkezi Katalog</div>
+                <div class="maintenance-accordion-subtitle">Bakım talimatı, aktif checklist ve sahaya kopyalama akışını aynı tabloda yönetin.</div>
+            </div>
+            <span class="maintenance-accordion-chevron" aria-hidden="true">▾</span>
+        </summary>
+        <div class="maintenance-accordion-body">
+            <div class="table-container">
+                <table class="data-table template-table">
+                    <thead>
+                        <tr>
+                            <th>Şablon</th>
+                            <th>Bakım Bilgisi</th>
+                            <th>İşlem</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in templates %}
+                        <tr>
+                            <td>
+                                <div class="template-kicker">{{ t.category or 'Kategori yok' }}</div>
+                                <div style="margin-top:4px; font-weight:800; color:var(--navy);">{{ t.name }}</div>
+                                <div class="template-meta">{{ t.brand or '-' }}{% if t.model_code %} • {{ t.model_code }}{% endif %}</div>
+                            </td>
+                            <td>
+                                <div class="template-meta">Periyot: {{ t.maintenance_period_days or '-' }} gün</div>
+                                <div class="template-meta">Checklist: {{ t.default_maintenance_form.name if t.default_maintenance_form else 'Atanmadı' }}</div>
+                                <div class="template-meta">Talimat: {{ t.maintenance_instruction.title if t.maintenance_instruction else 'Tanımlanmadı' }}</div>
+                                {% if t.maintenance_instruction and t.maintenance_instruction.manual_url %}
+                                <div class="template-links">
+                                    <a href="{{ t.maintenance_instruction.manual_url }}" target="_blank" rel="noopener" class="row-btn">Kılavuz</a>
+                                    {% if t.maintenance_instruction.visual_url %}
+                                    <a href="{{ t.maintenance_instruction.visual_url }}" target="_blank" rel="noopener" class="row-btn">Görsel</a>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div style="display:grid; gap:10px;">
+                                    {% if giren_user.is_sahip %}
+                                    <a href="{{ url_for('maintenance.ekipman_talimat', template_id=t.id) }}" class="row-btn" style="justify-content:center;">Talimatı Düzenle</a>
+                                    {% endif %}
+                                    {% if giren_user.is_sahip or giren_user.is_airport_manager %}
+                                    <form method="POST" action="{{ url_for('inventory.merkezi_sablondan_envantere_ekle', template_id=t.id) }}" style="display:grid; gap:6px;">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        {% if giren_user.is_sahip %}
+                                        <select name="havalimani_id" class="form-control" style="margin-bottom:0;">
+                                            {% for h in airports %}
+                                            <option value="{{ h.id }}">{{ h.kodu }} - {{ h.ad }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        {% endif %}
+                                        <select name="kutu_id" class="form-control" style="margin-bottom:0;" required>
+                                            <option value="">Kutu seçin</option>
+                                            {% for airport in airports %}
+                                            {% for box in airport.kutular if not box.is_deleted %}
+                                            <option value="{{ box.id }}">{{ box.kodu }} · {{ airport.kodu }}</option>
+                                            {% endfor %}
+                                            {% endfor %}
+                                        </select>
+                                        <input type="text" name="seri_no" class="form-control" placeholder="Seri No" style="margin-bottom:0;">
+                                        <button class="row-btn" style="justify-content:center;">Birime Ekle</button>
+                                    </form>
+                                    {% else %}
+                                    <span style="font-size:11px; color:var(--text4);">Birime ekleme için yetki gerekir.</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="3" style="text-align:center; color:var(--text3);">Merkezi şablon bulunmuyor.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
         </div>
-        <div class="table-container">
-            <table class="data-table template-table">
-                <thead>
-                    <tr>
-                        <th>Şablon</th>
-                        <th>Bakım Bilgisi</th>
-                        <th>İşlem</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for t in templates %}
-                    <tr>
-                        <td>
-                            <div class="template-kicker">{{ t.category or 'Kategori yok' }}</div>
-                            <div style="margin-top:4px; font-weight:800; color:var(--navy);">{{ t.name }}</div>
-                            <div class="template-meta">{{ t.brand or '-' }}{% if t.model_code %} • {{ t.model_code }}{% endif %}</div>
-                        </td>
-                        <td>
-                            <div class="template-meta">Periyot: {{ t.maintenance_period_days or '-' }} gün</div>
-                            <div class="template-meta">Checklist: {{ t.default_maintenance_form.name if t.default_maintenance_form else 'Atanmadı' }}</div>
-                            <div class="template-meta">Talimat: {{ t.maintenance_instruction.title if t.maintenance_instruction else 'Tanımlanmadı' }}</div>
-                            {% if t.maintenance_instruction and t.maintenance_instruction.manual_url %}
-                            <div class="template-links">
-                                <a href="{{ t.maintenance_instruction.manual_url }}" target="_blank" rel="noopener" class="row-btn">Kılavuz</a>
-                                {% if t.maintenance_instruction.visual_url %}
-                                <a href="{{ t.maintenance_instruction.visual_url }}" target="_blank" rel="noopener" class="row-btn">Görsel</a>
-                                {% endif %}
+    </details>
+
+    <details class="maintenance-accordion" data-maintenance-accordion="maintenance-form-create">
+        <summary>
+            <div>
+                <div class="maintenance-accordion-title">Bakım Formu Oluştur</div>
+                <div class="maintenance-accordion-subtitle">Merkezi ekipman şablonundan ekipman seçerek periyot bazlı bakım adımlarını tanımlayın.</div>
+            </div>
+            <span class="maintenance-accordion-chevron" aria-hidden="true">▾</span>
+        </summary>
+        <div class="maintenance-accordion-body">
+            {% if can_manage_maintenance_forms %}
+            <form method="POST" action="{{ url_for('maintenance.ekipman_sablonlari') }}" id="maintenanceFormCreateForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="form_action" value="create_maintenance_form">
+                <input type="hidden" name="maintenance_steps_payload" id="maintenanceStepsPayload" value="[]">
+
+                <div class="maintenance-form-grid">
+                    <div class="form-group">
+                        <label>Ekipman Seç</label>
+                        <select name="form_equipment_template_id" id="maintenanceFormEquipmentSelect" class="form-control" required {% if not maintenance_form_equipment_options %}disabled{% endif %}>
+                            <option value="">Ekipman seçin</option>
+                            {% for option in maintenance_form_equipment_options %}
+                            <option value="{{ option.id }}" data-equipment-name="{{ option.name }}">
+                                {{ option.name }}{% if option.brand or option.model_code %} · {{ option.brand or '-' }}{% if option.model_code %} / {{ option.model_code }}{% endif %}{% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        {% if not maintenance_form_equipment_options %}
+                        <div class="template-form-note">Önce merkezi ekipman şablonu oluşturulmalıdır.</div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group">
+                        <label>Periyot Türü</label>
+                        <select name="periyot_turu" id="maintenanceFormPeriodSelect" class="form-control" required {% if not maintenance_form_equipment_options %}disabled{% endif %}>
+                            <option value="">Periyot seçin</option>
+                            {% for key, label in maintenance_period_options.items() %}
+                            <option value="{{ key }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group full">
+                        <div class="maintenance-preview" id="maintenanceFormTitlePreview">Önizleme: <strong>Önce ekipman ve periyot seçin</strong></div>
+                    </div>
+                    <div class="form-group full">
+                        <label>Bakım Adımı Oluştur</label>
+                        <div class="step-builder">
+                            <div class="step-builder-row">
+                                <input type="text" class="form-control" id="maintenanceStepInput" placeholder="Örn: Yağ seviyesini kontrol et" autocomplete="off" {% if not maintenance_form_equipment_options %}disabled{% endif %}>
+                                <button type="button" class="btn btn-secondary" id="maintenanceStepAddButton" {% if not maintenance_form_equipment_options %}disabled{% endif %}>Adım Ekle</button>
                             </div>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <div style="display:grid; gap:10px;">
-                                {% if giren_user.is_sahip %}
-                                <a href="{{ url_for('maintenance.ekipman_talimat', template_id=t.id) }}" class="row-btn" style="justify-content:center;">Talimatı Düzenle</a>
-                                {% endif %}
-                                {% if giren_user.is_sahip or giren_user.is_airport_manager %}
-                                <form method="POST" action="{{ url_for('inventory.merkezi_sablondan_envantere_ekle', template_id=t.id) }}" style="display:grid; gap:6px;">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    {% if giren_user.is_sahip %}
-                                    <select name="havalimani_id" class="form-control" style="margin-bottom:0;">
-                                        {% for h in airports %}
-                                        <option value="{{ h.id }}">{{ h.kodu }} - {{ h.ad }}</option>
-                                        {% endfor %}
-                                    </select>
-                                    {% endif %}
-                                    <select name="kutu_id" class="form-control" style="margin-bottom:0;" required>
-                                        <option value="">Kutu seçin</option>
-                                        {% for airport in airports %}
-                                        {% for box in airport.kutular if not box.is_deleted %}
-                                        <option value="{{ box.id }}">{{ box.kodu }} · {{ airport.kodu }}</option>
-                                        {% endfor %}
-                                        {% endfor %}
-                                    </select>
-                                    <input type="text" name="seri_no" class="form-control" placeholder="Seri No" style="margin-bottom:0;">
-                                    <button class="row-btn" style="justify-content:center;">Birime Ekle</button>
-                                </form>
-                                {% else %}
-                                <span style="font-size:11px; color:var(--text4);">Birime ekleme için yetki gerekir.</span>
-                                {% endif %}
-                            </div>
-                        </td>
-                    </tr>
-                    {% else %}
-                    <tr><td colspan="3" style="text-align:center; color:var(--text3);">Merkezi şablon bulunmuyor.</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                            <ul class="step-list" id="maintenanceStepList" aria-live="polite">
+                                <li class="step-empty" id="maintenanceStepEmptyState">Henüz bakım adımı eklenmedi.</li>
+                            </ul>
+                        </div>
+                        <div class="template-form-note">En az 1 bakım adımı zorunludur. Boş ve tekrar eden adımlar kaydedilmez.</div>
+                    </div>
+                </div>
+
+                <button
+                    class="btn btn-primary"
+                    id="maintenanceFormSubmitButton"
+                    style="width:100%; justify-content:center;"
+                    {% if not maintenance_form_equipment_options %}disabled{% endif %}
+                >Bakım Formunu Kaydet</button>
+            </form>
+
+            {% else %}
+            <div class="template-form-note">Bakım formu oluşturma işlemi için gerekli yetkiye sahip değilsiniz.</div>
+            {% endif %}
         </div>
-    </div>
+    </details>
+
+    <details class="maintenance-accordion" data-maintenance-accordion="maintenance-form-delete">
+        <summary>
+            <div>
+                <div class="maintenance-accordion-title">Bakım Formu Sil</div>
+                <div class="maintenance-accordion-subtitle">Kayıtlı bakım formlarını kontrollü şekilde arşivleyin.</div>
+            </div>
+            <span class="maintenance-accordion-chevron" aria-hidden="true">▾</span>
+        </summary>
+        <div class="maintenance-accordion-body">
+            {% if can_manage_maintenance_forms %}
+            <div class="table-container">
+                <table class="data-table template-table">
+                    <thead>
+                        <tr>
+                            <th>Form</th>
+                            <th>Ekipman</th>
+                            <th>Periyot</th>
+                            <th>Adım</th>
+                            <th>İşlem</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for form in maintenance_form_templates %}
+                        <tr>
+                            <td style="font-weight:700;">{{ form.name }}</td>
+                            <td>
+                                {{ form.equipment_template.name if form.equipment_template else '-' }}
+                                {% if form.equipment_template and (form.equipment_template.brand or form.equipment_template.model_code) %}
+                                <div class="template-meta">{{ form.equipment_template.brand or '-' }}{% if form.equipment_template.model_code %} • {{ form.equipment_template.model_code }}{% endif %}</div>
+                                {% endif %}
+                            </td>
+                            <td>{{ maintenance_period_options.get(form.period_type, form.period_type or '-') }}</td>
+                            <td>{{ form.fields|length }}</td>
+                            <td class="row-actions">
+                                <form method="POST" action="{{ url_for('maintenance.ekipman_sablonlari') }}" onsubmit="return confirm('Bu bakım formunu silmek istediğinize emin misiniz?');" style="display:inline;">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="form_action" value="delete_maintenance_form">
+                                    <input type="hidden" name="form_template_id" value="{{ form.id }}">
+                                    <button type="submit" class="row-btn">Sil</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" style="text-align:center; color:var(--text3);">Silinecek bakım formu bulunmuyor.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="template-form-note">Bakım formu silme işlemi için gerekli yetkiye sahip değilsiniz.</div>
+            {% endif %}
+        </div>
+    </details>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+  (function () {
+    const accordions = Array.from(document.querySelectorAll('.maintenance-accordion[data-maintenance-accordion]'));
+    if (!accordions.length) return;
+
+    const forceClosed = function (accordion) {
+      if (!accordion) return;
+      accordion.removeAttribute('open');
+      accordion.open = false;
+    };
+
+    const closeAllExcept = function (activeAccordion) {
+      accordions.forEach(function (accordion) {
+        if (accordion !== activeAccordion) {
+          forceClosed(accordion);
+        }
+      });
+    };
+
+    const closeAll = function () {
+      accordions.forEach(forceClosed);
+    };
+
+    const interactiveSelector = 'a, button, input, select, textarea, label';
+
+    accordions.forEach(function (accordion) {
+      const summary = accordion.querySelector('summary');
+      if (!summary) return;
+
+      summary.addEventListener('click', function (event) {
+        if (event.target && event.target.closest(interactiveSelector)) return;
+        event.preventDefault();
+        const shouldOpen = !accordion.open;
+        closeAllExcept(shouldOpen ? accordion : null);
+        if (shouldOpen) {
+          accordion.open = true;
+        } else {
+          forceClosed(accordion);
+        }
+      });
+
+      accordion.addEventListener('toggle', function () {
+        if (accordion.open) {
+          closeAllExcept(accordion);
+        }
+      });
+    });
+
+    const ensureClosedState = function () {
+      closeAll();
+    };
+
+    ensureClosedState();
+    window.addEventListener('pageshow', ensureClosedState);
+    window.addEventListener('load', ensureClosedState);
+  })();
+
   (function () {
     const catalog = {{ selectable_catalog|default([], true)|tojson }};
     const categorySelect = document.getElementById('instructionCategorySelect');
@@ -317,6 +631,142 @@
     }
 
     refreshNames();
+  })();
+
+  (function () {
+    const form = document.getElementById('maintenanceFormCreateForm');
+    if (!form) return;
+
+    const equipmentSelect = document.getElementById('maintenanceFormEquipmentSelect');
+    const periodSelect = document.getElementById('maintenanceFormPeriodSelect');
+    const titlePreview = document.getElementById('maintenanceFormTitlePreview');
+    const stepInput = document.getElementById('maintenanceStepInput');
+    const addStepButton = document.getElementById('maintenanceStepAddButton');
+    const stepList = document.getElementById('maintenanceStepList');
+    const emptyState = document.getElementById('maintenanceStepEmptyState');
+    const payloadInput = document.getElementById('maintenanceStepsPayload');
+    const submitButton = document.getElementById('maintenanceFormSubmitButton');
+    if (!equipmentSelect || !periodSelect || !titlePreview || !stepInput || !addStepButton || !stepList || !emptyState || !payloadInput || !submitButton) return;
+
+    let steps = [];
+
+    const normalizeText = function (value) {
+      return String(value || '').replace(/\s+/g, ' ').trim();
+    };
+
+    const updatePayload = function () {
+      payloadInput.value = JSON.stringify(steps);
+    };
+
+    const updateSubmitState = function () {
+      const canSubmit = Boolean(equipmentSelect.value) && Boolean(periodSelect.value) && steps.length > 0;
+      submitButton.disabled = !canSubmit;
+    };
+
+    const updateTitlePreview = function () {
+      const selectedEquipment = equipmentSelect.options[equipmentSelect.selectedIndex];
+      const equipmentName = selectedEquipment ? (selectedEquipment.dataset.equipmentName || '').trim() : '';
+      const selectedPeriod = periodSelect.options[periodSelect.selectedIndex];
+      const periodLabel = selectedPeriod ? String(selectedPeriod.textContent || '').trim() : '';
+      if (!equipmentName || !periodSelect.value) {
+        titlePreview.innerHTML = 'Önizleme: <strong>Önce ekipman ve periyot seçin</strong>';
+        return;
+      }
+      titlePreview.innerHTML = 'Önizleme: <strong>' + equipmentName + ' - ' + periodLabel + ' Bakım Formu</strong>';
+    };
+
+    const renderSteps = function () {
+      Array.from(stepList.querySelectorAll('.step-item')).forEach(function (item) { item.remove(); });
+      if (!steps.length) {
+        emptyState.style.display = '';
+      } else {
+        emptyState.style.display = 'none';
+        steps.forEach(function (label, index) {
+          const item = document.createElement('li');
+          item.className = 'step-item';
+          item.innerHTML = [
+            '<span class="step-order">' + (index + 1) + '</span>',
+            '<span class="step-text"></span>',
+            '<span class="step-actions">',
+              '<button type="button" class="step-action-btn" data-step-action="up" data-step-index="' + index + '" aria-label="Yukarı taşı">↑</button>',
+              '<button type="button" class="step-action-btn" data-step-action="down" data-step-index="' + index + '" aria-label="Aşağı taşı">↓</button>',
+              '<button type="button" class="step-action-btn" data-step-action="remove" data-step-index="' + index + '" aria-label="Adımı sil">Sil</button>',
+            '</span>'
+          ].join('');
+          item.querySelector('.step-text').textContent = label;
+          stepList.appendChild(item);
+        });
+      }
+      updatePayload();
+      updateSubmitState();
+    };
+
+    const addStep = function () {
+      const normalized = normalizeText(stepInput.value);
+      if (!normalized) {
+        stepInput.focus();
+        return;
+      }
+      const exists = steps.some(function (item) {
+        return normalizeText(item).toLocaleLowerCase('tr-TR') === normalized.toLocaleLowerCase('tr-TR');
+      });
+      if (exists) {
+        stepInput.value = '';
+        stepInput.focus();
+        return;
+      }
+      steps.push(normalized);
+      stepInput.value = '';
+      renderSteps();
+      stepInput.focus();
+    };
+
+    addStepButton.addEventListener('click', function (event) {
+      event.preventDefault();
+      addStep();
+    });
+
+    stepInput.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        addStep();
+      }
+    });
+
+    stepList.addEventListener('click', function (event) {
+      const actionButton = event.target.closest('[data-step-action]');
+      if (!actionButton) return;
+      event.preventDefault();
+      const action = actionButton.getAttribute('data-step-action');
+      const index = Number(actionButton.getAttribute('data-step-index'));
+      if (Number.isNaN(index) || index < 0 || index >= steps.length) return;
+
+      if (action === 'remove') {
+        steps.splice(index, 1);
+      } else if (action === 'up' && index > 0) {
+        const current = steps[index];
+        steps[index] = steps[index - 1];
+        steps[index - 1] = current;
+      } else if (action === 'down' && index < steps.length - 1) {
+        const current = steps[index];
+        steps[index] = steps[index + 1];
+        steps[index + 1] = current;
+      }
+      renderSteps();
+    });
+
+    equipmentSelect.addEventListener('change', function () {
+      updateTitlePreview();
+      updateSubmitState();
+    });
+    periodSelect.addEventListener('change', function () {
+      updateTitlePreview();
+      updateSubmitState();
+    });
+
+    updatePayload();
+    updateTitlePreview();
+    updateSubmitState();
   })();
 </script>
 {% endblock %}

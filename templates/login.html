@@ -7,6 +7,8 @@
     <title>Giriş Yap — SAR-X ARFF</title>
 
     <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="shortcut icon" href="/favicon.ico">
     <meta name="theme-color" content="#0f2d4a">
     <link rel="apple-touch-icon" href="/static/img/icon-192.png">
 
@@ -81,41 +83,22 @@
             text-align: center;
         }
 
-        .login-logo-mark {
-            width: 46px;
-            height: 46px;
-            background: var(--orange);
-            border-radius: 12px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 10px 24px rgba(249,115,22,.35);
-            margin-bottom: 10px;
-        }
-
-        .login-logo-mark svg {
-            width: 24px;
-            height: 24px;
-            stroke: #fff;
-            fill: none;
-            stroke-width: 2.2;
-            stroke-linecap: round;
-            stroke-linejoin: round;
-        }
-
-        .login-brand {
-            font-size: 22px;
-            font-weight: 800;
-            color: #fff;
-            letter-spacing: -.02em;
+        .login-logo-image {
+            width: min(196px, 80%);
+            max-width: 196px;
+            height: auto;
+            display: block;
+            margin: 0 auto 10px;
+            object-fit: contain;
+            background: transparent;
         }
 
         .login-title {
-            margin-top: 7px;
-            font-size: 14px;
+            margin-top: 0;
+            font-size: 13px;
             font-weight: 800;
             color: #fff;
-            letter-spacing: .06em;
+            letter-spacing: .08em;
             text-transform: uppercase;
             line-height: 1.28;
         }
@@ -798,9 +781,7 @@
             body { align-items: flex-start; padding: 10px; }
             .login-card { max-width: 100%; border-radius: 16px; box-shadow: 0 16px 34px rgba(15,45,74,.12); }
             .login-header { padding: 14px 14px 10px; }
-            .login-logo-mark { width: 38px; height: 38px; margin-bottom: 6px; }
-            .login-logo-mark svg { width: 20px; height: 20px; }
-            .login-brand { font-size: 18px; }
+            .login-logo-image { width: min(176px, 80%); margin-bottom: 8px; }
             .login-title { margin-top: 4px; font-size: 11px; letter-spacing: .045em; line-height: 1.2; }
             .login-subtitle { font-size: 9.5px; letter-spacing: .1em; }
             .login-body { padding: 14px 14px 16px; }
@@ -855,9 +836,7 @@
         @media (max-height: 860px) {
             body { padding: 8px 12px; }
             .login-header { padding: 18px 22px 14px; }
-            .login-logo-mark { width: 42px; height: 42px; margin-bottom: 8px; }
-            .login-logo-mark svg { width: 22px; height: 22px; }
-            .login-brand { font-size: 20px; }
+            .login-logo-image { width: min(184px, 78%); margin-bottom: 9px; }
             .login-title { margin-top: 6px; font-size: 12.5px; }
             .login-subtitle { font-size: 10.5px; }
             .login-body { padding: 14px 18px 16px; }
@@ -885,10 +864,7 @@
 
     <div class="login-card">
         <div class="login-header">
-            <div class="login-logo-mark">
-                <svg viewBox="0 0 24 24"><path d="M12 2L3 7v5c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7L12 2z"/><path d="M9 12l2 2 4-4"/></svg>
-            </div>
-            <div class="login-brand">SAR-X</div>
+            <img src="{{ url_for('static', filename='img/sarx-logo.png') }}" alt="SAR-X logo" class="login-logo-image">
             <div class="login-title">ARFF ARAMA KURTARMA TİMİ</div>
             <div class="login-subtitle">ENVANTER YÖNETİM SİSTEMİ</div>
         </div>
@@ -920,6 +896,9 @@
 
             <form method="POST" action="{{ url_for('auth.login') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {% if login_next %}
+                <input type="hidden" name="next" value="{{ login_next }}">
+                {% endif %}
 
                 <div class="field-group">
                     <label class="field-label">E-POSTA ADRESİ</label>
@@ -1041,7 +1020,7 @@
 
                 <div class="account-actions-row">
                     <label class="remember-option">
-                        <input type="checkbox" name="remember_me" value="on">
+                        <input type="checkbox" name="remember_me" value="on" checked>
                         <span class="remember-copy">Beni hatırla</span>
                     </label>
                     <a class="forgot-password-link" onclick="toggleSection('forgotPasswordSection')">Şifremi Unuttum?</a>
@@ -1173,12 +1152,20 @@
             window.showLoginToast = function (message, type, duration) {
                 const tone = String(type || 'info');
                 const icons = { success: '✓', info: 'i', warning: '!', danger: '!', error: '!' };
+                const escapeLoginToastHtml = function (value) {
+                    return String(value == null ? '' : value)
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/\"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
+                };
                 const toast = document.createElement('div');
                 toast.className = 'login-toast login-toast-' + tone;
                 toast.setAttribute('data-login-toast', '');
                 toast.innerHTML = [
                     '<span class="login-toast-icon" aria-hidden="true">' + (icons[tone] || icons.info) + '</span>',
-                    '<div>' + message + '</div>',
+                    '<div>' + escapeLoginToastHtml(message) + '</div>',
                     '<button type="button" class="login-toast-close" data-login-toast-close aria-label="Bildirimi kapat">×</button>'
                 ].join('');
 

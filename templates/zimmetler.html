@@ -19,12 +19,14 @@
   .assignment-filter-chip { display:inline-flex; align-items:center; gap:6px; padding:7px 10px; border-radius:999px; border:1px solid var(--border); background:var(--surface2); color:var(--text2); font-size:11.5px; font-weight:700; white-space:nowrap; }
   .assignment-create-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px; }
   .assignment-create-grid .form-group.full { grid-column:1 / -1; }
-  .assignment-form-guide { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; margin-top:16px; }
-  .assignment-form-guide-item { display:flex; gap:12px; align-items:flex-start; padding:14px 15px; border:1px solid var(--border); border-radius:16px; background:linear-gradient(180deg, #fff 0%, rgba(248,250,252,.92) 100%); }
-  .assignment-form-guide-step { width:30px; height:30px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; background:var(--orange-light); border:1px solid var(--orange-border); color:var(--orange); font-size:13px; font-weight:800; }
-  .assignment-form-guide-body { display:grid; gap:3px; min-width:0; }
-  .assignment-form-guide-title { font-size:12.5px; font-weight:800; color:var(--navy); }
-  .assignment-form-guide-note { font-size:11.5px; color:var(--text3); line-height:1.5; }
+  .assignment-create-header { display:block; }
+  .assignment-create-toggle { width:100%; border:0; background:transparent; padding:0; display:flex; justify-content:space-between; align-items:flex-start; gap:12px; cursor:pointer; text-align:left; color:inherit; }
+  .assignment-create-toggle:hover .panel-title { color:var(--orange); }
+  .assignment-create-toggle:focus-visible { outline:none; box-shadow:0 0 0 2px rgba(249,115,22,.32); border-radius:10px; }
+  .assignment-create-toggle-text { min-width:0; }
+  .assignment-create-caret { width:28px; height:28px; border-radius:999px; border:1px solid var(--border); background:#fff; color:var(--text3); display:inline-flex; align-items:center; justify-content:center; font-size:13px; line-height:1; transition:transform .18s ease; flex-shrink:0; margin-top:2px; }
+  .assignment-create-panel.is-open .assignment-create-caret { transform:rotate(180deg); }
+  .assignment-create-body[hidden] { display:none !important; }
   .selection-panel { border:1px solid var(--border); border-radius:18px; background:linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,250,252,.98) 100%); overflow:hidden; box-shadow:0 16px 32px rgba(15, 23, 42, 0.05); }
   .selection-panel-head { padding:15px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
   .selection-panel-heading { display:grid; gap:6px; min-width:0; }
@@ -96,9 +98,6 @@
     .assignment-filter-form { grid-template-columns:repeat(2, minmax(0, 1fr)); }
     .assignment-layout { grid-template-columns:1fr; gap:18px; }
   }
-  @media (max-width: 1100px) {
-    .assignment-form-guide { grid-template-columns:1fr; }
-  }
   @media (max-width: 680px) {
     .assignment-kpi-row,
     .assignment-filter-form,
@@ -125,6 +124,8 @@
     .selection-remove-btn,
     .selection-browse-toggle { width:100%; min-height:40px; justify-content:center; }
     .selection-counter { align-self:flex-start; }
+    .assignment-create-toggle { align-items:center; }
+    .assignment-create-caret { margin-top:0; }
     .choice-grid { max-height:none; overflow:visible; }
     .choice-card { padding:13px; gap:10px; }
     .choice-card input[type="checkbox"] { width:22px; height:22px; margin-top:0; flex-shrink:0; }
@@ -309,7 +310,7 @@
                 </div>
                 <div class="assignment-focus-item-list">
                     {% for item in assignment.items if item.remaining_quantity > 0 %}
-                    <span class="assignment-focus-chip">{{ item.item_name }} • {{ item.remaining_quantity }} {{ item.unit or 'adet' }}</span>
+                    <span class="assignment-focus-chip">{{ item.item_name }} • {{ format_assignment_qty(item.remaining_quantity) }} {{ item.unit or 'adet' }}</span>
                     {% endfor %}
                 </div>
             </div>
@@ -366,6 +367,12 @@
                             {% if has_permission('assignment.pdf') %}
                             <a href="{{ url_for('inventory.zimmet_pdf', assignment_id=assignment.id) }}" class="row-btn">PDF</a>
                             {% endif %}
+                            {% if can_delete_assignment %}
+                            <form method="POST" action="{{ url_for('inventory.zimmet_sil', assignment_id=assignment.id) }}" style="display:inline-flex;" onsubmit="return confirm('Bu zimmet kaydı arşive taşınacak. Devam edilsin mi?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="row-btn" style="border-color:var(--red-border); color:var(--red); background:var(--red-light);">Sil</button>
+                            </form>
+                            {% endif %}
                         </td>
                     </tr>
                     {% else %}
@@ -389,14 +396,23 @@
     </div>
 
     {% if can_create_assignment %}
-    <div class="panel">
-        <div class="panel-header">
-            <div>
-                <div class="panel-title">Yeni Zimmet Oluştur</div>
-                <div class="panel-subtitle">Kurumsal zimmet akışına uygun biçimde teslim bilgisi, personel ve malzemeleri tek kayıtta toplayın.</div>
-            </div>
+    <div class="panel assignment-create-panel" id="assignmentCreatePanel">
+        <div class="panel-header assignment-create-header">
+            <button
+                type="button"
+                class="assignment-create-toggle"
+                id="assignmentCreateToggle"
+                aria-expanded="false"
+                aria-controls="assignmentCreateBody"
+            >
+                <span class="assignment-create-toggle-text">
+                    <span class="panel-title">Yeni Zimmet Oluştur</span>
+                    <span class="panel-subtitle">Kurumsal zimmet akışına uygun biçimde teslim bilgisi, personel ve malzemeleri tek kayıtta toplayın.</span>
+                </span>
+                <span class="assignment-create-caret" aria-hidden="true">⌄</span>
+            </button>
         </div>
-        <div class="panel-body">
+        <div class="panel-body assignment-create-body" id="assignmentCreateBody" hidden>
             <form method="POST" action="{{ url_for('inventory.zimmetler', airport_id=selected_airport or None, status=selected_status or None, recipient_id=selected_recipient or None) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="assignment-create-grid">
@@ -421,30 +437,6 @@
                         <label>Teslim Eden</label>
                         <input type="text" name="delivered_by_name" class="form-control" value="{{ current_user.tam_ad }}" placeholder="Teslim eden adı soyadı">
                         <div class="assignment-inline-help">Bu alan manuel metin olarak kaydedilir; zimmeti fiilen teslim eden kişi sistem kullanıcısı olmak zorunda değildir.</div>
-                    </div>
-                </div>
-
-                <div class="assignment-form-guide">
-                    <div class="assignment-form-guide-item">
-                        <span class="assignment-form-guide-step">1</span>
-                        <div class="assignment-form-guide-body">
-                            <div class="assignment-form-guide-title">Zimmet bilgisini netleştirin</div>
-                            <div class="assignment-form-guide-note">Tarih, havalimanı kapsamı ve teslim eden bilgisini resmi form mantığına uygun biçimde tamamlayın.</div>
-                        </div>
-                    </div>
-                    <div class="assignment-form-guide-item">
-                        <span class="assignment-form-guide-step">2</span>
-                        <div class="assignment-form-guide-body">
-                            <div class="assignment-form-guide-title">Teslim alan personeli seçin</div>
-                            <div class="assignment-form-guide-note">{{ recipient_options|length }} görünür personel arasından teslim alıcılarını belirleyin ve mevcut zimmetleri kontrol edin.</div>
-                        </div>
-                    </div>
-                    <div class="assignment-form-guide-item">
-                        <span class="assignment-form-guide-step">3</span>
-                        <div class="assignment-form-guide-body">
-                            <div class="assignment-form-guide-title">Malzemeleri ekleyin ve kaydı kapatın</div>
-                            <div class="assignment-form-guide-note">{{ material_options|length }} görünür malzeme arasından bir veya birden fazla kalemi miktar ve notlarıyla birlikte ekleyin.</div>
-                        </div>
                     </div>
                 </div>
 
@@ -632,6 +624,22 @@
         window.showToast({ type: type, message: message });
       }
     };
+
+    const createPanel = document.getElementById('assignmentCreatePanel');
+    const createToggle = document.getElementById('assignmentCreateToggle');
+    const createBody = document.getElementById('assignmentCreateBody');
+    if (createPanel && createToggle && createBody) {
+      const setCreatePanelOpen = function (isOpen) {
+        createPanel.classList.toggle('is-open', isOpen);
+        createBody.hidden = !isOpen;
+        createToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      };
+      setCreatePanelOpen(false);
+      createToggle.addEventListener('click', function () {
+        const willOpen = createToggle.getAttribute('aria-expanded') !== 'true';
+        setCreatePanelOpen(willOpen);
+      });
+    }
 
     const normalizeLookupText = function (value) {
       const text = String(value || '').trim();

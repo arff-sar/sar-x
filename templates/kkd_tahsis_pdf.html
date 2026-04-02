@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>KKD Teslim Formu</title>
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 12mm 12mm 18mm 12mm;
+  }
+
+  @font-face {
+    font-family: "AssignmentPdfSans";
+    src: url("{{ pdf_font_regular }}");
+  }
+  @font-face {
+    font-family: "AssignmentPdfSans";
+    src: url("{{ pdf_font_bold }}");
+    font-weight: bold;
+  }
+
+  body {
+    margin: 0;
+    color: #1f2937;
+    font-family: "AssignmentPdfSans", sans-serif;
+    font-size: 8.5pt;
+    line-height: 1.45;
+  }
+
+  .header-shell {
+    width: 100%;
+    border: 1.4pt solid #d7dee8;
+    margin-bottom: 10pt;
+    border-collapse: collapse;
+  }
+
+  .top-band {
+    height: 8pt;
+    background: #0f2d4a;
+  }
+
+  .header-content {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .logo-cell {
+    width: 30mm;
+    text-align: center;
+    vertical-align: middle;
+    padding: 8pt 6pt;
+    border-right: 1pt solid #d7dee8;
+  }
+
+  .logo-shell {
+    width: 24mm;
+    height: 24mm;
+    margin: 0 auto;
+    border: 1pt solid #d7dee8;
+    background: #f8fafc;
+    text-align: center;
+  }
+
+  .logo-shell img {
+    width: 20mm;
+    height: 20mm;
+    margin: 2mm auto 0;
+    display: block;
+  }
+
+  .title-cell {
+    padding: 8pt 9pt;
+    vertical-align: top;
+  }
+
+  .title-top {
+    color: #0f2d4a;
+    font-size: 10.5pt;
+    font-weight: bold;
+    letter-spacing: .03em;
+  }
+
+  .title-main {
+    margin-top: 5pt;
+    color: #0f2d4a;
+    font-size: 17pt;
+    font-weight: bold;
+    line-height: 1.1;
+  }
+
+  .meta-grid {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 10pt;
+  }
+
+  .meta-grid td {
+    width: 33.33%;
+    border: 1pt solid #d7dee8;
+    padding: 7pt 8pt;
+    vertical-align: top;
+  }
+
+  .meta-label {
+    font-size: 6.9pt;
+    color: #6b7280;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+
+  .meta-value {
+    margin-top: 4pt;
+    font-size: 9pt;
+    color: #0f2d4a;
+    font-weight: bold;
+    line-height: 1.3;
+  }
+
+  .section-title {
+    font-size: 10.8pt;
+    color: #0f2d4a;
+    font-weight: bold;
+    margin: 0 0 6pt;
+  }
+
+  .item-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 10pt;
+  }
+
+  .item-table thead { display: table-header-group; }
+  .item-table tr { page-break-inside: avoid; }
+
+  .item-table th {
+    border: 1pt solid #0f2d4a;
+    background: #0f2d4a;
+    color: #ffffff;
+    padding: 6pt 5pt;
+    text-align: left;
+    font-size: 7pt;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+  }
+
+  .item-table td {
+    border: 1pt solid #d7dee8;
+    padding: 6pt 5pt;
+    font-size: 8pt;
+    vertical-align: top;
+  }
+
+  .declaration {
+    border: 1pt solid #d7dee8;
+    padding: 8pt;
+    font-size: 8pt;
+    line-height: 1.55;
+    margin-bottom: 12pt;
+  }
+
+  .signature-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .signature-table td {
+    width: 50%;
+    border: 1pt solid #d7dee8;
+    padding: 10pt 8pt;
+    vertical-align: top;
+  }
+
+  .signature-label {
+    font-size: 7pt;
+    color: #6b7280;
+    text-transform: uppercase;
+    font-weight: bold;
+    letter-spacing: .04em;
+  }
+
+  .signature-name {
+    margin-top: 5pt;
+    font-size: 9pt;
+    font-weight: bold;
+    color: #0f2d4a;
+  }
+
+  .signature-line {
+    margin-top: 24pt;
+    border-top: 1pt solid #c8d2df;
+    padding-top: 4pt;
+    font-size: 7.5pt;
+    color: #6b7280;
+  }
+
+  .footer-note {
+    margin-top: 8pt;
+    text-align: right;
+    font-size: 7pt;
+    color: #64748b;
+  }
+</style>
+</head>
+<body>
+  <table class="header-shell">
+    <tr><td class="top-band"></td></tr>
+    <tr>
+      <td>
+        <table class="header-content">
+          <tr>
+            <td class="logo-cell">
+              <div class="logo-shell">
+                {% if pdf_logo_uri %}
+                <img src="{{ pdf_logo_uri }}" alt="SAR-X Logo">
+                {% else %}
+                <div style="padding-top:7mm; font-size:9pt; font-weight:bold; color:#0f2d4a;">SAR-X</div>
+                {% endif %}
+              </div>
+            </td>
+            <td class="title-cell">
+              <div class="title-top">SAR-X ARFF OPERASYON TAKİP SİSTEMİ</div>
+              <div class="title-main">KİŞİSEL KORUYUCU DONANIM TESLİM FORMU</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <table class="meta-grid">
+    <tr>
+      <td>
+        <div class="meta-label">Belge No</div>
+        <div class="meta-value">{{ assignment.assignment_no }}</div>
+      </td>
+      <td>
+        <div class="meta-label">Havalimanı</div>
+        <div class="meta-value">{{ assignment.airport.ad if assignment.airport else '-' }}</div>
+      </td>
+      <td>
+        <div class="meta-label">Belge Tarihi</div>
+        <div class="meta-value">{{ assignment.assignment_date.strftime('%d.%m.%Y') if assignment.assignment_date else '-' }}</div>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <div class="meta-label">Teslim Alan</div>
+        <div class="meta-value">{{ ppe_assignment_display_name(assignment.recipient_user.tam_ad if assignment.recipient_user else '-') }}</div>
+      </td>
+      <td>
+        <div class="meta-label">Teslim Eden</div>
+        <div class="meta-value">{{ ppe_assignment_display_name(assignment.delivered_by_name) }}</div>
+      </td>
+      <td>
+        <div class="meta-label">Durum</div>
+        <div class="meta-value">{{ ppe_assignment_status_label(assignment.status) }}</div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="section-title">Teslim Edilen KKD Kalemleri</div>
+  <table class="item-table">
+    <thead>
+      <tr>
+        <th style="width:22%;">Donanım</th>
+        <th style="width:16%;">Kategori</th>
+        <th style="width:16%;">Alt Tür</th>
+        <th style="width:14%;">Marka / Model</th>
+        <th style="width:10%;">Beden / Numara</th>
+        <th style="width:10%;">Miktar</th>
+        <th style="width:12%;">Seri No</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in assignment.items %}
+      <tr>
+        <td>{{ item.item_name }}</td>
+        <td>{{ item.category or '-' }}</td>
+        <td>{{ item.subcategory or '-' }}</td>
+        <td>{{ item.brand or '-' }} {{ item.model_name or '' }}</td>
+        <td>{{ item.size_info or '-' }}</td>
+        <td>{{ format_assignment_qty(item.quantity) }} {{ item.unit or 'adet' }}</td>
+        <td>{{ item.serial_no or '-' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="declaration">
+    Bu formda yer alan kişisel koruyucu donanımların tarafıma teslim edildiğini, kullanım talimatlarına uygun şekilde muhafaza ederek kullanacağımı
+    ve gerektiğinde eksiksiz iade edeceğimi kabul ve beyan ederim.
+    {% if assignment.note %}
+    <br><br><strong>Not:</strong> {{ assignment.note }}
+    {% endif %}
+  </div>
+
+  <table class="signature-table">
+    <tr>
+      <td>
+        <div class="signature-label">Teslim Alan</div>
+        <div class="signature-name">{{ ppe_assignment_display_name(assignment.recipient_user.tam_ad if assignment.recipient_user else '-') }}</div>
+        <div class="signature-line">İmza</div>
+      </td>
+      <td>
+        <div class="signature-label">Teslim Eden</div>
+        <div class="signature-name">{{ ppe_assignment_display_name(assignment.delivered_by_name) }}</div>
+        <div class="signature-line">İmza</div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="footer-note">Oluşturulma: {{ generated_at.strftime('%d.%m.%Y %H:%M') if generated_at else '-' }}</div>
+</body>
+</html>

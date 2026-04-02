@@ -105,3 +105,41 @@ def test_media_upload_rejects_invalid_file_signature(client, app):
 
     assert response.status_code == 200
     assert MediaAsset.query.count() == 0
+
+
+def test_media_library_ignores_legacy_picker_query_and_keeps_normal_layout(client, app):
+    editor = KullaniciFactory(rol="editor")
+    db.session.add(editor)
+    db.session.flush()
+    db.session.add_all(
+        [
+            MediaAsset(
+                title="Slider Görseli",
+                file_path="/static/uploads/cms/slider.png",
+                file_type="image",
+                alt_text="Slider",
+                uploaded_by_id=editor.id,
+                is_active=True,
+            ),
+            MediaAsset(
+                title="PDF Doküman",
+                file_path="/static/uploads/cms/form.pdf",
+                file_type="document",
+                alt_text="",
+                uploaded_by_id=editor.id,
+                is_active=True,
+            ),
+        ]
+    )
+    db.session.commit()
+    _login(client, editor)
+
+    response = client.get("/admin/homepage/media?picker=1&target_field=image_path")
+    page = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Medya Kütüphanesi" in page
+    assert "selectMediaAsset" not in page
+    assert "window.opener" not in page
+    assert "postMessage" not in page
+    assert "Slider Görseli" in page

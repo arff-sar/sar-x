@@ -32,6 +32,8 @@ spec:
               value: "0"
             - name: ALLOW_SQLITE_IN_PRODUCTION
               value: "0"
+            - name: RATELIMIT_STORAGE_URI
+              value: "${RATELIMIT_STORAGE_URI}"
             - name: SESSION_COOKIE_SECURE
               value: "1"
             - name: REMEMBER_COOKIE_SECURE
@@ -50,8 +52,6 @@ spec:
               value: "${GCS_PUBLIC_BASE_URL}"
             - name: GCS_CACHE_CONTROL
               value: "${GCS_CACHE_CONTROL}"
-            - name: REDIS_URL
-              value: "${REDIS_URL}"
             - name: PUBLIC_BASE_URL
               value: "${PUBLIC_BASE_URL}"
             - name: MAIL_HOST

@@ -257,6 +257,11 @@
                     <div class="demo-status-copy">Demo KKD kayıtları</div>
                 </div>
                 <div class="demo-status-box">
+                    <div class="demo-status-label">KKD Tahsis</div>
+                    <div class="demo-status-value">{{ platform_demo_status.summary.kkd_tahsis if platform_demo_status else 0 }}</div>
+                    <div class="demo-status-copy">Demo KKD zimmet/tahsis kayıtları</div>
+                </div>
+                <div class="demo-status-box">
                     <div class="demo-status-label">Son Güncelleme</div>
                     <div class="demo-status-value">{{ platform_demo_status.updated_at if platform_demo_status else '-' }}</div>
                     <div class="demo-status-copy">Platform demo state metadata</div>
@@ -415,10 +420,47 @@
                         <img src="{{ public_logo_url }}" alt="Public logo" style="width: 64px; height: 64px; object-fit: cover; border-radius: 14px; border: 1px solid var(--border-dark); background: #fff;">
                     </div>
                     {% endif %}
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label>Public İletişim Notu</label>
-                        <textarea name="public_contact_note" class="form-control" rows="3" style="margin-bottom: 0;">{{ public_contact_note }}</textarea>
-                        <div class="mini-help">Footer iletişim kartında görünür.</div>
+                    <div style="padding: 14px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface2); display: grid; gap: 12px;">
+                        <div style="font-size: 12px; font-weight: 700; color: var(--text3);">Public Footer İçeriği</div>
+                        <div class="grid-two-equal" style="gap:12px;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label>Marka Üst Başlık</label>
+                                <input type="text" name="footer_brand_kicker" value="{{ footer_content.footer_brand_kicker }}" class="form-control">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label>İletişim Üst Başlık</label>
+                                <input type="text" name="footer_contact_kicker" value="{{ footer_content.footer_contact_kicker }}" class="form-control">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label>Marka Ana Başlık</label>
+                                <input type="text" name="footer_brand_title" value="{{ footer_content.footer_brand_title }}" class="form-control">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label>İletişim Ana Başlık</label>
+                                <input type="text" name="footer_contact_title" value="{{ footer_content.footer_contact_title }}" class="form-control">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label>Marka Açıklaması</label>
+                                <textarea name="footer_brand_description" class="form-control" rows="3" style="margin-bottom: 0;">{{ footer_content.footer_brand_description }}</textarea>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label>İletişim Açıklaması</label>
+                                <textarea name="footer_contact_description" class="form-control" rows="3" style="margin-bottom: 0;">{{ footer_content.footer_contact_description }}</textarea>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label>İletişim E-posta</label>
+                                <input type="text" name="footer_contact_email" value="{{ footer_content.footer_contact_email }}" class="form-control" placeholder="iletisim@sarx.org">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label>Alt Satır Sol Metin</label>
+                                <input type="text" name="footer_copyright" value="{{ footer_content.footer_copyright }}" class="form-control">
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Alt Satır Sağ Metin</label>
+                            <input type="text" name="footer_bottom_slogan" value="{{ footer_content.footer_bottom_slogan }}" class="form-control">
+                            <div class="mini-help">Bu alanlar yalnızca public footer içerik metinlerini günceller; tasarım yapısını değiştirmez.</div>
+                        </div>
                     </div>
                     <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">
                         Genel Ayarları Kaydet

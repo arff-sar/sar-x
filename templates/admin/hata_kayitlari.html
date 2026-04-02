@@ -28,6 +28,17 @@
   .error-pagination { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:18px 22px 22px; flex-wrap:wrap; }
   .error-pagination-pages { display:flex; gap:8px; flex-wrap:wrap; }
   .error-pagination .row-btn[aria-current="page"] { background:var(--navy); border-color:var(--navy); color:#fff; }
+  .error-report-accordion { margin-top:18px; border:1px solid var(--border); border-radius:16px; background:var(--surface2); overflow:hidden; }
+  .error-report-accordion summary { list-style:none; cursor:pointer; padding:16px 18px; font-weight:800; color:var(--navy); display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .error-report-accordion summary::-webkit-details-marker { display:none; }
+  .error-report-body { padding:0 18px 18px; display:grid; gap:14px; }
+  .error-report-card { border:1px solid var(--border); border-radius:14px; background:#fff; padding:14px 16px; display:grid; gap:8px; }
+  .error-report-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; }
+  .error-report-meta { font-size:11.5px; color:var(--text3); line-height:1.5; }
+  .cleanup-panel { margin-top:12px; border:1px solid rgba(220,38,38,.16); background:linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(254,242,242,.96) 100%); border-radius:18px; padding:18px; display:grid; gap:14px; }
+  .cleanup-panel h3 { font-size:16px; color:var(--navy); }
+  .cleanup-panel p { font-size:12.5px; color:var(--text3); line-height:1.6; }
+  .cleanup-form { display:grid; gap:12px; max-width:420px; }
 
   @media (max-width: 980px) {
     .error-log-filters { grid-template-columns:1fr 1fr; }
@@ -109,6 +120,55 @@
         <div>İlgili migration tamamlandığında merkezi hata alanları bu ekranda listelenecektir.</div>
       </div>
       {% endif %}
+
+      <details class="error-report-accordion">
+        <summary>
+          <span>Hata Bildirimleri</span>
+          <span class="status-pill status-pasif">{{ error_reports|length }} kayıt</span>
+        </summary>
+        <div class="error-report-body">
+          {% if error_reports %}
+            {% for item in error_reports %}
+            <article class="error-report-card">
+              <div class="error-summary">
+                <strong>{{ item.error_code }}</strong>
+                <div>{{ item.summary }}</div>
+              </div>
+              <div class="error-report-grid">
+                <div class="error-report-meta"><strong>Kullanıcı:</strong> {{ item.user_label }}</div>
+                <div class="error-report-meta"><strong>Rol:</strong> {{ item.role_label }}</div>
+                <div class="error-report-meta"><strong>Havalimanı:</strong> {{ item.airport_label }}</div>
+                <div class="error-report-meta"><strong>Tarih:</strong> {{ item.created_at_label }}</div>
+                <div class="error-report-meta"><strong>Path:</strong> {{ item.path }}</div>
+                <div class="error-report-meta"><strong>Request ID:</strong> {{ item.request_id }}</div>
+              </div>
+            </article>
+            {% endfor %}
+          {% else %}
+          <div class="error-empty">
+            <strong>Hata bildirimi bulunamadı</strong>
+            <div>Kullanıcılar manuel bildirim oluşturduğunda bu alanda listelenir.</div>
+          </div>
+          {% endif %}
+
+          {% if report_pagination.total_pages > 1 %}
+          <div class="error-pagination" style="padding:0;">
+            <div class="error-pagination-pages">
+              {% if report_pagination.has_prev %}
+              <a href="{{ report_pagination.prev_url }}" class="row-btn">Geri</a>
+              {% endif %}
+              {% for item in report_pagination.items %}
+              <a href="{{ item.url }}" class="row-btn" {% if item.is_current %}aria-current="page"{% endif %}>{{ item.number }}</a>
+              {% endfor %}
+              {% if report_pagination.has_next %}
+              <a href="{{ report_pagination.next_url }}" class="row-btn">İleri</a>
+              {% endif %}
+            </div>
+            <div class="error-meta-note">Sayfa {{ report_pagination.page }} / {{ report_pagination.total_pages }}</div>
+          </div>
+          {% endif %}
+        </div>
+      </details>
     </div>
   </div>
 
@@ -192,6 +252,18 @@
       <div class="error-meta-note">Sayfa {{ pagination.page }} / {{ pagination.total_pages }}</div>
     </div>
     {% endif %}
+  </div>
+  {% endif %}
+
+  {% if can_cleanup %}
+  <div class="cleanup-panel">
+    <h3>Hata kayıtlarını yedekleyip temizle</h3>
+    <p>Bu işlem önce mevcut hata kayıtlarını arşiv tablosuna taşır, yedekleme başarılı olursa canlı listedeki hata kayıtlarını siler. Devam etmek için onay alanına <strong>ONAYLA</strong> yazın.</p>
+    <form method="POST" action="{{ url_for('admin.hata_kayitlarini_arsivle_temizle') }}" class="cleanup-form" onsubmit="return confirm('Hata kayıtları önce yedeklenip ardından temizlenecek. Devam edilsin mi?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="text" name="cleanup_confirmation" class="form-control" placeholder="ONAYLA" autocomplete="off">
+      <button type="submit" class="btn btn-danger">Hata kayıtlarını yedekleyip temizle</button>
+    </form>
   </div>
   {% endif %}
 </div>

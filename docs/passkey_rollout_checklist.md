@@ -10,7 +10,31 @@ Bu not, `PASSKEY_ENABLED` kapalı varsayılanını koruyarak kontrollü üretim 
   - `PASSKEY_ORIGIN` veya `PASSKEY_ALLOWED_ORIGINS`
 - Production origin değerleri `https://` olmalıdır.
 - Origin host değeri `PASSKEY_RP_ID` ile aynı olmalı veya onun alt alan adı olmalıdır.
-- Production ortamında güçlü `SECRET_KEY` ve Redis tabanlı rate-limit storage korunmalıdır.
+- Production ortamında güçlü `SECRET_KEY` ve uygun rate-limit storage ayarı (`RATELIMIT_STORAGE_URI`, varsayılan `memory://`) korunmalıdır.
+
+## Staging / Development minimum env seti
+
+Staging veya development doğrulaması için önerilen minimum anahtarlar:
+
+- `PASSKEY_ENABLED=true`
+- `PASSKEY_RP_ID=<ortam hostu>` (örn: `staging.sarx.org`, local için `localhost`)
+- `PASSKEY_ORIGIN=https://<ortam hostu>` (local için `http://localhost:<port>`)
+- (Opsiyonel) `PASSKEY_ALLOWED_ORIGINS=<virgülle birden fazla origin>`
+- `PASSKEY_CHALLENGE_TTL_SECONDS=180` (önerilen varsayılan)
+
+Notlar:
+
+- `PASSKEY_ORIGIN` ve `PASSKEY_ALLOWED_ORIGINS` birlikte verilebilir; her origin hostu `PASSKEY_RP_ID` ile uyumlu olmalıdır.
+- Development/Testing ortamında eksik `PASSKEY_RP_ID` veya origin varsa uygulama host fallback kullanır; staging doğrulamasında explicit değer kullanın.
+
+## Startup fail koşulları (fail-closed)
+
+`PASSKEY_ENABLED=true` iken:
+
+1. Production ortamında `PASSKEY_RP_ID` boşsa uygulama startup sırasında hata verir.
+2. Production ortamında `PASSKEY_ORIGIN` / `PASSKEY_ALLOWED_ORIGINS` boşsa startup hata verir.
+3. Origin şeması `https` değilse (local host istisnası hariç) startup hata verir.
+4. Origin hostu `PASSKEY_RP_ID` ile eşleşmiyorsa veya alt alanı değilse startup hata verir.
 
 ## Gerçek cihaz smoke checklist
 

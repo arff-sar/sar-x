@@ -121,7 +121,7 @@
         <div class="page-meta">
             <span>{{ order.asset.equipment_template.name if order.asset and order.asset.equipment_template else '-' }}</span>
             <div class="meta-dot" style="width:3px; height:3px; background: var(--text4); border-radius:50%;"></div>
-            <span>Durum: {{ tr_upper(status_label(order.status)) }}</span>
+            <span>Durum: {{ status_label(order.status) }}</span>
         </div>
     </div>
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -175,7 +175,7 @@
                 <label>Durum</label>
                 <select class="form-control" name="status">
                     {% for status in statuses %}
-                    <option value="{{ status }}" {% if order.status == status %}selected{% endif %}>{{ tr_upper(status_label(status)) }}</option>
+                    <option value="{{ status }}" {% if order.status == status %}selected{% endif %}>{{ status_label(status) }}</option>
                     {% endfor %}
                 </select>
                 <label>Atanan Kullanıcı</label>

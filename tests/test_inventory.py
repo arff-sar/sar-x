@@ -15,7 +15,7 @@ from tests.factories import (
 from extensions import db, safe_display_filename
 from datetime import date
 
-from models import AssignmentRecord, AssignmentRecipient, InventoryAsset, Malzeme, PPERecord # ✅ Sorgular için ekledik
+from models import AssignmentRecord, AssignmentRecipient, BakimKaydi, InventoryAsset, Malzeme, PPERecord # ✅ Sorgular için ekledik
 
 
 def test_safe_display_filename_preserves_turkish_names_for_visible_downloads():
@@ -891,6 +891,44 @@ def test_bakim_kaydet_success(client, app):
     assert response.status_code == 200
     assert "Bakım kaydı başarıyla işlendi" in response.data.decode('utf-8')
 
+
+def test_bakim_kaydet_offline_sync_idempotent_by_request_id(client, app):
+    app.config['WTF_CSRF_ENABLED'] = False
+    user = KullaniciFactory(rol="sahip")
+    m = MalzemeFactory(ad="Offline Bakım Cihazı")
+    db.session.add_all([user, m])
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess['_user_id'] = str(user.id)
+        sess['_fresh'] = True
+
+    request_id = "offline-test-req-001"
+    headers = {
+        "X-SARX-Offline-Sync": "1",
+        "X-SARX-Offline-Request-Id": request_id,
+    }
+
+    first = client.post(
+        f'/bakim-kaydet/{m.id}',
+        data={'not': 'Offline bakım denemesi', 'maliyet': '10'},
+        headers=headers,
+        follow_redirects=False,
+    )
+    second = client.post(
+        f'/bakim-kaydet/{m.id}',
+        data={'not': 'Offline bakım denemesi', 'maliyet': '10'},
+        headers=headers,
+        follow_redirects=False,
+    )
+
+    assert first.status_code == 200
+    assert first.get_json()["status"] == "success"
+    assert second.status_code == 200
+    assert second.get_json()["status"] == "success"
+    assert second.get_json().get("duplicate") is True
+    assert BakimKaydi.query.filter_by(malzeme_id=m.id).count() == 1
+
 # 7. RAPORLAMA: Excel ve PDF çıktıları (Kapsam Artırıcı)
 def test_export_routes(client, app):
     user = KullaniciFactory(rol="sahip")
@@ -1230,6 +1268,15 @@ def test_envanter_renders_accordion_and_no_work_order_filter(client, app):
     assert "function closeAll(exceptId)" in html
     assert "panel.setAttribute('aria-hidden'" in html
     assert "toggle.setAttribute('aria-expanded'" in html
+    assert "const OFFLINE_DB_NAME = 'SAR_Offline_DB';" in html
+    assert "const OFFLINE_STORE_NAME = 'bekleyen_bakimlar';" in html
+    assert "const OFFLINE_SYNC_TAG = 'bakim-senkronize-et';" in html
+    assert "X-SARX-Offline-Sync" in html
+    assert "X-SARX-Offline-Request-Id" in html
+    assert "Bağlantı yok" in html
+    assert "tbody tr.inventory-summary-row:hover" in html
+    assert "window.location.assign(qrHref);" in html
+    assert "QR kullanılamıyor" in html
     assert "inventory-table-compact" in html
     assert 'col-no' in html and 'col-material' in html and 'col-airport' in html and 'col-code' in html and 'col-status' in html and 'col-maintenance' in html and 'col-action' in html
 

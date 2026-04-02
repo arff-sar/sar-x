@@ -22,8 +22,20 @@
       <input type="text" name="subtitle" class="form-control" value="{{ section.subtitle if section else '' }}">
       <label>Açıklama Metni</label>
       <textarea name="content" class="form-control" style="height:110px;">{{ section.content if section else '' }}</textarea>
-      <label>İkon (Emoji veya kısa metin)</label>
-      <input type="text" name="icon" class="form-control" value="{{ section.icon if section else '' }}">
+      <label>Kart Yüksekliği (px)</label>
+      <input
+        type="number"
+        name="card_height"
+        class="form-control"
+        min="{{ section_card_height_min }}"
+        max="{{ section_card_height_max }}"
+        step="1"
+        value="{{ section_card_height if section_card_height is not none else 320 }}"
+      >
+      <div style="margin-top:-8px; margin-bottom:10px; font-size:12px; color:var(--text3);">
+        Kart genişliği sistem tarafından sabittir. Burada yalnız yüksekliği {{ section_card_height_min }}-{{ section_card_height_max }} px aralığında değiştirebilirsiniz.
+        <strong style="display:block; margin-top:4px; color:var(--text2);">Mevcut yükseklik: <span id="currentCardHeightText">{{ section_card_height if section_card_height is not none else 320 }}</span> px</strong>
+      </div>
       <label>Görsel Yolu / URL</label>
       <input type="text" name="image_path" class="form-control" value="{{ section.image_path if section else '' }}">
       <div style="margin-top:-8px; margin-bottom:10px;">
@@ -51,4 +63,14 @@
     </form>
   </div>
 </div>
+<script>
+  (function () {
+    const input = document.querySelector('input[name="card_height"]');
+    const text = document.getElementById('currentCardHeightText');
+    if (!input || !text) return;
+    input.addEventListener('input', function () {
+      text.textContent = input.value || '{{ section_card_height if section_card_height is not none else 320 }}';
+    });
+  })();
+</script>
 {% endblock %}

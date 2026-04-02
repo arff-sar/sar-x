@@ -9,6 +9,8 @@ from xhtml2pdf import pisa
 from extensions import audit_log, create_approval_request, create_notification, db, limiter, log_kaydet, guvenli_metin
 from decorators import (
     CANONICAL_ROLE_ADMIN,
+    CANONICAL_ROLE_SYSTEM,
+    CANONICAL_ROLE_TEAM_LEAD,
     CANONICAL_ROLE_TEAM_MEMBER,
     get_effective_role,
     has_permission,
@@ -54,6 +56,11 @@ CHECKLIST_FIELD_TYPES = {
     "pass_fail": "Geçti / Kaldı",
     "select": "Seçim Listesi",
 }
+MAINTENANCE_PERIOD_TYPES = {
+    "gunluk": "Günlük",
+    "aylik": "Aylık",
+    "yillik": "Yıllık",
+}
 
 
 def _can_view_all():
@@ -74,6 +81,10 @@ def _can_assign_work_order():
 
 def _can_manage_form_catalog():
     return has_permission("maintenance.templates.manage") or has_permission("maintenance.plan.change")
+
+
+def _can_manage_instruction_maintenance_forms():
+    return get_effective_role(current_user) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_TEAM_LEAD}
 
 
 def _can_manage_instruction_catalog():
@@ -134,6 +145,88 @@ def _build_instruction_catalog_options():
 
     selectable_categories = sorted({item["category"] for item in catalog}, key=str.lower)
     return catalog, selectable_categories
+
+
+def _build_maintenance_form_equipment_options():
+    templates = (
+        EquipmentTemplate.query.filter(
+            EquipmentTemplate.is_deleted.is_(False),
+            EquipmentTemplate.is_active.is_(True),
+            EquipmentTemplate.name.isnot(None),
+            EquipmentTemplate.name != "",
+        )
+        .order_by(
+            EquipmentTemplate.category.asc(),
+            EquipmentTemplate.name.asc(),
+            EquipmentTemplate.brand.asc(),
+            EquipmentTemplate.model_code.asc(),
+            EquipmentTemplate.id.asc(),
+        )
+        .all()
+    )
+
+    options = []
+    for template in templates:
+        options.append(
+            {
+                "id": template.id,
+                "name": guvenli_metin(template.name or "").strip(),
+                "category": guvenli_metin(template.category or "").strip(),
+                "brand": guvenli_metin(template.brand or "").strip(),
+                "model_code": guvenli_metin(template.model_code or "").strip(),
+            }
+        )
+    return options
+
+
+def _normalize_period_type(raw_value):
+    value = guvenli_metin(raw_value or "").strip().lower()
+    return value if value in MAINTENANCE_PERIOD_TYPES else None
+
+
+def _parse_maintenance_step_rows(raw_payload):
+    try:
+        payload = json.loads(raw_payload or "[]")
+    except (TypeError, ValueError):
+        return [], "Bakım adımları doğrulanamadı. Adımları tekrar ekleyip kaydedin."
+
+    if not isinstance(payload, list):
+        return [], "Bakım adımları doğrulanamadı. Adımları tekrar ekleyip kaydedin."
+
+    rows = []
+    seen = set()
+    for item in payload:
+        label = " ".join(str(item or "").split()).strip()
+        if not label:
+            continue
+        normalized_key = label.casefold()
+        if normalized_key in seen:
+            continue
+        seen.add(normalized_key)
+        rows.append(label)
+    return rows, None
+
+
+def _build_maintenance_form_name(template, period_label):
+    base_name = f"{template.name} - {period_label} Bakım Formu"
+    existing = MaintenanceFormTemplate.query.filter(
+        MaintenanceFormTemplate.is_deleted.is_(False),
+        MaintenanceFormTemplate.name == base_name,
+    ).first()
+    if not existing:
+        return base_name
+
+    suffix = template.model_code or template.brand or f"#{template.id}"
+    suffix = guvenli_metin(suffix or "").strip() or f"#{template.id}"
+    candidate = f"{base_name} ({suffix})"
+    sequence = 2
+    while MaintenanceFormTemplate.query.filter(
+        MaintenanceFormTemplate.is_deleted.is_(False),
+        MaintenanceFormTemplate.name == candidate,
+    ).first():
+        candidate = f"{base_name} ({suffix}-{sequence})"
+        sequence += 1
+    return candidate
 
 
 def _asset_scope():
@@ -603,6 +696,7 @@ def bakim_paneli():
         overdue_assets=overdue_assets,
         open_orders=open_orders,
         critical_fault_assets=critical_fault_assets,
+        status_label=_status_label,
     )
 
 
@@ -1280,8 +1374,116 @@ def geciken_bakimlar():
 @permission_required("maintenance.plan.change", "maintenance.instructions.manage", any_of=True)
 def ekipman_sablonlari():
     selectable_catalog, selectable_categories = _build_instruction_catalog_options()
+    maintenance_form_equipment_options = _build_maintenance_form_equipment_options()
 
     if request.method == "POST":
+        form_action = (request.form.get("form_action") or "").strip()
+        if form_action == "create_maintenance_form":
+            if not _can_manage_instruction_maintenance_forms():
+                abort(403)
+
+            if not maintenance_form_equipment_options:
+                flash("Önce merkezi ekipman şablonu oluşturulmalıdır.", "danger")
+                return redirect(url_for("maintenance.ekipman_sablonlari"))
+
+            equipment_template_id = request.form.get("form_equipment_template_id", type=int)
+            selected_period = _normalize_period_type(request.form.get("periyot_turu"))
+            raw_steps_payload = request.form.get("maintenance_steps_payload", "")
+
+            if not equipment_template_id:
+                flash("Bakım formu için merkezi ekipman seçmelisiniz.", "danger")
+                return redirect(url_for("maintenance.ekipman_sablonlari"))
+
+            equipment_template = EquipmentTemplate.query.filter_by(
+                id=equipment_template_id,
+                is_deleted=False,
+                is_active=True,
+            ).first()
+            if equipment_template is None:
+                flash("Seçilen ekipman şablonu sistemde bulunamadı.", "danger")
+                return redirect(url_for("maintenance.ekipman_sablonlari"))
+
+            if selected_period is None:
+                flash("Bakım periyot türü seçmelisiniz.", "danger")
+                return redirect(url_for("maintenance.ekipman_sablonlari"))
+
+            step_rows, parse_error = _parse_maintenance_step_rows(raw_steps_payload)
+            if parse_error:
+                flash(parse_error, "danger")
+                return redirect(url_for("maintenance.ekipman_sablonlari"))
+            if not step_rows:
+                flash("En az 1 bakım adımı eklemelisiniz.", "danger")
+                return redirect(url_for("maintenance.ekipman_sablonlari"))
+
+            duplicate = MaintenanceFormTemplate.query.filter(
+                MaintenanceFormTemplate.is_deleted.is_(False),
+                MaintenanceFormTemplate.equipment_template_id == equipment_template.id,
+                MaintenanceFormTemplate.period_type == selected_period,
+            ).first()
+            if duplicate:
+                flash("Bu ekipman ve periyot için bakım formu zaten kayıtlı.", "danger")
+                return redirect(url_for("maintenance.ekipman_sablonlari"))
+
+            period_label = MAINTENANCE_PERIOD_TYPES[selected_period]
+            template_name = _build_maintenance_form_name(equipment_template, period_label)
+            template_description = f"{equipment_template.name} için {period_label.lower()} bakım adımları."
+
+            new_template = MaintenanceFormTemplate(
+                name=template_name,
+                description=template_description,
+                equipment_template_id=equipment_template.id,
+                period_type=selected_period,
+                is_active=True,
+            )
+            db.session.add(new_template)
+            db.session.flush()
+
+            for order_index, label in enumerate(step_rows, start=1):
+                db.session.add(
+                    MaintenanceFormField(
+                        form_template_id=new_template.id,
+                        field_key=f"step_{new_template.id}_{order_index}",
+                        label=label,
+                        field_type="yes_no",
+                        is_required=True,
+                        order_index=order_index,
+                        options_json=json.dumps({"options": [], "help_text": "", "is_critical": False}, ensure_ascii=False),
+                    )
+                )
+
+            db.session.commit()
+            log_kaydet("Bakım Formu", f"Bakım formu oluşturuldu: {new_template.name}")
+            flash("Bakım formu oluşturuldu.", "success")
+            return redirect(url_for("maintenance.ekipman_sablonlari"))
+
+        if form_action == "delete_maintenance_form":
+            if not _can_manage_instruction_maintenance_forms():
+                abort(403)
+
+            form_template_id = request.form.get("form_template_id", type=int)
+            if not form_template_id:
+                flash("Silinecek bakım formu seçilemedi.", "danger")
+                return redirect(url_for("maintenance.ekipman_sablonlari"))
+
+            template = MaintenanceFormTemplate.query.filter_by(
+                id=form_template_id,
+                is_deleted=False,
+            ).first()
+            if template is None:
+                flash("Bakım formu bulunamadı.", "danger")
+                return redirect(url_for("maintenance.ekipman_sablonlari"))
+
+            template.is_active = False
+            template.soft_delete()
+            for field in template.fields:
+                if not field.is_deleted:
+                    field.soft_delete()
+
+            db.session.commit()
+            log_kaydet("Bakım Formu", f"Bakım formu silindi: {template.name}")
+            flash("Bakım formu silindi.", "success")
+            return redirect(url_for("maintenance.ekipman_sablonlari"))
+
         if not _can_manage_instruction_catalog():
             abort(403)
 
@@ -1359,7 +1561,14 @@ def ekipman_sablonlari():
     templates = EquipmentTemplate.query.filter_by(is_deleted=False).order_by(
         EquipmentTemplate.created_at.desc()
     ).all()
-    form_templates = MaintenanceFormTemplate.query.filter_by(is_deleted=False, is_active=True).all()
+    form_templates = MaintenanceFormTemplate.query.filter_by(is_deleted=False, is_active=True).order_by(
+        MaintenanceFormTemplate.name.asc()
+    ).all()
+    maintenance_form_templates = MaintenanceFormTemplate.query.filter(
+        MaintenanceFormTemplate.is_deleted.is_(False),
+        MaintenanceFormTemplate.equipment_template_id.isnot(None),
+        MaintenanceFormTemplate.period_type.isnot(None),
+    ).order_by(MaintenanceFormTemplate.created_at.desc()).all()
     airports = Havalimani.query.filter_by(is_deleted=False).all()
     return render_template(
         "ekipman_sablonlari.html",
@@ -1368,6 +1577,10 @@ def ekipman_sablonlari():
         airports=airports,
         selectable_catalog=selectable_catalog,
         selectable_categories=selectable_categories,
+        maintenance_form_equipment_options=maintenance_form_equipment_options,
+        maintenance_form_templates=maintenance_form_templates,
+        maintenance_period_options=MAINTENANCE_PERIOD_TYPES,
+        can_manage_maintenance_forms=_can_manage_instruction_maintenance_forms(),
     )
 
 

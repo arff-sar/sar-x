@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
+import sqlalchemy as sa
 from sqlalchemy.exc import SQLAlchemyError
 
 from decorators import has_permission, homepage_editor_required
@@ -31,9 +32,11 @@ from models import (
     HomeSlider,
     HomeStatCard,
     MediaAsset,
+    NavMenu,
     get_tr_now,
 )
 from services.text_normalization_service import turkish_contains_all
+from services.homepage_stats_service import build_fixed_homepage_stat_payload, ensure_fixed_homepage_stat_cards
 
 
 content_bp = Blueprint("content", __name__)
@@ -57,6 +60,55 @@ CONTENT_TYPE_MAP = {
     "stat": HomeStatCard,
     "quicklink": HomeQuickLink,
 }
+
+DEFAULT_SLIDER_TITLE = "Özel ARFF Arama Kurtarma Timi"
+DEFAULT_SECTION_CARD_HEIGHT = 320
+SECTION_CARD_HEIGHT_MIN = 140
+SECTION_CARD_HEIGHT_MAX = 420
+DEFAULT_PUBLIC_SECTION_ROWS = [
+    {
+        "section_key": "about",
+        "title": "Biz Kimiz?",
+        "subtitle": "Tim Yapısı",
+        "content": "ARFF özel arama kurtarma gönüllülerinin birlikte hareket ettiği, sahaya yakın ve dayanışma odaklı bir ekip yapısı.",
+        "order_index": 0,
+    },
+    {
+        "section_key": "mission",
+        "title": "Misyon",
+        "subtitle": "Ortak Yön",
+        "content": "Hazırlığı canlı tutmak, sahada birbirimize destek olmak ve ihtiyaç anında hızlıca organize olmak.",
+        "order_index": 1,
+    },
+    {
+        "section_key": "vision",
+        "title": "Vizyon",
+        "subtitle": "Uzun Vadeli Bakış",
+        "content": "Güven, gönüllülük ve ekip dayanışmasını koruyarak güçlü bir saha kültürü oluşturmak.",
+        "order_index": 2,
+    },
+    {
+        "section_key": "ethics",
+        "title": "Etik Değerler",
+        "subtitle": "Tim Kültürü",
+        "content": "Sahada saygı, sorumluluk, güven ve gönüllülük çizgisini birlikte korumak.",
+        "order_index": 3,
+    },
+    {
+        "section_key": "training",
+        "title": "Eğitimler",
+        "subtitle": "Hazırlık Modülü",
+        "content": "Teknik tekrarlar, ekip içi hazırlık oturumları ve sahaya dönük pratiklerle tim refleksini canlı tutan çalışmalar.",
+        "order_index": 4,
+    },
+    {
+        "section_key": "exercise",
+        "title": "Tatbikatlar",
+        "subtitle": "Uygulama Modülü",
+        "content": "Saha uyumunu, hızını ve görev paylaşımını canlı tutan uygulamalı çalışmalar ve tatbikat notları.",
+        "order_index": 5,
+    },
+]
 
 
 def _can_publish():
@@ -248,6 +300,11 @@ def _validate_link_url(value):
 
 def _public_layout_context():
     loader = current_app.extensions.get("public_site_snapshot_loader")
+    menus = _safe_public_result(
+        lambda: NavMenu.query.order_by(NavMenu.sira.asc(), NavMenu.id.asc()).all(),
+        ("nav_menu",),
+        [],
+    )
     if callable(loader):
         try:
             snapshot = loader()
@@ -255,9 +312,9 @@ def _public_layout_context():
             snapshot = {}
         return {
             "ayarlar": snapshot.get("ayarlar"),
-            "menuler": [],
+            "menuler": menus,
         }
-    return {"ayarlar": None, "menuler": []}
+    return {"ayarlar": None, "menuler": menus}
 
 
 def _safe_public_result(factory, required_tables, fallback):
@@ -268,6 +325,55 @@ def _safe_public_result(factory, required_tables, fallback):
     except SQLAlchemyError:
         db.session.rollback()
         return fallback
+
+
+def _normalize_section_card_height(raw_value, fallback=DEFAULT_SECTION_CARD_HEIGHT):
+    cleaned = guvenli_metin(raw_value or "").strip()
+    if not cleaned:
+        value = fallback
+    else:
+        match = re.fullmatch(r"\s*(-?\d+)\s*(?:px)?\s*", cleaned, flags=re.IGNORECASE)
+        if not match:
+            value = fallback
+        else:
+            try:
+                value = int(match.group(1))
+            except (TypeError, ValueError):
+                value = fallback
+
+    if value is None:
+        value = DEFAULT_SECTION_CARD_HEIGHT
+    return max(SECTION_CARD_HEIGHT_MIN, min(SECTION_CARD_HEIGHT_MAX, int(value)))
+
+
+def _ensure_default_public_sections():
+    requested_keys = [item["section_key"] for item in DEFAULT_PUBLIC_SECTION_ROWS]
+    existing_rows = _safe_public_result(
+        lambda: HomeSection.query.filter(HomeSection.section_key.in_(requested_keys)).all(),
+        ("home_section",),
+        [],
+    )
+    existing_keys = {row.section_key for row in existing_rows}
+    created = False
+    for item in DEFAULT_PUBLIC_SECTION_ROWS:
+        if item["section_key"] in existing_keys:
+            continue
+        db.session.add(
+            HomeSection(
+                section_key=item["section_key"],
+                title=item["title"],
+                subtitle=item["subtitle"],
+                content=item["content"],
+                icon=str(DEFAULT_SECTION_CARD_HEIGHT),
+                image_url="",
+                order_index=item["order_index"],
+                is_active=True,
+            )
+        )
+        existing_keys.add(item["section_key"])
+        created = True
+    if created:
+        db.session.commit()
 
 
 def _published_sections_for_keys(*keys):
@@ -289,12 +395,18 @@ def _published_sections_for_keys(*keys):
 
 
 def _section_entry(section, fallback):
+    height_source = (
+        section.icon
+        if section and getattr(section, "icon", None) is not None
+        else fallback.get("card_height")
+    )
     return SimpleNamespace(
         title=(section.title if section and section.title else fallback.get("title")),
         subtitle=(section.subtitle if section and section.subtitle else fallback.get("subtitle", "")),
         content=(section.content if section and section.content else fallback.get("content", "")),
         image_url=(section.image_path if section and getattr(section, "image_path", None) else fallback.get("image_url", "")),
         section_key=(section.section_key if section else fallback.get("section_key", "")),
+        card_height=_normalize_section_card_height(height_source),
     )
 
 
@@ -492,6 +604,18 @@ def _is_allowed_upload_mimetype(upload):
     if not mime or mime == "application/octet-stream":
         return True
     return mime.startswith("image/") or mime == "application/pdf"
+
+
+def _media_picker_assets(limit=200):
+    if not table_exists("media_asset"):
+        return []
+    if not has_permission("homepage.media"):
+        return []
+    try:
+        return MediaAsset.query.order_by(MediaAsset.created_at.desc()).limit(limit).all()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return []
 
 
 # --- PUBLIC CONTENT ROUTES ---
@@ -754,26 +878,25 @@ def homepage_slider_list():
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
 def homepage_slider_create():
     if request.method == "POST":
-        title = guvenli_metin(request.form.get("title") or "").strip()
-        if not title:
-            flash("Slider başlığı zorunludur.", "danger")
-            return redirect(url_for("content.homepage_slider_create"))
-
         image_path = guvenli_metin(request.form.get("image_path") or request.form.get("image_url") or "").strip()
+        if not image_path:
+            flash("Slider görseli zorunludur.", "danger")
+            return redirect(url_for("content.homepage_slider_create"))
         if not _validate_media_path(image_path):
             flash("Slider görsel yolu güvenlik doğrulamasını geçemedi.", "danger")
             return redirect(url_for("content.homepage_slider_create"))
 
         fallback_active = _to_bool(request.form.get("is_active"))
         workflow_status = _resolve_status_from_form(WORKFLOW_PUBLISHED if fallback_active else WORKFLOW_DRAFT)
+        title = guvenli_metin(request.form.get("title") or "").strip() or DEFAULT_SLIDER_TITLE
 
         slider = HomeSlider(
             title=title,
-            subtitle=guvenli_metin(request.form.get("subtitle") or "").strip(),
-            description=guvenli_metin(request.form.get("description") or "").strip(),
+            subtitle="",
+            description="",
             image_url=image_path,
-            button_text=guvenli_metin(request.form.get("button_text") or "").strip() or "Detaylı Bilgi",
-            button_link=guvenli_metin(request.form.get("button_link") or "").strip() or "#",
+            button_text="",
+            button_link="#",
             order_index=_normalize_order_index(request.form.get("order_index"), 0),
             is_active=fallback_active,
         )
@@ -796,6 +919,8 @@ def homepage_slider_create():
         "admin/homepage_slider_form.html",
         slider=None,
         workflow_status=WORKFLOW_DRAFT,
+        media_assets=_media_picker_assets(),
+        can_use_media_picker=has_permission("homepage.media"),
     )
 
 
@@ -806,25 +931,23 @@ def homepage_slider_create():
 def homepage_slider_edit(slider_id):
     slider = db.get_or_404(HomeSlider, slider_id)
     if request.method == "POST":
-        title = guvenli_metin(request.form.get("title") or "").strip()
-        if not title:
-            flash("Slider başlığı zorunludur.", "danger")
-            return redirect(url_for("content.homepage_slider_edit", slider_id=slider.id))
-
         image_path = guvenli_metin(request.form.get("image_path") or request.form.get("image_url") or "").strip()
+        if not image_path:
+            flash("Slider görseli zorunludur.", "danger")
+            return redirect(url_for("content.homepage_slider_edit", slider_id=slider.id))
         if not _validate_media_path(image_path):
             flash("Slider görsel yolu güvenlik doğrulamasını geçemedi.", "danger")
             return redirect(url_for("content.homepage_slider_edit", slider_id=slider.id))
 
         fallback_active = _to_bool(request.form.get("is_active"))
         workflow_status = _resolve_status_from_form(WORKFLOW_PUBLISHED if fallback_active else WORKFLOW_DRAFT)
+        title_candidate = guvenli_metin(request.form.get("title") or "").strip()
 
-        slider.title = title
-        slider.subtitle = guvenli_metin(request.form.get("subtitle") or "").strip()
-        slider.description = guvenli_metin(request.form.get("description") or "").strip()
+        if title_candidate:
+            slider.title = title_candidate
+        elif not slider.title:
+            slider.title = DEFAULT_SLIDER_TITLE
         slider.image_url = image_path
-        slider.button_text = guvenli_metin(request.form.get("button_text") or "").strip() or "Detaylı Bilgi"
-        slider.button_link = guvenli_metin(request.form.get("button_link") or "").strip() or "#"
         slider.order_index = _normalize_order_index(request.form.get("order_index"), 0)
         slider.is_active = fallback_active
         _set_workflow_status("slider", slider, workflow_status, action="update")
@@ -844,6 +967,8 @@ def homepage_slider_edit(slider_id):
         "admin/homepage_slider_form.html",
         slider=slider,
         workflow_status=_current_workflow_status("slider", slider),
+        media_assets=_media_picker_assets(),
+        can_use_media_picker=has_permission("homepage.media"),
     )
 
 
@@ -886,13 +1011,25 @@ def homepage_slider_delete(slider_id):
 @login_required
 @homepage_editor_required
 def homepage_section_list():
+    _ensure_default_public_sections()
     query = HomeSection.query.order_by(HomeSection.section_key.asc(), HomeSection.order_index.asc())
     sections, search_query, selected_status = _apply_common_filters(query, HomeSection, "section")
+    sections = sections or []
     workflow_map = _workflow_map("section", sections)
+    card_height_map = {}
+    for section in sections:
+        try:
+            card_height_map[section.id] = _normalize_section_card_height(
+                section.icon,
+                fallback=DEFAULT_SECTION_CARD_HEIGHT,
+            )
+        except Exception:
+            card_height_map[section.id] = DEFAULT_SECTION_CARD_HEIGHT
     return render_template(
         "admin/homepage_section_list.html",
         sections=sections,
         workflow_map=workflow_map,
+        card_height_map=card_height_map,
         search_query=search_query,
         selected_status=selected_status,
     )
@@ -923,7 +1060,12 @@ def homepage_section_create():
             title=title,
             subtitle=guvenli_metin(request.form.get("subtitle") or "").strip(),
             content=guvenli_metin(request.form.get("content") or "").strip(),
-            icon=guvenli_metin(request.form.get("icon") or "").strip(),
+            icon=str(
+                _normalize_section_card_height(
+                    request.form.get("card_height") or request.form.get("icon"),
+                    fallback=DEFAULT_SECTION_CARD_HEIGHT,
+                )
+            ),
             image_url=image_path,
             order_index=_normalize_order_index(request.form.get("order_index"), 0),
             is_active=fallback_active,
@@ -947,6 +1089,9 @@ def homepage_section_create():
         "admin/homepage_section_form.html",
         section=None,
         workflow_status=WORKFLOW_DRAFT,
+        section_card_height=DEFAULT_SECTION_CARD_HEIGHT,
+        section_card_height_min=SECTION_CARD_HEIGHT_MIN,
+        section_card_height_max=SECTION_CARD_HEIGHT_MAX,
     )
 
 
@@ -971,11 +1116,21 @@ def homepage_section_edit(section_id):
         fallback_active = _to_bool(request.form.get("is_active"))
         workflow_status = _resolve_status_from_form(WORKFLOW_PUBLISHED if fallback_active else WORKFLOW_DRAFT)
 
+        existing_height = _normalize_section_card_height(
+            section.icon,
+            fallback=DEFAULT_SECTION_CARD_HEIGHT,
+        )
+
         section.section_key = section_key
         section.title = title
         section.subtitle = guvenli_metin(request.form.get("subtitle") or "").strip()
         section.content = guvenli_metin(request.form.get("content") or "").strip()
-        section.icon = guvenli_metin(request.form.get("icon") or "").strip()
+        section.icon = str(
+            _normalize_section_card_height(
+                request.form.get("card_height") or request.form.get("icon"),
+                fallback=existing_height,
+            )
+        )
         section.image_url = image_path
         section.order_index = _normalize_order_index(request.form.get("order_index"), 0)
         section.is_active = fallback_active
@@ -996,6 +1151,12 @@ def homepage_section_edit(section_id):
         "admin/homepage_section_form.html",
         section=section,
         workflow_status=_current_workflow_status("section", section),
+        section_card_height=_normalize_section_card_height(
+            section.icon,
+            fallback=DEFAULT_SECTION_CARD_HEIGHT,
+        ),
+        section_card_height_min=SECTION_CARD_HEIGHT_MIN,
+        section_card_height_max=SECTION_CARD_HEIGHT_MAX,
     )
 
 
@@ -1356,15 +1517,14 @@ def homepage_document_delete(document_id):
 @login_required
 @homepage_editor_required
 def homepage_stats_list():
-    query = HomeStatCard.query.order_by(HomeStatCard.order_index.asc(), HomeStatCard.id.asc())
-    stats, search_query, selected_status = _apply_common_filters(query, HomeStatCard, "stat")
-    workflow_map = _workflow_map("stat", stats)
+    existing_cards = HomeStatCard.query.order_by(HomeStatCard.order_index.asc(), HomeStatCard.id.asc()).all()
+    fixed_cards, changed = ensure_fixed_homepage_stat_cards(existing_cards)
+    if changed:
+        db.session.commit()
+    stats = build_fixed_homepage_stat_payload(fixed_cards)
     return render_template(
         "admin/homepage_stats_list.html",
         stats=stats,
-        workflow_map=workflow_map,
-        search_query=search_query,
-        selected_status=selected_status,
     )
 
 
@@ -1373,30 +1533,7 @@ def homepage_stats_list():
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 def homepage_stat_create():
-    title = guvenli_metin(request.form.get("title") or "").strip()
-    value_text = guvenli_metin(request.form.get("value_text") or "").strip()
-    if not title or not value_text:
-        flash("İstatistik başlığı ve değeri zorunludur.", "danger")
-        return redirect(url_for("content.homepage_stats_list"))
-
-    fallback_active = _to_bool(request.form.get("is_active"))
-    workflow_status = _resolve_status_from_form(WORKFLOW_PUBLISHED if fallback_active else WORKFLOW_DRAFT)
-
-    card = HomeStatCard(
-        title=title,
-        value_text=value_text,
-        subtitle=guvenli_metin(request.form.get("subtitle") or "").strip(),
-        icon=guvenli_metin(request.form.get("icon") or "").strip(),
-        order_index=_normalize_order_index(request.form.get("order_index"), 0),
-        is_active=fallback_active,
-    )
-    db.session.add(card)
-    db.session.flush()
-    _set_workflow_status("stat", card, workflow_status, action="create")
-    db.session.commit()
-    audit_log("homepage.stat.create", outcome="success", stat_id=card.id, status=workflow_status)
-    log_kaydet("Anasayfa İçerik", f"İstatistik kartı eklendi: {card.title}")
-    flash("İstatistik kartı eklendi.", "success")
+    flash("Sayısal Özet alanı 4 sabit karttan oluşur. Yeni kart eklenemez.", "warning")
     return redirect(url_for("content.homepage_stats_list"))
 
 
@@ -1405,27 +1542,46 @@ def homepage_stat_create():
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 def homepage_stat_edit(card_id):
-    card = db.get_or_404(HomeStatCard, card_id)
-    title = guvenli_metin(request.form.get("title") or "").strip()
-    value_text = guvenli_metin(request.form.get("value_text") or "").strip()
-    if not title or not value_text:
-        flash("İstatistik başlığı ve değeri zorunludur.", "danger")
+    existing_cards = HomeStatCard.query.order_by(HomeStatCard.order_index.asc(), HomeStatCard.id.asc()).all()
+    fixed_cards, changed = ensure_fixed_homepage_stat_cards(existing_cards)
+    if changed:
+        db.session.flush()
+    fixed_payload = build_fixed_homepage_stat_payload(fixed_cards)
+    payload_by_id = {item.id: item for item in fixed_payload if item.id is not None}
+
+    if card_id not in payload_by_id:
+        if changed:
+            db.session.commit()
+        flash("Yalnızca sabit 4 sayısal özet kartı düzenlenebilir.", "danger")
         return redirect(url_for("content.homepage_stats_list"))
 
-    fallback_active = _to_bool(request.form.get("is_active"))
-    workflow_status = _resolve_status_from_form(WORKFLOW_PUBLISHED if fallback_active else WORKFLOW_DRAFT)
+    card = db.get_or_404(HomeStatCard, card_id)
+    value_text = guvenli_metin(request.form.get("value_text") or "").strip()
+    if not value_text:
+        flash("İstatistik değeri zorunludur.", "danger")
+        return redirect(url_for("content.homepage_stats_list"))
 
-    card.title = title
+    image_url = guvenli_metin(request.form.get("image_url") or request.form.get("icon") or "").strip()
+    if image_url and not _validate_media_path(image_url):
+        flash("Görsel yolu güvenlik doğrulamasını geçemedi.", "danger")
+        return redirect(url_for("content.homepage_stats_list"))
+
+    image_alt_text = guvenli_metin(
+        request.form.get("image_alt_text") or request.form.get("subtitle") or ""
+    ).strip()
+
+    payload = payload_by_id[card_id]
+    card.title = payload.title
     card.value_text = value_text
-    card.subtitle = guvenli_metin(request.form.get("subtitle") or "").strip()
-    card.icon = guvenli_metin(request.form.get("icon") or "").strip()
-    card.order_index = _normalize_order_index(request.form.get("order_index"), 0)
-    card.is_active = fallback_active
-    _set_workflow_status("stat", card, workflow_status, action="update")
+    card.icon = image_url or payload.image_url
+    card.subtitle = image_alt_text or payload.image_alt_text
+    card.order_index = payload.order_index
+    card.is_active = True
+
     db.session.commit()
-    audit_log("homepage.stat.update", outcome="success", stat_id=card.id, status=workflow_status)
-    log_kaydet("Anasayfa İçerik", f"İstatistik kartı güncellendi: {card.title}")
-    flash("İstatistik kartı güncellendi.", "success")
+    audit_log("homepage.stat.update", outcome="success", stat_id=card.id, slot_key=payload.slot_key)
+    log_kaydet("Anasayfa İçerik", f"Sayısal özet kartı güncellendi: {card.title}")
+    flash("Sayısal özet kartı güncellendi.", "success")
     return redirect(url_for("content.homepage_stats_list"))
 
 
@@ -1434,14 +1590,7 @@ def homepage_stat_edit(card_id):
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 def homepage_stat_toggle(card_id):
-    card = db.get_or_404(HomeStatCard, card_id)
-    current_status = _current_workflow_status("stat", card)
-    next_status = WORKFLOW_PASSIVE if current_status == WORKFLOW_PUBLISHED else WORKFLOW_PUBLISHED
-    _set_workflow_status("stat", card, next_status, action="toggle")
-    db.session.commit()
-    audit_log("homepage.stat.toggle", outcome="success", stat_id=card.id, status=next_status)
-    log_kaydet("Anasayfa İçerik", f"İstatistik kartı durumu değiştirildi: {card.title} -> {next_status}")
-    flash("Kart durumu güncellendi.", "success")
+    flash("Sayısal Özet kartları sabit yapıda olduğu için durum değişikliği kapatıldı.", "warning")
     return redirect(url_for("content.homepage_stats_list"))
 
 
@@ -1450,12 +1599,7 @@ def homepage_stat_toggle(card_id):
 @homepage_editor_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 def homepage_stat_delete(card_id):
-    card = db.get_or_404(HomeStatCard, card_id)
-    ContentWorkflow.query.filter_by(entity_type="stat", entity_id=card.id).delete()
-    db.session.delete(card)
-    db.session.commit()
-    audit_log("homepage.stat.delete", outcome="success", stat_id=card.id)
-    flash("Kart silindi.", "info")
+    flash("Sayısal Özet kartları sabit yapıda olduğu için silme işlemi kapatıldı.", "warning")
     return redirect(url_for("content.homepage_stats_list"))
 
 
@@ -1594,6 +1738,9 @@ def homepage_bulk_action(content_type):
     model = CONTENT_TYPE_MAP.get(content_type)
     if not model:
         abort(404)
+    if content_type == "stat":
+        flash("Sayısal Özet kartları sabit yapıda olduğu için toplu işlem kapatıldı.", "warning")
+        return redirect(url_for(_content_list_endpoint(content_type)))
 
     action = (request.form.get("bulk_action") or "").strip().lower()
     raw_ids = request.form.getlist("selected_ids")
@@ -1657,6 +1804,9 @@ def homepage_move_item(content_type, item_id, direction):
     model = CONTENT_TYPE_MAP.get(content_type)
     if not model:
         abort(404)
+    if content_type == "stat":
+        flash("Sayısal Özet kartlarında sıra sabittir.", "warning")
+        return redirect(url_for(_content_list_endpoint(content_type)))
     if direction not in {"up", "down"}:
         abort(400)
 
@@ -1678,16 +1828,17 @@ def homepage_move_item(content_type, item_id, direction):
 def media_library():
     query = MediaAsset.query.order_by(MediaAsset.created_at.desc())
     search = (request.args.get("q") or "").strip()
-    assets = query.all()
     if search:
-        assets = [
-            asset for asset in assets
-            if turkish_contains_all(
-                " ".join(str(field or "") for field in (asset.title, asset.file_path, asset.alt_text)),
-                search,
+        for token in [item for item in search.split() if item]:
+            like_token = f"%{token}%"
+            query = query.filter(
+                sa.or_(
+                    MediaAsset.title.ilike(like_token),
+                    MediaAsset.file_path.ilike(like_token),
+                    MediaAsset.alt_text.ilike(like_token),
+                )
             )
-        ]
-    assets = assets[:300]
+    assets = query.limit(300).all()
     return render_template("admin/media_library.html", assets=assets, search_query=search)
 
 

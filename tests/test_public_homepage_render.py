@@ -2,7 +2,7 @@ import re
 import json
 
 from extensions import db
-from models import SiteAyarlari
+from models import HomeSection, NavMenu, SiteAyarlari
 from tests.factories import (
     HomeQuickLinkFactory,
     HomeSliderFactory,
@@ -47,7 +47,7 @@ def test_homepage_renders_fallback_content_when_cms_empty(client, app):
     page = response.data.decode("utf-8")
 
     assert response.status_code == 200
-    assert "ARFF Özel Arama Kurtarma Timi" in page
+    assert "ÖZEL ARFF ARAMA KURTARMA TİMİ" in page
     assert 'data-hero-label' in page
     assert "Duyurular" in page
     assert "Duyurular ve sahadan kısa notlar" not in page
@@ -64,12 +64,38 @@ def test_homepage_renders_fallback_content_when_cms_empty(client, app):
 
 
 def test_only_stat_cards_render_on_homepage(client, app):
-    stat_assets = HomeStatCardFactory(title="Toplam Malzeme", value_text="24/7", subtitle="Canlı veri")
-    stat_people = HomeStatCardFactory(title="Toplam Personel", value_text="99", subtitle="Canlı veri")
+    stat_assets = HomeStatCardFactory(
+        title="Aktif Ekipman",
+        value_text="72",
+        subtitle="Toplam Malzeme simgesi",
+        icon="https://example.com/stats/malzeme.png",
+        order_index=0,
+    )
+    stat_people = HomeStatCardFactory(
+        title="Gönüllü Personel",
+        value_text="65",
+        subtitle="Toplam Personel simgesi",
+        icon="https://example.com/stats/personel.png",
+        order_index=1,
+    )
+    stat_team = HomeStatCardFactory(
+        title="Tim Sayısı",
+        value_text="3",
+        subtitle="Aktif Tim simgesi",
+        icon="https://example.com/stats/tim.png",
+        order_index=2,
+    )
+    stat_training = HomeStatCardFactory(
+        title="Eğitim Planı",
+        value_text="8",
+        subtitle="Tamamlanan Eğitimler simgesi",
+        icon="https://example.com/stats/egitim.png",
+        order_index=3,
+    )
     quick = HomeQuickLinkFactory(title="Doküman Merkezi", description="Hızlı erişim", link_url="/dokumanlar")
     assets = [InventoryAssetFactory() for _ in range(3)]
     users = [KullaniciFactory() for _ in range(2)]
-    db.session.add_all([stat_assets, stat_people, quick, *assets, *users])
+    db.session.add_all([stat_assets, stat_people, stat_team, stat_training, quick, *assets, *users])
     db.session.commit()
 
     response = client.get("/")
@@ -80,13 +106,14 @@ def test_only_stat_cards_render_on_homepage(client, app):
     assert "Toplam Personel" in page
     assert "Aktif Tim" in page
     assert "Tamamlanan Eğitimler" in page
-    assert "24/7" not in page
-    assert re.search(r'data-homepage-stat="total_assets"[\s\S]*?<div class="stat-value" data-stat-final="3">3</div>', page)
-    assert re.search(r'data-homepage-stat="total_personnel"[\s\S]*?<div class="stat-value" data-stat-final="2">2</div>', page)
-    assert "/static/img/sayisal-ozet/simge_1_malzeme.png" in page
-    assert "/static/img/sayisal-ozet/simge_2_personel.png" in page
-    assert "/static/img/sayisal-ozet/simge_3_aktif_tim.png" in page
-    assert "/static/img/sayisal-ozet/simge_4_egitim.png" in page
+    assert re.search(r'data-homepage-stat="total_assets"[\s\S]*?<div class="stat-value" data-stat-final="72">72</div>', page)
+    assert re.search(r'data-homepage-stat="total_personnel"[\s\S]*?<div class="stat-value" data-stat-final="65">65</div>', page)
+    assert re.search(r'data-homepage-stat="total_airports"[\s\S]*?<div class="stat-value" data-stat-final="3">3</div>', page)
+    assert re.search(r'data-homepage-stat="completed_trainings"[\s\S]*?<div class="stat-value" data-stat-final="8">8</div>', page)
+    assert "https://example.com/stats/malzeme.png" in page
+    assert "https://example.com/stats/personel.png" in page
+    assert "https://example.com/stats/tim.png" in page
+    assert "https://example.com/stats/egitim.png" in page
     assert "Doküman Merkezi" not in page
 
 
@@ -118,6 +145,31 @@ def test_header_and_footer_match_new_public_shell(client, app):
     assert "SAR-X ARFF" not in page
 
 
+def test_public_header_uses_managed_menu_records(client, app):
+    db.session.add_all(
+        [
+            NavMenu(ad="Ana Ekran", link="/", sira=0),
+            NavMenu(ad="Biz Kimiz Kurumsal", link="/hakkimizda/biz-kimiz", sira=1),
+            NavMenu(ad="Misyon Vizyon Kurumsal", link="/hakkimizda/misyon-ve-vizyon", sira=2),
+            NavMenu(ad="Etik İlkeler", link="/hakkimizda/etik-degerler", sira=3),
+            NavMenu(ad="Eğitim Programı", link="/faaliyetlerimiz/egitimler", sira=4),
+            NavMenu(ad="Tatbikat Planı", link="/faaliyetlerimiz/tatbikatlar", sira=5),
+        ]
+    )
+    db.session.commit()
+
+    response = client.get("/")
+    page = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Ana Ekran" in page
+    assert "Biz Kimiz Kurumsal" in page
+    assert "Misyon Vizyon Kurumsal" in page
+    assert "Etik İlkeler" in page
+    assert "Eğitim Programı" in page
+    assert "Tatbikat Planı" in page
+
+
 def test_header_logo_renders_when_site_logo_is_configured(client, app):
     settings = SiteAyarlari(
         baslik="ARFF SAR",
@@ -134,6 +186,59 @@ def test_header_logo_renders_when_site_logo_is_configured(client, app):
     assert 'alt="ARFF SAR logo"' in page
 
 
+def test_public_footer_renders_custom_managed_texts(client, app):
+    settings = SiteAyarlari(
+        baslik="ARFF SAR",
+        iletisim_notu=json.dumps(
+            {
+                "footer_brand_kicker": "Özel Kicker",
+                "footer_brand_title": "Özel Tim Başlığı",
+                "footer_brand_description": "Özel marka açıklaması",
+                "footer_contact_kicker": "Bize Ulaşın",
+                "footer_contact_title": "İletişim Başlığı",
+                "footer_contact_description": "İletişim açıklama metni",
+                "footer_contact_email": "iletisim@ornek.org",
+                "footer_copyright": "© 2028 ARFF SAR",
+                "footer_bottom_slogan": "Sade ve hazır iletişim",
+            },
+            ensure_ascii=False,
+        ),
+    )
+    db.session.add(settings)
+    db.session.commit()
+
+    response = client.get("/")
+    page = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Özel Kicker" in page
+    assert "Özel Tim Başlığı" in page
+    assert "Özel marka açıklaması" in page
+    assert "Bize Ulaşın" in page
+    assert "İletişim Başlığı" in page
+    assert "İletişim açıklama metni" in page
+    assert "iletisim@ornek.org" in page
+    assert "mailto:iletisim@ornek.org" in page
+    assert "© 2028 ARFF SAR" in page
+    assert "Sade ve hazır iletişim" in page
+
+
+def test_public_footer_uses_defaults_when_footer_meta_missing(client, app):
+    response = client.get("/")
+    page = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "ARFF SAR" in page
+    assert "ARFF Özel Arama Kurtarma Timi" in page
+    assert "Sahada birbirine güvenen, birlikte öğrenen ve ihtiyaç anında hızla kenetlenen gönüllü timin dijital vitrini." in page
+    assert "İletişim" in page
+    assert "Bizimle iletişime geçin" in page
+    assert "Eğitim, iş birliği ya da duyuru paylaşımı için bize kısa bir e-posta bırakabilirsiniz." in page
+    assert "✉️ iletisim@sarx.org" in page
+    assert "© 2026 ARFF SAR" in page
+    assert "Gönüllü tim ruhu, sade iletişim ve hazır koordinasyon" in page
+
+
 def test_homepage_about_cards_render_requested_order(client, app):
     response = client.get("/")
     page = response.data.decode("utf-8")
@@ -145,6 +250,27 @@ def test_homepage_about_cards_render_requested_order(client, app):
     assert "Odak" not in page
     assert "Bakış" not in page
     assert "İlke" not in page
+    assert 'data-card-height="320"' in page
+
+
+def test_homepage_about_cards_use_section_card_height_and_fallback(client, app):
+    db.session.add_all(
+        [
+            HomeSection(section_key="about", title="Biz Kimiz?", content="About içerik", icon="400", order_index=0, is_active=True),
+            HomeSection(section_key="mission", title="Misyon", content="Misyon içerik", icon="gecersiz", order_index=1, is_active=True),
+            HomeSection(section_key="vision", title="Vizyon", content="Vizyon içerik", icon="140", order_index=2, is_active=True),
+            HomeSection(section_key="ethics", title="Etik Değerler", content="Etik içerik", icon="", order_index=3, is_active=True),
+        ]
+    )
+    db.session.commit()
+
+    response = client.get("/")
+    page = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert '--about-card-min-height: 400px;' in page
+    assert '--about-card-min-height: 320px;' in page
+    assert '--about-card-min-height: 140px;' in page
 
 
 def test_homepage_handles_missing_public_tables_without_crashing(client, monkeypatch):
@@ -159,6 +285,7 @@ def test_homepage_handles_missing_public_tables_without_crashing(client, monkeyp
         "announcement",
         "haber",
         "document_resource",
+        "home_stat_card",
         "home_quick_link",
         "inventory_asset",
         "havalimani",
@@ -175,5 +302,5 @@ def test_homepage_handles_missing_public_tables_without_crashing(client, monkeyp
     page = response.data.decode("utf-8")
 
     assert response.status_code == 200
-    assert "ARFF Özel Arama Kurtarma Timi" in page
+    assert "ÖZEL ARFF ARAMA KURTARMA TİMİ" in page
     assert "Henüz yayınlanmış duyuru yok" in page

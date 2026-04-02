@@ -1,4 +1,5 @@
 import io
+import json
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -10,8 +11,8 @@ from sqlalchemy.orm import joinedload
 
 from decorators import permission_required
 from error_handling import get_error_spec, mask_sensitive_text
-from extensions import TR_TZ, column_exists, db, log_kaydet
-from models import IslemLog, Kullanici
+from extensions import TR_TZ, column_exists, db, log_kaydet, table_exists
+from models import ErrorReport, IslemLog, IslemLogArchive, Kullanici
 from . import admin_bp
 
 
@@ -356,6 +357,22 @@ def _serialize_error_row(log):
     )
 
 
+def _serialize_error_report_row(report):
+    actor = getattr(report, "user", None)
+    airport = getattr(report, "havalimani", None)
+    return SimpleNamespace(
+        id=report.id,
+        created_at_label=_format_timestamp_label(getattr(report, "created_at", None), empty_label="Tarih bilgisi yok"),
+        user_label=getattr(actor, "tam_ad", None) or getattr(actor, "kullanici_adi", None) or "Bilinmiyor",
+        role_label=_label_role(getattr(report, "role_key", None)),
+        airport_label=getattr(airport, "ad", None) or "Tanımsız",
+        path=str(getattr(report, "path", None) or "-").strip() or "-",
+        error_code=str(getattr(report, "error_code", None) or "-").strip() or "-",
+        request_id=str(getattr(report, "request_id", None) or "-").strip() or "-",
+        summary=str(getattr(report, "error_summary", None) or "Hata bildirimi").strip(),
+    )
+
+
 def _serialize_audit_export_row(log):
     row = _serialize_log_row(log)
     return {
@@ -691,6 +708,107 @@ def _prepare_error_log_listing():
     )
 
 
+def _prepare_error_report_listing():
+    if not table_exists("error_report"):
+        return SimpleNamespace(rows=[], pagination=_build_pagination("admin.hata_kayitlari", 1, 1, _query_args_without("report_page")))
+
+    report_page = _parse_page_arg(request.args.get("report_page"))
+    query = (
+        ErrorReport.query.options(joinedload(ErrorReport.user), joinedload(ErrorReport.havalimani))
+        .order_by(ErrorReport.created_at.desc(), ErrorReport.id.desc())
+    )
+    rows, _, page, total_pages = _paginate_query(query, report_page)
+    pagination = _build_pagination("admin.hata_kayitlari", page, total_pages, _query_args_without("report_page"))
+    return SimpleNamespace(rows=[_serialize_error_report_row(row) for row in rows], pagination=pagination)
+
+
+def _archive_payload(log):
+    return {
+        "source_log_id": log.id,
+        "kullanici_id": log.kullanici_id,
+        "havalimani_id": log.havalimani_id,
+        "islem_tipi": log.islem_tipi,
+        "event_key": getattr(log, "event_key", None),
+        "detay": log.detay,
+        "target_model": getattr(log, "target_model", None),
+        "target_id": getattr(log, "target_id", None),
+        "outcome": getattr(log, "outcome", None),
+        "error_code": getattr(log, "error_code", None),
+        "title": getattr(log, "title", None),
+        "user_message": getattr(log, "user_message", None),
+        "owner_message": getattr(log, "owner_message", None),
+        "module": getattr(log, "module", None),
+        "severity": getattr(log, "severity", None),
+        "exception_type": getattr(log, "exception_type", None),
+        "exception_message": getattr(log, "exception_message", None),
+        "traceback_summary": getattr(log, "traceback_summary", None),
+        "route": getattr(log, "route", None),
+        "method": getattr(log, "method", None),
+        "request_id": getattr(log, "request_id", None),
+        "user_email": getattr(log, "user_email", None),
+        "resolved": getattr(log, "resolved", False),
+        "resolution_note": getattr(log, "resolution_note", None),
+        "ip_adresi": getattr(log, "ip_adresi", None),
+        "user_agent": getattr(log, "user_agent", None),
+        "ip_address": getattr(log, "ip_address", None),
+        "zaman": _format_timestamp_label(getattr(log, "zaman", None)),
+    }
+
+
+def _archive_and_delete_logs(scope):
+    if not current_user.is_sahip:
+        abort(403)
+    if not table_exists("islem_log_archive"):
+        flash("Arşiv tablosu hazır olmadığı için temizlik yapılamadı.", "danger")
+        return False
+
+    confirmation = (request.form.get("cleanup_confirmation") or "").strip().upper()
+    if confirmation != "ONAYLA":
+        flash("Temizlik için onay alanına ONAYLA yazın.", "warning")
+        return False
+
+    query = IslemLog.query
+    if scope == "audit":
+        query = query.filter(IslemLog.error_code.is_(None))
+    else:
+        query = query.filter(IslemLog.error_code.isnot(None))
+
+    rows = query.order_by(IslemLog.id.asc()).all()
+    if not rows:
+        flash("Temizlenecek kayıt bulunamadı.", "info")
+        return False
+
+    archive_rows = [
+        IslemLogArchive(
+            source_log_id=row.id,
+            archive_scope=scope,
+            payload_json=json.dumps(_archive_payload(row), ensure_ascii=False),
+            archived_by_user_id=current_user.id,
+        )
+        for row in rows
+    ]
+    try:
+        db.session.add_all(archive_rows)
+        for row in rows:
+            db.session.delete(row)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        flash("Kayıtlar yedeklenemediği için silme yapılmadı.", "danger")
+        return False
+
+    cleaned_label = "işlem kayıtları" if scope == "audit" else "hata kayıtları"
+    log_kaydet(
+        "Arşiv",
+        f"{len(rows)} {cleaned_label} yedeklenip temizlendi.",
+        event_key=f"logs.{scope}.archive_cleanup",
+        target_model="IslemLog",
+        outcome="success",
+    )
+    flash(f"{len(rows)} {cleaned_label} yedeklenip temizlendi.", "success")
+    return True
+
+
 def _write_excel_response(rows, columns, filename_prefix):
     frame = pd.DataFrame(rows, columns=columns)
     payload = io.BytesIO()
@@ -753,6 +871,7 @@ def loglari_gor():
         pagination=pagination,
         export_query=state.export_query,
         clear_url=state.clear_url,
+        can_cleanup=current_user.is_sahip,
     )
 
 
@@ -798,11 +917,14 @@ def hata_kayitlari():
 
     try:
         state = _prepare_error_log_listing()
+        report_state = _prepare_error_report_listing()
         if not state.has_schema_support:
             pagination = _build_pagination("admin.hata_kayitlari", 1, 1, {})
             return render_template(
                 "admin/hata_kayitlari.html",
                 hata_kayitlari=[],
+                error_reports=report_state.rows,
+                report_pagination=report_state.pagination,
                 module_options=[],
                 severity_options=[],
                 selected_module="",
@@ -814,6 +936,7 @@ def hata_kayitlari():
                 pagination=pagination,
                 export_query={},
                 clear_url=url_for("admin.hata_kayitlari"),
+                can_cleanup=current_user.is_sahip,
             )
 
         raw_logs, _, page, total_pages = _paginate_query(state.query, state.page)
@@ -834,10 +957,13 @@ def hata_kayitlari():
         )
         raw_logs = []
         pagination = _build_pagination("admin.hata_kayitlari", 1, 1, {})
+        report_state = SimpleNamespace(rows=[], pagination=_build_pagination("admin.hata_kayitlari", 1, 1, {}))
 
     return render_template(
         "admin/hata_kayitlari.html",
         hata_kayitlari=[_serialize_error_row(log) for log in raw_logs],
+        error_reports=report_state.rows,
+        report_pagination=report_state.pagination,
         module_options=state.module_options,
         severity_options=state.severity_options,
         selected_module=state.selected_module,
@@ -849,6 +975,7 @@ def hata_kayitlari():
         pagination=pagination,
         export_query=state.export_query,
         clear_url=state.clear_url,
+        can_cleanup=current_user.is_sahip,
     )
 
 
@@ -932,3 +1059,19 @@ def hata_kaydi_durum(log_id):
     db.session.commit()
     flash("Hata kaydı güncellendi.", "success")
     return redirect(url_for("admin.hata_kaydi_detay", log_id=log.id))
+
+
+@admin_bp.route('/islem-loglari/arsivle-temizle', methods=['POST'])
+@login_required
+@permission_required('logs.view')
+def loglari_arsivle_temizle():
+    _archive_and_delete_logs("audit")
+    return redirect(url_for("admin.loglari_gor"))
+
+
+@admin_bp.route('/hata-kayitlari/arsivle-temizle', methods=['POST'])
+@login_required
+@permission_required('logs.view')
+def hata_kayitlarini_arsivle_temizle():
+    _archive_and_delete_logs("error")
+    return redirect(url_for("admin.hata_kayitlari"))

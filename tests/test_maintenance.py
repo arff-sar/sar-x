@@ -126,3 +126,69 @@ def test_maintenance_api_requires_permission(client, app):
     response = client.get("/api/bakim/istatistikler")
 
     assert response.status_code == 403
+
+
+def test_maintenance_panel_uses_turkish_status_labels_instead_of_raw_uppercase_status(client, app):
+    airport = HavalimaniFactory(kodu="VAN")
+    owner = KullaniciFactory(rol="sahip", havalimani=airport)
+    template = EquipmentTemplateFactory(name="Kompresör", maintenance_period_days=30)
+    asset = InventoryAssetFactory(
+        equipment_template=template,
+        airport=airport,
+        serial_no="VAN-SN-1",
+        qr_code="VAN-QR-1",
+    )
+    order = WorkOrder(
+        work_order_no="WO-VAN-1",
+        asset=asset,
+        maintenance_type="bakim",
+        description="Durum etiketi Türkçe olmalı",
+        created_user=owner,
+        status="atandi",
+        priority="orta",
+    )
+    db.session.add_all([airport, owner, template, asset, order])
+    db.session.commit()
+    _login(client, owner)
+
+    response = client.get("/bakim")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Atandı" in html
+    assert "ATANDI" not in html
+
+
+def test_work_order_pages_render_turkish_status_labels(client, app):
+    airport = HavalimaniFactory(kodu="GZT")
+    owner = KullaniciFactory(rol="sahip", havalimani=airport)
+    template = EquipmentTemplateFactory(name="Jeneratör", maintenance_period_days=45)
+    asset = InventoryAssetFactory(
+        equipment_template=template,
+        airport=airport,
+        serial_no="GZT-SN-9",
+        qr_code="GZT-QR-9",
+    )
+    order = WorkOrder(
+        work_order_no="WO-GZT-1",
+        asset=asset,
+        maintenance_type="bakim",
+        description="Durum metni Türkçe test",
+        created_user=owner,
+        status="islemde",
+        priority="orta",
+    )
+    db.session.add_all([airport, owner, template, asset, order])
+    db.session.commit()
+    _login(client, owner)
+
+    list_response = client.get("/bakim/is-emirleri")
+    list_html = list_response.data.decode("utf-8")
+    assert list_response.status_code == 200
+    assert "İşlemde" in list_html
+    assert "ISLEMDE" not in list_html
+
+    detail_response = client.get(f"/bakim/is-emri/{order.id}")
+    detail_html = detail_response.data.decode("utf-8")
+    assert detail_response.status_code == 200
+    assert "Durum: İşlemde" in detail_html

@@ -1,5 +1,6 @@
 import json
 import hashlib
+import secrets
 import smtplib
 import re
 from datetime import timedelta
@@ -18,13 +19,16 @@ from captcha_helper import (
     render_login_captcha_svg,
     validate_login_captcha,
 )
-from error_handling import capture_error, flash_safe_error
-from models import AuthLockout, Kullanici, PasskeyCredential, get_tr_now
-from extensions import audit_log, db, limiter, log_kaydet
+from error_handling import capture_error, flash_safe_error, get_error_spec
+from models import AuthLockout, ErrorReport, Kullanici, PasskeyCredential, get_tr_now
+from models import EmailChangeToken, PushDeviceSubscription, UserNotificationPreference
+from extensions import audit_log, db, limiter, log_kaydet, normalize_user_agent, table_exists
 from decorators import (
     can_use_role_switch,
     clear_role_override,
+    get_effective_role,
     get_effective_role_label,
+    get_effective_permissions,
     get_role_switch_options,
     role_home_endpoint,
     set_role_override,
@@ -48,6 +52,18 @@ auth_bp = Blueprint('auth', __name__)
 
 PASSWORD_RESET_SALT = 'sifre-sifirlama-tuzu'
 PASSWORD_RESET_PATTERN = re.compile(r"^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*?[#?!@$%^&*-]).{8,}$")
+BODY_SIZE_OPTIONS = ("XS", "S", "M", "L", "XL", "XXL", "3XL")
+SHOE_SIZE_OPTIONS = tuple(
+    str(size).rstrip("0").rstrip(".")
+    for size in (34 + (step * 0.5) for step in range(33))
+)
+PUSH_NOTIFICATION_QUIET_HOUR_START = 22
+PUSH_NOTIFICATION_QUIET_HOUR_END = 9
+PUSH_DEVICE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,80}$")
+SETTINGS_DEMO_SIM_SESSION_KEY = "settings_demo_sim_enabled"
+SETTINGS_DEMO_EMAIL_VERIFY_PATH_SESSION_KEY = "settings_demo_email_verify_path"
+SETTINGS_DEMO_EMAIL_TARGET_SESSION_KEY = "settings_demo_email_target"
+ERROR_REPORT_SESSION_KEY = "pending_error_report"
 
 # --- YARDIMCI FONKSİYONLAR ---
 
@@ -60,12 +76,13 @@ def _captcha_feedback_message(captcha_state):
     return "Doğrulamayı tamamlamak için ekrandaki güncel kodu tekrar girin."
 
 
-def _render_login_page(status_code=200, force_new=False, captcha_feedback=None):
+def _render_login_page(status_code=200, force_new=False, captcha_feedback=None, next_target=""):
     response = make_response(
         render_template(
             'login.html',
             login_captcha=build_login_captcha(force_new=force_new),
             login_captcha_feedback=captcha_feedback,
+            login_next=next_target or "",
         ),
         status_code,
     )
@@ -371,6 +388,155 @@ def _validate_password_reset_value(password):
     )
 
 
+def _get_email_change_token_max_age():
+    try:
+        return max(int(current_app.config.get("EMAIL_CHANGE_TOKEN_MAX_AGE_SECONDS", 3600)), 300)
+    except (TypeError, ValueError):
+        return 3600
+
+
+def _hash_opaque_token(raw_token):
+    return hashlib.sha256(str(raw_token or "").encode("utf-8")).hexdigest()
+
+
+def _build_email_change_verify_link(raw_token):
+    verify_path = url_for("auth.email_change_verify", token=raw_token)
+    return urljoin(_get_password_reset_base_url(), verify_path.lstrip("/"))
+
+
+def _find_active_user_by_email_except(email, user_id):
+    normalized = _normalize_login_email(email)
+    if not normalized:
+        return None
+    return (
+        Kullanici.query.filter(
+            Kullanici.is_deleted.is_(False),
+            Kullanici.id != int(user_id or 0),
+            func.lower(func.trim(Kullanici.kullanici_adi)) == normalized,
+        )
+        .order_by(Kullanici.id.asc())
+        .first()
+    )
+
+
+def _normalize_body_size(raw_value):
+    value = str(raw_value or "").strip().upper()
+    if not value:
+        return None, None
+    if value not in BODY_SIZE_OPTIONS:
+        return None, "Beden alanları listeden seçilmelidir."
+    return value, None
+
+
+def _normalize_shoe_size(raw_value):
+    cleaned = str(raw_value or "").strip().replace(",", ".")
+    if not cleaned:
+        return None, None
+    if cleaned not in SHOE_SIZE_OPTIONS:
+        return None, "Ayakkabı numarası listeden seçilmelidir."
+    try:
+        return float(cleaned), None
+    except (TypeError, ValueError):
+        return None, "Ayakkabı numarası doğrulanamadı."
+
+
+def _notification_option_catalog_for_user(user):
+    permissions = set(get_effective_permissions(user))
+    options = []
+    if permissions.intersection({"workorder.view", "workorder.create", "workorder.edit", "workorder.assign", "workorder.close", "workorder.approve"}):
+        options.append({"key": "work_orders", "label": "İş emri bildirimleri"})
+    if permissions.intersection({"assignment.view", "assignment.create", "assignment.manage"}):
+        options.append({"key": "assignments", "label": "Zimmet bildirimleri"})
+    if permissions.intersection({"maintenance.view", "maintenance.edit", "maintenance.plan.change", "maintenance.templates.manage"}):
+        options.append({"key": "maintenance", "label": "Bakım bildirimleri"})
+        options.append({"key": "calibration", "label": "Kalibrasyon bildirimleri"})
+    return options
+
+
+def _is_mobile_or_pwa_context():
+    mode_hint = str(request.headers.get("X-SARX-Client-Mode") or request.form.get("client_mode") or request.args.get("client_mode") or "").strip().lower()
+    if mode_hint == "standalone":
+        return True
+    normalized_agent = normalize_user_agent(getattr(request.user_agent, "string", ""))
+    if not normalized_agent:
+        return False
+    return any(token in normalized_agent for token in ("Mobile", "Tablet"))
+
+
+def _is_demo_tools_runtime_enabled():
+    if not current_app.config.get("DEMO_TOOLS_ENABLED", False):
+        return False
+    env_name = str(current_app.config.get("ENV") or "").strip().lower()
+    return env_name != "production"
+
+
+def _sync_settings_demo_simulation_flag():
+    if not _is_demo_tools_runtime_enabled():
+        session.pop(SETTINGS_DEMO_SIM_SESSION_KEY, None)
+        session.pop(SETTINGS_DEMO_EMAIL_VERIFY_PATH_SESSION_KEY, None)
+        session.pop(SETTINGS_DEMO_EMAIL_TARGET_SESSION_KEY, None)
+        return False
+
+    requested = str(request.args.get("demo_sim") or "").strip().lower()
+    if requested in {"1", "true", "on"}:
+        session[SETTINGS_DEMO_SIM_SESSION_KEY] = True
+    elif requested in {"0", "false", "off"}:
+        session.pop(SETTINGS_DEMO_SIM_SESSION_KEY, None)
+        session.pop(SETTINGS_DEMO_EMAIL_VERIFY_PATH_SESSION_KEY, None)
+        session.pop(SETTINGS_DEMO_EMAIL_TARGET_SESSION_KEY, None)
+
+    return bool(session.get(SETTINGS_DEMO_SIM_SESSION_KEY))
+
+
+def _settings_demo_simulation_enabled():
+    return _is_demo_tools_runtime_enabled() and bool(session.get(SETTINGS_DEMO_SIM_SESSION_KEY))
+
+
+def _is_settings_notification_context():
+    return _is_mobile_or_pwa_context() or _settings_demo_simulation_enabled()
+
+
+def _is_push_quiet_hours(now_value=None):
+    now_local = now_value or get_tr_now()
+    hour = int(now_local.hour)
+    return hour >= PUSH_NOTIFICATION_QUIET_HOUR_START or hour < PUSH_NOTIFICATION_QUIET_HOUR_END
+
+
+def _normalize_push_device_id(raw_value):
+    candidate = str(raw_value or "").strip()
+    if not candidate:
+        return ""
+    if not PUSH_DEVICE_ID_PATTERN.match(candidate):
+        return ""
+    return candidate
+
+
+def _current_push_device_id_from_cookie():
+    return _normalize_push_device_id(request.cookies.get("sarx_push_device_id"))
+
+
+def _upsert_push_device_subscription(user, *, device_id, platform, notification_enabled):
+    if not device_id:
+        return None
+
+    normalized_platform = str(platform or "").strip().lower()
+    if normalized_platform not in {"standalone", "mobile_browser", "mobile"}:
+        normalized_platform = "mobile"
+
+    now_value = get_tr_now().replace(tzinfo=None)
+    subscription = PushDeviceSubscription.query.filter_by(user_id=user.id, device_id=device_id).first()
+    if not subscription:
+        subscription = PushDeviceSubscription(user_id=user.id, device_id=device_id)
+        db.session.add(subscription)
+    subscription.platform = normalized_platform
+    subscription.user_agent = normalize_user_agent(getattr(request.user_agent, "string", ""))
+    subscription.notification_enabled = bool(notification_enabled)
+    subscription.is_active = True
+    subscription.revoked_at = None
+    subscription.last_seen_at = now_value
+    return subscription
+
+
 def mail_gonder(alici_mail, konu, icerik):
     mail_host = (current_app.config.get("MAIL_HOST") or "").strip() or "smtp.gmail.com"
     mail_port = int(current_app.config.get("MAIL_PORT") or 587)
@@ -423,7 +589,10 @@ def mail_gonder(alici_mail, konu, icerik):
 def login():
     if current_user.is_authenticated:
         return redirect(url_for(role_home_endpoint(current_user)))
-        
+
+    raw_next_target = request.form.get("next") if request.method == "POST" else request.args.get("next")
+    next_target = _safe_redirect_target(raw_next_target, url_for("inventory.dashboard"))
+
     if request.method == 'POST':
         kullanici_adi = _normalize_login_email(request.form.get('kullanici_adi'))
         sifre = request.form.get('sifre') or ''
@@ -443,7 +612,7 @@ def login():
             remaining = max(int((lock_record.locked_until - now).total_seconds() // 60), 1)
             flash(f"Çok fazla başarısız giriş denemesi tespit edildi. Lütfen {remaining} dakika sonra tekrar deneyin.", "danger")
             audit_log("auth.login", outcome="locked", username=kullanici_adi, ip=_client_ip())
-            return _render_login_page(status_code=429, force_new=True)
+            return _render_login_page(status_code=429, force_new=True, next_target=next_target)
 
         captcha_valid, captcha_state = validate_login_captcha(security_answer, submitted_token=security_token)
         if not captcha_valid:
@@ -475,6 +644,7 @@ def login():
                 status_code=400,
                 force_new=True,
                 captcha_feedback=_captcha_feedback_message(captcha_state),
+                next_target=next_target,
             )
 
         user = _find_active_user_by_email(kullanici_adi)
@@ -490,7 +660,7 @@ def login():
                 db.session.rollback()
             log_kaydet('Giriş', f'{user.kullanici_adi} sisteme giriş yaptı.')
             audit_log("auth.login", outcome="success", user_id=user.id, role=user.rol, ip=_client_ip())
-            return redirect(url_for(role_home_endpoint(user)))
+            return redirect(_safe_redirect_target(raw_next_target, url_for(role_home_endpoint(user))))
 
         try:
             record = _register_failed_login(identifier)
@@ -504,9 +674,9 @@ def login():
             flash("Şifre veya Kullanıcı Adı yanlış.", "danger")
 
         audit_log("auth.login", outcome="failed", username=kullanici_adi, ip=_client_ip())
-        return _render_login_page(force_new=True)
-	        
-    return _render_login_page(force_new=True)
+        return _render_login_page(force_new=True, next_target=next_target)
+
+    return _render_login_page(force_new=True, next_target=next_target)
 
 
 @auth_bp.route("/passkey/register/begin", methods=["POST"])
@@ -883,6 +1053,86 @@ def logout():
     return _clear_auth_cookies(response)
 
 
+@auth_bp.route("/hata-bildir", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+def hata_bildir():
+    if not table_exists("error_report"):
+        capture_error(error_code="SAR-X-SYSTEM-5101", status_code=503, detail="Error report table missing")
+        flash_safe_error("SAR-X-SYSTEM-5101", include_help_note=True)
+        return redirect(url_for(role_home_endpoint(current_user)))
+
+    pending_report = session.get(ERROR_REPORT_SESSION_KEY)
+    error_code = str(request.form.get("error_code") or "").strip()
+    report_path = str(request.form.get("path") or "").strip()
+    request_id = str(request.form.get("request_id") or "").strip()
+    if not pending_report:
+        flash("Hata bildirimi yalnız hata ekranından gönderilebilir.", "warning")
+        audit_log(
+            "auth.error_report.create",
+            outcome="blocked",
+            reason="missing_error_context",
+            user_id=current_user.id,
+            ip=_client_ip(),
+        )
+        return redirect(url_for(role_home_endpoint(current_user)))
+
+    expected_error_code = str(pending_report.get("error_code") or "").strip()
+    expected_path = str(pending_report.get("path") or "").strip()
+    expected_request_id = str(pending_report.get("request_id") or "").strip()
+    if (
+        not expected_error_code
+        or error_code != expected_error_code
+        or report_path != expected_path
+        or request_id != expected_request_id
+    ):
+        flash("Hata bildirimi oturumu doğrulanamadı. Lütfen hata ekranını yeniden açıp tekrar deneyin.", "warning")
+        audit_log(
+            "auth.error_report.create",
+            outcome="blocked",
+            reason="invalid_error_context",
+            user_id=current_user.id,
+            ip=_client_ip(),
+        )
+        return redirect(url_for(role_home_endpoint(current_user)))
+
+    error_code = expected_error_code
+    report_path = expected_path
+    request_id = expected_request_id
+    session.pop(ERROR_REPORT_SESSION_KEY, None)
+
+    spec = get_error_spec(error_code)
+    row = ErrorReport(
+        user_id=current_user.id,
+        havalimani_id=getattr(current_user, "havalimani_id", None),
+        role_key=get_effective_role(current_user),
+        path=report_path[:255],
+        error_code=spec.error_code,
+        request_id=request_id[:64] or None,
+        error_summary=(spec.title or spec.user_message or "Hata bildirimi")[:255],
+    )
+    db.session.add(row)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        capture_error(error_code="SAR-X-SYSTEM-5101", status_code=500, detail="Error report persistence failed")
+        flash_safe_error("SAR-X-SYSTEM-5101", include_help_note=True)
+        return redirect(url_for(role_home_endpoint(current_user)))
+
+    log_kaydet(
+        "Sistem",
+        f"{current_user.kullanici_adi} hata ekranından manuel bildirim oluşturdu.",
+        event_key="auth.error_report.create",
+        target_model="ErrorReport",
+        target_id=row.id,
+        outcome="success",
+    )
+    audit_log("auth.error_report.create", outcome="success", user_id=current_user.id, ip=_client_ip())
+    flash("Hata bildirimi sistem yöneticisine iletildi.", "success")
+    return redirect(url_for(role_home_endpoint(current_user)))
+
+
 @auth_bp.route('/role-switch', methods=['GET', 'POST'])
 @login_required
 def role_switch():
@@ -950,6 +1200,493 @@ def role_switch():
         ip=_client_ip(),
     )
     return redirect(redirect_target)
+
+
+@auth_bp.route("/ayarlar", methods=["GET"])
+@login_required
+def ayarlar():
+    settings_demo_enabled = _sync_settings_demo_simulation_flag()
+    notification_context_active = _is_settings_notification_context()
+    notification_demo_simulation = notification_context_active and not _is_mobile_or_pwa_context()
+    notification_options = _notification_option_catalog_for_user(current_user)
+    option_keys = {item["key"] for item in notification_options}
+
+    preference_map = {}
+    current_device = None
+    if table_exists("user_notification_preference") and option_keys:
+        rows = UserNotificationPreference.query.filter(
+            UserNotificationPreference.user_id == current_user.id,
+            UserNotificationPreference.preference_key.in_(option_keys),
+        ).all()
+        preference_map = {row.preference_key: bool(row.is_enabled) for row in rows}
+
+    device_id = _current_push_device_id_from_cookie()
+    if table_exists("push_device_subscription") and device_id:
+        current_device = PushDeviceSubscription.query.filter_by(
+            user_id=current_user.id,
+            device_id=device_id,
+            is_active=True,
+        ).first()
+
+    return render_template(
+        "ayarlar.html",
+        body_size_options=BODY_SIZE_OPTIONS,
+        shoe_size_options=SHOE_SIZE_OPTIONS,
+        settings_demo_available=_is_demo_tools_runtime_enabled(),
+        settings_demo_enabled=settings_demo_enabled,
+        demo_email_verify_path=session.get(SETTINGS_DEMO_EMAIL_VERIFY_PATH_SESSION_KEY) if settings_demo_enabled else "",
+        demo_email_target=session.get(SETTINGS_DEMO_EMAIL_TARGET_SESSION_KEY) if settings_demo_enabled else "",
+        notification_context_active=notification_context_active,
+        notification_demo_simulation=notification_demo_simulation,
+        notification_options=notification_options,
+        notification_preferences=preference_map,
+        push_quiet_hours_start=PUSH_NOTIFICATION_QUIET_HOUR_START,
+        push_quiet_hours_end=PUSH_NOTIFICATION_QUIET_HOUR_END,
+        push_quiet_hours_active=_is_push_quiet_hours(),
+        current_push_device_id=device_id,
+        current_push_device=current_device,
+    )
+
+
+@auth_bp.route("/ayarlar/profil", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+def ayarlar_profile_update():
+    upper_size, upper_error = _normalize_body_size(request.form.get("ust_beden"))
+    lower_size, lower_error = _normalize_body_size(request.form.get("alt_beden"))
+    if upper_error or lower_error:
+        flash(upper_error or lower_error, "danger")
+        return redirect(url_for("auth.ayarlar"))
+
+    shoe_size, shoe_error = _normalize_shoe_size(request.form.get("ayakkabi_numarasi"))
+    if shoe_error:
+        flash(shoe_error, "danger")
+        return redirect(url_for("auth.ayarlar"))
+
+    current_user.ust_beden = upper_size
+    current_user.alt_beden = lower_size
+    current_user.ayak_numarasi = shoe_size
+    current_user.beden = upper_size or lower_size or None
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        capture_error(error_code="SAR-X-SYSTEM-5101", status_code=500, detail="Profile size update failed")
+        flash_safe_error("SAR-X-SYSTEM-5101", include_help_note=True)
+        return redirect(url_for("auth.ayarlar"))
+
+    log_kaydet(
+        "Kullanıcı Ayarları",
+        f"{current_user.kullanici_adi} beden bilgilerini güncelledi.",
+        event_key="auth.settings.profile.update",
+        outcome="success",
+    )
+    audit_log("auth.settings.profile.update", outcome="success", user_id=current_user.id, ip=_client_ip())
+    flash("Beden bilgileri güncellendi.", "success")
+    return redirect(url_for("auth.ayarlar"))
+
+
+@auth_bp.route("/ayarlar/email-degisiklik-talep", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+def ayarlar_email_change_request():
+    new_email = _normalize_login_email(request.form.get("yeni_eposta"))
+    current_password = request.form.get("mevcut_sifre_email") or ""
+    current_email = _normalize_login_email(current_user.kullanici_adi)
+
+    if not current_user.sifre_kontrol(current_password):
+        flash("E-posta değişikliği için mevcut şifrenizi doğru girmelisiniz.", "danger")
+        return redirect(url_for("auth.ayarlar"))
+    if not _looks_like_email(new_email):
+        flash("Geçerli bir e-posta adresi girin.", "danger")
+        return redirect(url_for("auth.ayarlar"))
+    if new_email == current_email:
+        flash("Yeni e-posta mevcut e-posta ile aynı olamaz.", "warning")
+        return redirect(url_for("auth.ayarlar"))
+
+    existing_user = _find_active_user_by_email_except(new_email, current_user.id)
+    if existing_user:
+        flash("Bu e-posta adresi başka bir kullanıcı tarafından kullanılıyor.", "danger")
+        return redirect(url_for("auth.ayarlar"))
+
+    token_value = secrets.token_urlsafe(32)
+    token_hash = _hash_opaque_token(token_value)
+    expires_at = get_tr_now().replace(tzinfo=None) + timedelta(seconds=_get_email_change_token_max_age())
+
+    if table_exists("email_change_token"):
+        open_requests = EmailChangeToken.query.filter_by(user_id=current_user.id, consumed_at=None).all()
+        now_value = get_tr_now().replace(tzinfo=None)
+        for item in open_requests:
+            item.consumed_at = now_value
+
+    request_row = EmailChangeToken(
+        user_id=current_user.id,
+        old_email=current_email,
+        new_email=new_email,
+        token_hash=token_hash,
+        expires_at=expires_at,
+        requested_from_ip=_client_ip(),
+        requested_user_agent=normalize_user_agent(getattr(request.user_agent, "string", "")),
+    )
+    db.session.add(request_row)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        capture_error(error_code="SAR-X-SYSTEM-5101", status_code=500, detail="Email change request persistence failed")
+        flash_safe_error("SAR-X-SYSTEM-5101", include_help_note=True)
+        return redirect(url_for("auth.ayarlar"))
+
+    if _settings_demo_simulation_enabled():
+        session[SETTINGS_DEMO_EMAIL_VERIFY_PATH_SESSION_KEY] = url_for("auth.email_change_verify", token=token_value)
+        session[SETTINGS_DEMO_EMAIL_TARGET_SESSION_KEY] = new_email
+        flash(
+            "Demo mod: doğrulama bağlantısı Ayarlar ekranında gösterildi; gerçek e-posta gönderilmedi.",
+            "info",
+        )
+    else:
+        verify_link = _build_email_change_verify_link(token_value)
+        email_subject = "SAR-X E-posta Değişikliği Doğrulaması"
+        email_body = render_template(
+            "email/sifre_sifirla.html",
+            kullanici_ismi=current_user.tam_ad or "Personel",
+            action_link=verify_link,
+            action_text="E-posta Değişikliğini Onayla",
+            mail_subject="E-posta Değişikliği - SAR-X",
+            mail_heading="E-posta Değişikliği Doğrulaması",
+            intro_text=(
+                "Hesabınız için e-posta güncelleme talebi aldık. "
+                "Yeni e-posta adresini etkinleştirmek için aşağıdaki butona tıklayın."
+            ),
+            help_text=(
+                "Buton çalışmıyorsa bağlantıyı tarayıcınıza yapıştırabilirsiniz:"
+            ),
+            warning_text=(
+                "⚠️ Bu bağlantı güvenlik amacıyla sınırlı süreyle geçerlidir. "
+                "Bu talebi siz oluşturmadıysanız işlemi tamamlamayın."
+            ),
+        )
+        if not mail_gonder(new_email, email_subject, email_body):
+            try:
+                request_row.consumed_at = get_tr_now().replace(tzinfo=None)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+            capture_error(error_code="SAR-X-MAIL-4101", status_code=502, detail="Email change verification mail delivery failed")
+            flash_safe_error("SAR-X-MAIL-4101", include_help_note=True)
+            return redirect(url_for("auth.ayarlar"))
+
+    log_kaydet(
+        "Kullanıcı Ayarları",
+        f"{current_user.kullanici_adi} e-posta değişikliği doğrulama talebi oluşturdu.",
+        event_key="auth.settings.email_change.request",
+        outcome="success",
+    )
+    audit_log("auth.settings.email_change.request", outcome="success", user_id=current_user.id, ip=_client_ip())
+    if not _settings_demo_simulation_enabled():
+        flash("Doğrulama bağlantısı yeni e-posta adresinize gönderildi.", "success")
+    return redirect(url_for("auth.ayarlar"))
+
+
+@auth_bp.route("/ayarlar/email-dogrula/<token>", methods=["GET"])
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["GET"])
+def email_change_verify(token):
+    token_hash = _hash_opaque_token(token)
+    fallback_target = url_for("auth.login")
+    if current_user.is_authenticated:
+        fallback_target = url_for("auth.ayarlar")
+
+    if not table_exists("email_change_token"):
+        capture_error(error_code="SAR-X-AUTH-1302", status_code=400, detail="Email change token table missing")
+        flash_safe_error("SAR-X-AUTH-1302", include_help_note=True)
+        return redirect(fallback_target)
+
+    request_row = EmailChangeToken.query.filter_by(token_hash=token_hash, consumed_at=None).first()
+    if not request_row:
+        capture_error(error_code="SAR-X-AUTH-1302", status_code=400, detail="Invalid email change token")
+        flash_safe_error("SAR-X-AUTH-1302", include_help_note=True)
+        return redirect(fallback_target)
+
+    now_value = get_tr_now().replace(tzinfo=None)
+    if request_row.expires_at and request_row.expires_at <= now_value:
+        request_row.consumed_at = now_value
+        db.session.commit()
+        capture_error(error_code="SAR-X-AUTH-1302", status_code=400, detail="Expired email change token")
+        flash_safe_error("SAR-X-AUTH-1302", include_help_note=True)
+        return redirect(fallback_target)
+
+    if current_user.is_authenticated and int(current_user.id) != int(request_row.user_id):
+        abort(403)
+
+    user = db.session.get(Kullanici, request_row.user_id)
+    if not user or user.is_deleted:
+        request_row.consumed_at = now_value
+        db.session.commit()
+        capture_error(error_code="SAR-X-AUTH-1302", status_code=400, detail="Email change user missing")
+        flash_safe_error("SAR-X-AUTH-1302", include_help_note=True)
+        return redirect(fallback_target)
+
+    current_email = _normalize_login_email(user.kullanici_adi)
+    if current_email != _normalize_login_email(request_row.old_email):
+        request_row.consumed_at = now_value
+        db.session.commit()
+        capture_error(error_code="SAR-X-AUTH-1302", status_code=400, detail="Email change token stale")
+        flash_safe_error("SAR-X-AUTH-1302", include_help_note=True)
+        return redirect(fallback_target)
+
+    if _find_active_user_by_email_except(request_row.new_email, user.id):
+        request_row.consumed_at = now_value
+        db.session.commit()
+        flash("Yeni e-posta adresi şu an kullanılıyor. Lütfen yeni bir talep oluşturun.", "danger")
+        return redirect(fallback_target)
+
+    old_email = current_email
+    user.kullanici_adi = _normalize_login_email(request_row.new_email)
+    request_row.consumed_at = now_value
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        capture_error(error_code="SAR-X-SYSTEM-5101", status_code=500, detail="Email change verify commit failed")
+        flash_safe_error("SAR-X-SYSTEM-5101", include_help_note=True)
+        return redirect(fallback_target)
+
+    session.pop(SETTINGS_DEMO_EMAIL_VERIFY_PATH_SESSION_KEY, None)
+    session.pop(SETTINGS_DEMO_EMAIL_TARGET_SESSION_KEY, None)
+    if not _settings_demo_simulation_enabled():
+        login_link = urljoin(_get_password_reset_base_url(), url_for("auth.login").lstrip("/"))
+        old_email_body = render_template(
+            "email/sifre_sifirla.html",
+            kullanici_ismi=user.tam_ad or "Personel",
+            action_link=login_link,
+            action_text="Hesabı Aç",
+            mail_subject="E-posta Adresiniz Güncellendi - SAR-X",
+            mail_heading="E-posta Güncelleme Bilgilendirmesi",
+            intro_text=(
+                "Hesabınızın giriş e-postası başarıyla güncellendi. "
+                "Bu işlem size ait değilse hemen sistem yöneticisi ile iletişime geçin."
+            ),
+            help_text="Giriş ekranına aşağıdaki bağlantıdan ulaşabilirsiniz:",
+            warning_text="⚠️ Bu bilgilendirme güvenlik amacıyla önceki e-posta adresinize gönderildi.",
+        )
+        mail_gonder(old_email, "SAR-X E-posta Adresi Güncellendi", old_email_body)
+    else:
+        flash("Demo mod: eski e-posta bilgilendirmesi simüle edildi; gerçek e-posta gönderilmedi.", "info")
+
+    log_kaydet(
+        "Kullanıcı Ayarları",
+        f"{old_email} hesabının e-posta adresi güncellendi.",
+        event_key="auth.settings.email_change.verify",
+        outcome="success",
+        user_id=user.id,
+        user_email=user.kullanici_adi,
+    )
+    audit_log("auth.settings.email_change.verify", outcome="success", user_id=user.id, ip=_client_ip())
+    flash("E-posta adresiniz doğrulanarak güncellendi.", "success")
+    return redirect(fallback_target)
+
+
+@auth_bp.route("/ayarlar/sifre-degistir", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+def ayarlar_password_change():
+    current_password = request.form.get("mevcut_sifre") or ""
+    new_password = request.form.get("yeni_sifre") or ""
+    new_password_repeat = request.form.get("yeni_sifre_tekrar") or ""
+
+    if not current_user.sifre_kontrol(current_password):
+        flash("Mevcut şifre doğrulanamadı.", "danger")
+        return redirect(url_for("auth.ayarlar"))
+    if new_password != new_password_repeat:
+        flash("Yeni şifre alanları birbiriyle eşleşmiyor.", "danger")
+        return redirect(url_for("auth.ayarlar"))
+    if current_user.sifre_kontrol(new_password):
+        flash("Yeni şifre mevcut şifre ile aynı olamaz.", "warning")
+        return redirect(url_for("auth.ayarlar"))
+
+    password_error = _validate_password_reset_value(new_password)
+    if password_error:
+        flash(password_error, "warning")
+        return redirect(url_for("auth.ayarlar"))
+
+    current_user.sifre_set(new_password)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        capture_error(error_code="SAR-X-SYSTEM-5101", status_code=500, detail="Password change failed")
+        flash_safe_error("SAR-X-SYSTEM-5101", include_help_note=True)
+        return redirect(url_for("auth.ayarlar"))
+
+    if not _settings_demo_simulation_enabled():
+        login_link = urljoin(_get_password_reset_base_url(), url_for("auth.login").lstrip("/"))
+        password_changed_mail = render_template(
+            "email/sifre_sifirla.html",
+            kullanici_ismi=current_user.tam_ad or "Personel",
+            action_link=login_link,
+            action_text="Giriş Ekranını Aç",
+            mail_subject="Şifreniz Değiştirildi - SAR-X",
+            mail_heading="Şifre Değişikliği Bildirimi",
+            intro_text=(
+                "Hesabınızın şifresi başarıyla değiştirildi. "
+                "Bu işlemi siz yapmadıysanız derhal sistem yöneticisine haber verin."
+            ),
+            help_text="Giriş ekranına aşağıdaki bağlantıdan ulaşabilirsiniz:",
+            warning_text="⚠️ Bu e-posta yalnızca bilgilendirme amaçlıdır.",
+        )
+        mail_gonder(current_user.kullanici_adi, "SAR-X Şifre Değişikliği Bildirimi", password_changed_mail)
+    else:
+        flash("Demo mod: şifre değişikliği bilgilendirme e-postası simüle edildi.", "info")
+
+    log_kaydet(
+        "Kullanıcı Ayarları",
+        f"{current_user.kullanici_adi} şifresini güncelledi.",
+        event_key="auth.settings.password.change",
+        outcome="success",
+    )
+    audit_log("auth.settings.password.change", outcome="success", user_id=current_user.id, ip=_client_ip())
+    flash("Şifreniz güncellendi.", "success")
+    return redirect(url_for("auth.ayarlar"))
+
+
+@auth_bp.route("/ayarlar/bildirim-schema", methods=["GET"])
+@login_required
+@limiter.limit("60 per minute", methods=["GET"])
+def ayarlar_notification_schema():
+    options = _notification_option_catalog_for_user(current_user)
+    mobile_context = _is_mobile_or_pwa_context()
+    demo_simulation = _settings_demo_simulation_enabled()
+    return jsonify(
+        {
+            "status": "success",
+            "mobile_context": bool(mobile_context or demo_simulation),
+            "demo_simulation": bool(demo_simulation and not mobile_context),
+            "quiet_hours": {
+                "start": PUSH_NOTIFICATION_QUIET_HOUR_START,
+                "end": PUSH_NOTIFICATION_QUIET_HOUR_END,
+                "active": _is_push_quiet_hours(),
+            },
+            "options": options,
+        }
+    )
+
+
+@auth_bp.route("/ayarlar/bildirim-tercihleri", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+def ayarlar_notification_preferences():
+    if not _is_settings_notification_context():
+        abort(403)
+    if not table_exists("user_notification_preference"):
+        capture_error(error_code="SAR-X-SYSTEM-5101", status_code=503, detail="Notification preference table missing")
+        flash_safe_error("SAR-X-SYSTEM-5101", include_help_note=True)
+        return redirect(url_for("auth.ayarlar"))
+
+    option_keys = {item["key"] for item in _notification_option_catalog_for_user(current_user)}
+    submitted_pref_keys = {
+        key[5:]
+        for key in request.form.keys()
+        if key.startswith("pref_")
+    }
+    invalid_pref_keys = submitted_pref_keys - option_keys
+    if invalid_pref_keys:
+        capture_error(
+            error_code="SAR-X-AUTH-1401",
+            status_code=400,
+            detail="Invalid notification preference key for role scope",
+        )
+        flash("Rolünüz için geçersiz bildirim tercihi gönderildi.", "danger")
+        return redirect(url_for("auth.ayarlar"))
+
+    rows = UserNotificationPreference.query.filter_by(user_id=current_user.id).all()
+    row_map = {row.preference_key: row for row in rows}
+
+    for key in option_keys:
+        enabled = f"pref_{key}" in request.form
+        row = row_map.get(key)
+        if not row:
+            row = UserNotificationPreference(user_id=current_user.id, preference_key=key)
+            db.session.add(row)
+        row.is_enabled = bool(enabled)
+
+    for key, row in row_map.items():
+        if key not in option_keys:
+            db.session.delete(row)
+
+    device_id = _normalize_push_device_id(request.form.get("device_id"))
+    if table_exists("push_device_subscription") and device_id:
+        _upsert_push_device_subscription(
+            current_user,
+            device_id=device_id,
+            platform=request.form.get("client_platform"),
+            notification_enabled=bool(request.form.get("device_notifications_enabled")),
+        )
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        capture_error(error_code="SAR-X-SYSTEM-5101", status_code=500, detail="Notification preferences save failed")
+        flash_safe_error("SAR-X-SYSTEM-5101", include_help_note=True)
+        return redirect(url_for("auth.ayarlar"))
+
+    log_kaydet(
+        "Kullanıcı Ayarları",
+        f"{current_user.kullanici_adi} bildirim tercihlerini güncelledi.",
+        event_key="auth.settings.notifications.update",
+        outcome="success",
+    )
+    audit_log("auth.settings.notifications.update", outcome="success", user_id=current_user.id, ip=_client_ip())
+    flash("Bildirim tercihleriniz güncellendi.", "success")
+    return redirect(url_for("auth.ayarlar"))
+
+
+@auth_bp.route("/ayarlar/bildirim-abonelik-kaldir", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
+def ayarlar_notification_subscription_remove():
+    if not _is_settings_notification_context():
+        abort(403)
+    if not table_exists("push_device_subscription"):
+        return redirect(url_for("auth.ayarlar"))
+
+    device_id = _normalize_push_device_id(request.form.get("device_id"))
+    if not device_id:
+        flash("Cihaz aboneliği anahtarı doğrulanamadı.", "warning")
+        return redirect(url_for("auth.ayarlar"))
+
+    subscription = PushDeviceSubscription.query.filter_by(
+        user_id=current_user.id,
+        device_id=device_id,
+        is_active=True,
+    ).first()
+    if not subscription:
+        flash("Bu cihaz için aktif abonelik bulunamadı.", "warning")
+        return redirect(url_for("auth.ayarlar"))
+
+    now_value = get_tr_now().replace(tzinfo=None)
+    subscription.notification_enabled = False
+    subscription.is_active = False
+    subscription.revoked_at = now_value
+    subscription.last_seen_at = now_value
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        capture_error(error_code="SAR-X-SYSTEM-5101", status_code=500, detail="Notification subscription revoke failed")
+        flash_safe_error("SAR-X-SYSTEM-5101", include_help_note=True)
+        return redirect(url_for("auth.ayarlar"))
+
+    log_kaydet(
+        "Kullanıcı Ayarları",
+        f"{current_user.kullanici_adi} cihaz bildirim aboneliğini kaldırdı.",
+        event_key="auth.settings.notifications.revoke",
+        outcome="success",
+    )
+    audit_log("auth.settings.notifications.revoke", outcome="success", user_id=current_user.id, ip=_client_ip())
+    flash("Bu cihaz için bildirim aboneliği kaldırıldı.", "success")
+    return redirect(url_for("auth.ayarlar"))
 
 
 @auth_bp.route('/sifre-sifirla-talep', methods=['POST'])

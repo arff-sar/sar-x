@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}KKD Tahsis Detayı{% endblock %}
+
+{% block extra_css %}
+<style>
+  .ppe-assignment-detail-grid { display:grid; grid-template-columns:minmax(0, 1.1fr) minmax(320px, .9fr); gap:18px; align-items:start; }
+  .ppe-assignment-col { display:grid; gap:16px; }
+  .ppe-assignment-summary { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+  .ppe-assignment-summary-card { border:1px solid var(--border); border-radius:14px; padding:13px; background:#fff; }
+  .ppe-assignment-summary-label { font-size:11px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
+  .ppe-assignment-summary-value { margin-top:6px; color:var(--navy); font-weight:800; line-height:1.45; }
+  .ppe-assignment-note { margin-top:10px; color:var(--text2); line-height:1.6; }
+  .ppe-assignment-upload-form { display:grid; gap:10px; }
+  .ppe-assignment-upload-form .form-control { margin-bottom:0; }
+  .ppe-assignment-action-form { display:grid; gap:10px; }
+  @media (max-width: 980px) {
+    .ppe-assignment-detail-grid,
+    .ppe-assignment-summary { grid-template-columns:1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+  <div>
+    <div class="page-title">KKD Tahsisi: {{ assignment.assignment_no }}</div>
+    <div class="page-meta">
+      <span>{{ assignment.airport.ad if assignment.airport else 'Global erişim' }}</span>
+      <div class="meta-dot" style="width:3px; height:3px; background:var(--text4); border-radius:50%;"></div>
+      <span>{{ assignment.assignment_date.strftime('%d.%m.%Y') if assignment.assignment_date else '-' }}</span>
+    </div>
+  </div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+    <span class="status-pill {% if assignment.status == 'active' %}status-aktif{% else %}status-pasif{% endif %}">
+      {{ ppe_assignment_status_label(assignment.status) }}
+    </span>
+    <a href="{{ url_for('inventory.kkd_tahsis_pdf', assignment_id=assignment.id) }}" class="btn btn-secondary">PDF İndir</a>
+    <a href="{{ url_for('inventory.kkd_listesi') }}" class="btn btn-secondary">KKD Listesine Dön</a>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-body">
+    <div class="ppe-assignment-summary">
+      <div class="ppe-assignment-summary-card">
+        <div class="ppe-assignment-summary-label">Teslim Alan</div>
+        <div class="ppe-assignment-summary-value">{{ ppe_assignment_display_name(assignment.recipient_user.tam_ad if assignment.recipient_user else '-') }}</div>
+      </div>
+      <div class="ppe-assignment-summary-card">
+        <div class="ppe-assignment-summary-label">Teslim Eden</div>
+        <div class="ppe-assignment-summary-value">{{ ppe_assignment_display_name(assignment.delivered_by_name) }}</div>
+      </div>
+      <div class="ppe-assignment-summary-card">
+        <div class="ppe-assignment-summary-label">Belge No</div>
+        <div class="ppe-assignment-summary-value">{{ assignment.assignment_no }}</div>
+      </div>
+      <div class="ppe-assignment-summary-card">
+        <div class="ppe-assignment-summary-label">Kalem Sayısı</div>
+        <div class="ppe-assignment-summary-value">{{ assignment.items|length }} kalem</div>
+      </div>
+    </div>
+    {% if assignment.note %}
+    <div class="ppe-assignment-note">{{ assignment.note }}</div>
+    {% endif %}
+    {% if assignment.returned_at %}
+    <div class="ppe-assignment-note">
+      <strong>İade Bilgisi:</strong>
+      {{ assignment.returned_at.strftime('%d.%m.%Y %H:%M') }}
+      {% if assignment.returned_by %}
+      • {{ ppe_assignment_display_name(assignment.returned_by.tam_ad) }}
+      {% endif %}
+      {% if assignment.returned_note %}
+      <br>{{ assignment.returned_note }}
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="ppe-assignment-detail-grid">
+  <div class="ppe-assignment-col">
+    <div class="panel">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">Tahsis İşlemleri</div>
+          <div class="panel-subtitle">İade ve arşive taşıma işlemleri bu alandan yönetilir.</div>
+        </div>
+      </div>
+      <div class="panel-body">
+        {% if can_manage_ppe_assignment %}
+          {% if assignment.status == 'active' %}
+          <form method="POST" action="{{ url_for('inventory.kkd_tahsis_iade', assignment_id=assignment.id) }}" class="ppe-assignment-action-form" onsubmit="return confirm('Bu KKD tahsisi iade olarak kaydedilecek. Devam edilsin mi?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label>İade Notu (Opsiyonel)</label>
+            <textarea name="return_note" class="form-control" style="height:88px;" placeholder="İade nedeni veya açıklama"></textarea>
+            <button type="submit" class="btn btn-navy">KKD Tahsisini İade Al</button>
+          </form>
+          {% else %}
+          <div class="assignment-empty" style="margin-bottom:12px;">
+            <strong>Bu tahsis aktif değil</strong>
+            İade işlemi yalnızca aktif durumdaki KKD tahsisleri için yapılabilir.
+          </div>
+          {% endif %}
+          <form method="POST" action="{{ url_for('inventory.kkd_tahsis_sil', assignment_id=assignment.id) }}" onsubmit="return confirm('Bu KKD tahsis kaydı arşive taşınacak. Devam edilsin mi?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-secondary" {% if assignment.status == 'active' %}disabled title="Önce iade işlemi yapılmalıdır."{% endif %}>KKD Tahsisini Sil</button>
+          </form>
+        {% else %}
+        <div class="assignment-empty">
+          <strong>Bu işlem için yetkiniz yok</strong>
+          KKD tahsis iade ve silme yalnızca sistem sorumlusu ve ekip sorumlusu için açıktır.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">KKD Kalemleri</div>
+          <div class="panel-subtitle">Bu tahsis kapsamında personele teslim edilen KKD kalemleri.</div>
+        </div>
+      </div>
+      <div class="table-container">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Donanım</th>
+              <th>Kategori</th>
+              <th>Miktar</th>
+              <th>Beden / Numara</th>
+              <th>Seri No</th>
+              <th>Not</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in assignment.items %}
+            <tr>
+              <td>
+                <div style="font-weight:800; color:var(--navy);">{{ item.item_name }}</div>
+                <div style="font-size:11.5px; color:var(--text3); margin-top:4px;">{{ item.brand or '-' }} {{ item.model_name or '' }}</div>
+              </td>
+              <td>{{ item.category or '-' }} / {{ item.subcategory or '-' }}</td>
+              <td>{{ format_assignment_qty(item.quantity) }} {{ item.unit or 'adet' }}</td>
+              <td>{{ item.size_info or '-' }}</td>
+              <td>{{ item.serial_no or '-' }}</td>
+              <td>{{ item.note or '-' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="ppe-assignment-col">
+    <div class="panel">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">İmzalı KKD Teslim Belgesi</div>
+          <div class="panel-subtitle">PDF teslim formunun imzalı kopyasını bu kayıtla ilişkilendirin.</div>
+        </div>
+      </div>
+      <div class="panel-body">
+        {% if assignment.signed_document_url %}
+        <div class="summary-card" style="margin-bottom:12px;">
+          <div class="summary-label">Yüklü Belge</div>
+          <div class="summary-value">{{ assignment.signed_document_name or 'İmzalı belge' }}</div>
+          <div style="margin-top:12px;">
+            <a href="{{ url_for('inventory.kkd_tahsis_imzali_belge_indir', assignment_id=assignment.id) }}" class="btn btn-secondary">Belgeyi İndir</a>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if can_manage_ppe_assignment %}
+        <form method="POST" action="{{ url_for('inventory.kkd_tahsis_imzali_belge_yukle', assignment_id=assignment.id) }}" enctype="multipart/form-data" class="ppe-assignment-upload-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label>PDF Dosyası</label>
+          <input type="file" name="signed_document" accept="application/pdf,.pdf" class="form-control" required>
+          <button type="submit" class="btn btn-navy">İmzalı Belgeyi Yükle</button>
+        </form>
+        {% else %}
+        <div class="assignment-empty">
+          <strong>Bu işlem için yetkiniz yok</strong>
+          İmzalı belge yükleme sadece sistem sorumlusu ve ekip sorumlusu için açıktır.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('auto_pdf') !== '1') {
+    return;
+  }
+  const pdfUrl = {{ url_for('inventory.kkd_tahsis_pdf', assignment_id=assignment.id)|tojson }};
+  if (!pdfUrl) {
+    return;
+  }
+  window.setTimeout(function () {
+    window.open(pdfUrl, '_blank', 'noopener');
+  }, 140);
+})();
+</script>
+{% endblock %}

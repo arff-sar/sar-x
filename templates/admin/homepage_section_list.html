@@ -45,6 +45,7 @@
             <th style="width:36px;"><input type="checkbox" id="selectAllRows"></th>
             <th>Sayfa / Tür</th>
             <th>Başlık</th>
+            <th>Kart Yüksekliği</th>
             <th>Sıra</th>
             <th>Durum</th>
             <th>İşlem</th>
@@ -71,6 +72,7 @@
               <div style="font-size:11px; color:var(--text4); font-family:var(--mono);">{{ section.section_key }}</div>
             </td>
             <td>{{ section.title }}</td>
+            <td>{{ (card_height_map|default({})).get(section.id, 320) }} px</td>
             <td>{{ section.order_index }}</td>
             <td>
               {% if wf and wf.status == 'published' %}<span class="hp-status-pill hp-status-published">Yayında</span>
@@ -101,7 +103,7 @@
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="6"><div class="hp-empty">Henüz public içerik modülü yok. Biz Kimiz, Misyon, Vizyon, Etik Değerler ve Eğitimler/Tatbikatlar sayfaları için içerikler buradan eklenir.</div></td></tr>
+          <tr><td colspan="7"><div class="hp-empty">Henüz public içerik modülü yok. Biz Kimiz, Misyon, Vizyon, Etik Değerler ve Eğitimler/Tatbikatlar sayfaları için içerikler buradan eklenir.</div></td></tr>
           {% endfor %}
         </tbody>
       </table>

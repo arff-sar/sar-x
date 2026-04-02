@@ -2,9 +2,21 @@
 <html lang="tr">
 <head>
 <meta charset="UTF-8">
-<title>Zimmet Formu</title>
+<title>Zimmet Teslim Formu</title>
 <style>
-  @page { size: A4; margin: 18mm 14mm 16mm 14mm; }
+  @page {
+    size: A4 portrait;
+    margin: 10mm 13mm 26mm 13mm;
+
+    @frame page_footer {
+      -pdf-frame-content: pdf-footer;
+      left: 13mm;
+      top: 274mm;
+      width: 184mm;
+      height: 12mm;
+    }
+  }
+
   {% if pdf_font_regular %}
   @font-face {
     font-family: "AssignmentPdfSans";
@@ -16,267 +28,609 @@
     font-weight: bold;
   }
   {% endif %}
+
   body {
-    font-family: {% if pdf_font_regular %}"AssignmentPdfSans"{% else %}"DejaVu Sans"{% endif %}, sans-serif;
-    font-size: 9.8pt;
-    color: #172033;
-    line-height: 1.45;
-  }
-  .sheet-header {
-    border: 1px solid #d8e0ea;
-    border-radius: 12px;
-    overflow: hidden;
+    margin: 0;
+    padding: 0;
+    color: #1f2937;
     background: #ffffff;
+    font-family: {% if pdf_font_regular %}"AssignmentPdfSans"{% else %}"DejaVu Sans"{% endif %}, sans-serif;
+    font-size: 8.5pt;
+    line-height: 1.4;
   }
-  .sheet-header-accent {
-    height: 6px;
-    background: #f97316;
+
+  table {
+    border-collapse: collapse;
   }
-  .sheet-header-body {
-    padding: 14px 16px 12px;
+
+  .sheet {
+    width: 100%;
   }
+
+  /* ─── HEADER ─── */
+
+  .header-shell {
+    width: 100%;
+    border: 1.5pt solid #d7dee8;
+    background: #ffffff;
+    margin-bottom: 10pt;
+  }
+
+  .top-band-cell {
+    height: 8pt;
+    padding: 0;
+    background: #0f2d4a;
+  }
+
+  .header-content-cell {
+    padding: 9pt 10pt 7pt;
+  }
+
   .header-grid {
     width: 100%;
-    border-collapse: collapse;
+    table-layout: fixed;
+    border-bottom: 2pt solid #0f2d4a;
   }
+
   .header-grid td {
-    vertical-align: top;
+    vertical-align: middle;
+    padding-bottom: 8pt;
   }
-  .header-kicker {
-    color: #a14c10;
-    font-size: 8.4pt;
+
+  /* Logo */
+  .logo-cell {
+    width: 31mm;
+  }
+
+  .logo-shell {
+    width: 27mm;
+    height: 27mm;
+    border: 1.5pt solid #d7dee8;
+    background: #f7f9fb;
+    text-align: center;
+    padding: 2pt;
+  }
+
+  .logo-image {
+    width: 23mm;
+    height: 23mm;
+    display: block;
+    margin: 0 auto;
+  }
+
+  .logo-fallback {
+    color: #0f2d4a;
+    font-size: 10pt;
+    font-weight: bold;
+    padding-top: 10pt;
+  }
+
+  /* Title */
+  .title-cell {
+    text-align: center;
+    padding: 0 10pt 6pt;
+  }
+
+  .title-kicker {
+    color: #0f2d4a;
+    font-size: 12pt;
+    font-weight: bold;
+    text-transform: none;
+    letter-spacing: 0;
+    line-height: 1.2;
+    margin-bottom: 6pt;
+  }
+
+  .title-kicker-line {
+    display: block;
+    margin: 0 0 1pt;
+    padding: 0;
+  }
+
+  .title-kicker-line:last-child {
+    margin-bottom: 0;
+  }
+
+  .title-main {
+    color: #0f2d4a;
+    font-size: 22pt;
+    font-weight: bold;
+    line-height: 1.06;
+    letter-spacing: -0.3pt;
+  }
+
+  /* Meta */
+  .meta-cell {
+    width: 62mm;
+    padding-left: 4pt;
+  }
+
+  .meta-shell {
+    border: 1.5pt solid #d7dee8;
+    background: #ffffff;
+    padding: 5pt;
+  }
+
+  .meta-card {
+    width: 100%;
+    border: 1pt solid #d7dee8;
+    background: #ffffff;
+    margin-bottom: 4pt;
+  }
+
+  .meta-card:last-child {
+    margin-bottom: 0;
+  }
+
+  .meta-card td {
+    padding: 4pt 8pt 5pt;
+  }
+
+  .meta-label {
+    color: #6b7280;
+    font-size: 6.5pt;
     font-weight: bold;
     text-transform: uppercase;
-    letter-spacing: .08em;
+    letter-spacing: 0.4pt;
   }
-  .header-title {
-    margin-top: 4px;
-    font-size: 18pt;
-    font-weight: bold;
-    color: #102a43;
-  }
-  .header-subtitle {
-    margin-top: 4px;
-    color: #52637a;
-    font-size: 9pt;
-  }
-  .header-meta {
-    text-align: right;
-  }
-  .meta-pill {
-    display: inline-block;
-    padding: 6px 10px;
-    border: 1px solid #e2e8f0;
-    border-radius: 999px;
-    background: #fff7ed;
-    color: #9a3412;
-    font-size: 8.5pt;
-    font-weight: bold;
-  }
-  .meta-stamp {
-    margin-top: 10px;
-    font-size: 8.7pt;
-    color: #52637a;
-  }
-  .section-title {
-    margin: 16px 0 8px;
-    font-size: 10.8pt;
-    font-weight: bold;
-    color: #102a43;
-  }
-  .meta-table,
-  .item-table,
-  .signature-table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  .meta-table td {
-    border: 1px solid #d8e0ea;
-    padding: 7px 9px;
-    vertical-align: top;
-  }
-  .meta-label {
-    width: 19%;
-    background: #f8fafc;
-    color: #475569;
-    font-size: 8.7pt;
-    font-weight: bold;
-  }
+
   .meta-value {
-    color: #172033;
-    font-size: 9.4pt;
-  }
-  .item-table thead th {
-    padding: 8px 9px;
-    border: 1px solid #d8e0ea;
-    background: #fff7ed;
-    color: #9a3412;
-    font-size: 8.8pt;
+    color: #243447;
+    font-size: 9pt;
     font-weight: bold;
+    margin-top: 2pt;
+    line-height: 1.25;
+  }
+
+  .meta-value.unit {
+    color: #0f2d4a;
+    font-size: 11pt;
+    line-height: 1.2;
+  }
+
+  /* ─── SECTIONS ─── */
+
+  .section {
+    margin-bottom: 9pt;
+  }
+
+  .section-head {
+    margin-bottom: 5pt;
+  }
+
+  .section-head-table {
+    width: auto;
+  }
+
+  .section-no {
+    width: 22pt;
+    height: 22pt;
+    text-align: center;
+    vertical-align: middle;
+    background: #0f2d4a;
+    color: #ffffff;
+    font-size: 9pt;
+    font-weight: bold;
+  }
+
+  .section-title {
+    padding-left: 8pt;
+    color: #0f2d4a;
+    font-size: 11.5pt;
+    font-weight: bold;
+    vertical-align: middle;
+  }
+
+  /* ─── ITEM TABLE ─── */
+
+  .item-table {
+    width: 100%;
+    table-layout: fixed;
+    border: 1pt solid #d7dee8;
+    background: #ffffff;
+  }
+
+  .item-table thead {
+    display: table-header-group;
+  }
+
+  .item-table tr {
+    page-break-inside: avoid;
+  }
+
+  .item-table th {
+    border: 1pt solid #0b2540;
+    background: #0f2d4a;
+    color: #ffffff;
+    font-size: 7pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.3pt;
     text-align: left;
+    padding: 6pt 5pt;
   }
-  .item-table tbody td {
-    padding: 8px 9px;
-    border: 1px solid #d8e0ea;
-    font-size: 9pt;
+
+  .item-table td {
+    border: 1pt solid #d7dee8;
+    font-size: 8pt;
+    padding: 6pt 5pt;
     vertical-align: top;
   }
-  .item-code {
-    color: #64748b;
-    font-size: 8.2pt;
-    margin-top: 2px;
+
+  .center { text-align: center; }
+  .right  { text-align: right; }
+
+  .mono {
+    font-size: 7.4pt;
+    letter-spacing: 0.1pt;
   }
-  .note-box {
-    border: 1px solid #d8e0ea;
-    border-radius: 10px;
-    background: #ffffff;
-    padding: 11px 12px;
-    min-height: 56px;
-    font-size: 9pt;
+
+  .code-wrap {
+    white-space: normal;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
   }
-  .signature-table {
-    margin-top: 18px;
-  }
-  .signature-table td {
-    width: 50%;
-    padding: 0 10px 0 0;
-    vertical-align: top;
-  }
-  .signature-card {
-    border: 1px solid #d8e0ea;
-    border-radius: 10px;
-    padding: 12px 14px 14px;
-    min-height: 120px;
-    background: #ffffff;
-  }
-  .signature-title {
-    font-size: 9pt;
+
+  .item-name {
+    color: #1f2f43;
     font-weight: bold;
-    color: #102a43;
-  }
-  .signature-name {
-    margin-top: 10px;
-    font-size: 9.4pt;
-    color: #172033;
-  }
-  .signature-note {
-    margin-top: 42px;
-    padding-top: 7px;
-    border-top: 1px solid #94a3b8;
-    color: #64748b;
-    font-size: 8.4pt;
-  }
-  .footer {
-    margin-top: 16px;
+    margin-bottom: 1pt;
     font-size: 8.2pt;
-    color: #64748b;
+    line-height: 1.25;
+  }
+
+  .item-sub {
+    color: #6b7280;
+    font-size: 7.2pt;
+    line-height: 1.18;
+  }
+
+  .qty {
+    color: #0f2d4a;
+    font-weight: bold;
+    font-size: 9pt;
+  }
+
+  .total-row td {
+    background: #edf1f7;
+    color: #0f2d4a;
+    font-weight: bold;
+    font-size: 8.2pt;
+    border-top: 1.5pt solid #c2cedb;
+  }
+
+  /* ─── CLOSING ─── */
+
+  .closing-wrap,
+  .closing-wrap tr,
+  .closing-wrap td {
+    page-break-inside: avoid;
+  }
+
+  .closing-wrap {
+    width: 100%;
+    margin-top: 2pt;
+  }
+
+  .text-box {
+    width: 100%;
+    border: 1pt solid #d7dee8;
+    background: #fafbfd;
+    color: #334155;
+    font-size: 8.2pt;
+    line-height: 1.55;
+  }
+
+  .text-box td {
+    padding: 9pt 11pt;
+  }
+
+  /* ─── SIGNATURE ─── */
+
+  .sign-grid {
+    width: 100%;
+    table-layout: fixed;
+  }
+
+  .sign-box {
+    width: 100%;
+    border: 1.5pt solid #aeb9c8;
+    background: #ffffff;
+    table-layout: fixed;
+    min-height: 132pt;
+  }
+
+  .sign-box td {
+    border: 0;
+    text-align: center;
+    background: #ffffff;
+    vertical-align: middle;
+  }
+
+  .sign-inner {
+    width: 100%;
+    table-layout: fixed;
+  }
+
+  .sign-col {
+    width: 50%;
+    vertical-align: top;
+    padding: 0 8pt;
+  }
+
+  .sign-col-right {
+    border-left: 1pt solid #d7dee8;
+  }
+
+  .sign-role {
+    color: #0f2d4a;
+    font-size: 10pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.4pt;
+    padding: 10pt 8pt 0;
+  }
+
+  .sign-space {
+    height: 41pt;
+    font-size: 1pt;
+    line-height: 1;
+  }
+
+  .sign-line-wrap {
+    padding: 0 8pt;
+  }
+
+  .sign-line {
+    border-top: 1pt solid #7f8ea3;
+    padding-top: 5pt;
+    color: #6b7280;
+    font-size: 7.7pt;
+  }
+
+  .sign-name {
+    color: #0f2d4a;
+    font-size: 10.4pt;
+    font-weight: bold;
+    line-height: 1.2;
+    padding: 7pt 8pt 10pt;
+    white-space: nowrap;
+  }
+
+  /* ─── FOOTER ─── */
+
+  #pdf-footer {
+    border-top: 1pt solid #aeb9c8;
+    padding-top: 3pt;
+    color: #5f7188;
+    font-size: 7.2pt;
+  }
+
+  .footer-left {
+    width: 72%;
+    text-align: left;
+    vertical-align: bottom;
+  }
+
+  .footer-right {
+    width: 28%;
     text-align: right;
+    vertical-align: bottom;
+    color: #0f2d4a;
+    font-weight: bold;
+    font-size: 7.8pt;
   }
 </style>
 </head>
 <body>
-  <div class="sheet-header">
-    <div class="sheet-header-accent"></div>
-    <div class="sheet-header-body">
-      <table class="header-grid">
+
+  <!-- HEADER -->
+  <table class="header-shell">
+    <tr>
+      <td class="top-band-cell"></td>
+    </tr>
+    <tr>
+      <td class="header-content-cell">
+        <table class="header-grid">
+          <tr>
+            <!-- Logo -->
+            <td class="logo-cell">
+              <table class="logo-shell">
+                <tr>
+                  <td style="text-align:center; vertical-align:middle;">
+                    {% if pdf_logo_uri %}
+                    <img class="logo-image" src="{{ pdf_logo_uri }}" alt="ARFF Logo" />
+                    {% else %}
+                    <div class="logo-fallback">ARFF</div>
+                    {% endif %}
+                  </td>
+                </tr>
+              </table>
+            </td>
+
+            <!-- Title -->
+            <td class="title-cell">
+              <div class="title-kicker">
+                <span class="title-kicker-line">ARFF Arama Kurtarma Timi</span>
+                <span class="title-kicker-line">Envanter Yönetim Sistemi</span>
+              </div>
+              <div class="title-main">Zimmet Teslim Formu</div>
+            </td>
+
+            <!-- Meta -->
+            <td class="meta-cell">
+              <table class="meta-shell">
+                <tr>
+                  <td style="padding:0;">
+                    <table class="meta-card">
+                      <tr><td class="meta-label">Birim</td></tr>
+                      <tr><td class="meta-value unit">{{ assignment.airport.ad if assignment.airport else 'Global erişim' }}</td></tr>
+                    </table>
+                    <table class="meta-card">
+                      <tr><td class="meta-label">Belge No</td></tr>
+                      <tr><td class="meta-value">{{ assignment.assignment_no }}</td></tr>
+                    </table>
+                    <table class="meta-card">
+                      <tr><td class="meta-label">Tarih</td></tr>
+                      <tr><td class="meta-value">{{ assignment.assignment_date.strftime('%d.%m.%Y') if assignment.assignment_date else '-' }}</td></tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- SECTION 1: MALZEME LİSTESİ -->
+  {% set qty = namespace(total=0) %}
+
+  <div class="section">
+    <div class="section-head">
+      <table class="section-head-table">
         <tr>
-          <td>
-            <div class="header-kicker">SAR-X • Resmi Belge</div>
-            <div class="header-title">Zimmet Formu</div>
-            <div class="header-subtitle">Malzeme, ekipman ve teslim bilgilerini içeren resmi zimmet kaydı.</div>
-          </td>
-          <td class="header-meta">
-            <div class="meta-pill">{{ assignment.assignment_no }}</div>
-            <div class="meta-stamp">Oluşturulma: {{ generated_at.strftime('%d.%m.%Y %H:%M') if generated_at else '-' }}</div>
-          </td>
+          <td class="section-no">1</td>
+          <td class="section-title">Zimmetlenen Malzeme Listesi</td>
         </tr>
       </table>
     </div>
+
+    <table class="item-table" repeat="1">
+      <thead>
+        <tr>
+          <th style="width:5%;" class="center">#</th>
+          <th style="width:39%;">Malzeme / Ekipman</th>
+          <th style="width:15%;">Demirbaş No</th>
+          <th style="width:16%;">Varlık Kodu</th>
+          <th style="width:16%;">Seri No</th>
+          <th style="width:9%;" class="center">Adet</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in assignment.items %}
+        {% set qty.total = qty.total + (item.quantity or 0) %}
+        {% set source_asset = item.asset or (item.material.linked_asset if item.material and item.material.linked_asset else None) %}
+        {% set equipment_template = source_asset.equipment_template if source_asset and source_asset.equipment_template else None %}
+        {% set brand = equipment_template.brand if equipment_template else '' %}
+        {% set model_code = equipment_template.model_code if equipment_template else '' %}
+        {% set row_bg = '#f4f7fb' if loop.index is even else '#ffffff' %}
+        <tr>
+          <td class="center" style="background:{{ row_bg }}; color:#6b7280; font-size:7.5pt;">{{ loop.index }}</td>
+          <td style="background:{{ row_bg }};">
+            <div class="item-name">{{ item.item_name }}</div>
+            <div class="item-sub">
+              {% if brand or model_code %}{{ (brand ~ ' ' ~ model_code).strip() }}{% else %}-{% endif %}
+            </div>
+          </td>
+          <td class="mono code-wrap" style="background:{{ row_bg }}; color:#4b5e74;">
+            {% if source_asset and source_asset.asset_tag %}{{ source_asset.asset_tag }}{% else %}-{% endif %}
+          </td>
+          <td class="mono code-wrap" style="background:{{ row_bg }}; color:#4b5e74;">
+            {% if item.asset and item.asset.asset_code %}{{ item.asset.asset_code }}
+            {% elif source_asset and source_asset.asset_code %}{{ source_asset.asset_code }}
+            {% else %}-{% endif %}
+          </td>
+          <td class="mono code-wrap" style="background:{{ row_bg }}; color:#4b5e74;">
+            {% if item.asset and item.asset.serial_no %}{{ item.asset.serial_no }}
+            {% elif item.material and item.material.seri_no %}{{ item.material.seri_no }}
+            {% elif source_asset and source_asset.serial_no %}{{ source_asset.serial_no }}
+            {% else %}-{% endif %}
+          </td>
+          <td class="center qty" style="background:{{ row_bg }};">{{ format_assignment_qty(item.quantity) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="total-row">
+          <td colspan="5" class="right" style="padding-right:8pt;">Toplam</td>
+          <td class="center">{{ format_assignment_qty(qty.total) }}</td>
+        </tr>
+      </tfoot>
+    </table>
   </div>
 
-  <div class="section-title">Belge Bilgileri</div>
-  <table class="meta-table">
+  <!-- SECTIONS 2 & 3: BEYAN + İMZA (page-break korumalı) -->
+  <table class="closing-wrap">
     <tr>
-      <td class="meta-label">Zimmet No</td>
-      <td class="meta-value">{{ assignment.assignment_no }}</td>
-      <td class="meta-label">Tarih</td>
-      <td class="meta-value">{{ assignment.assignment_date.strftime('%d.%m.%Y') if assignment.assignment_date else '-' }}</td>
-    </tr>
-    <tr>
-      <td class="meta-label">Havalimanı</td>
-      <td class="meta-value">{{ assignment.airport.ad if assignment.airport else 'Global erişim' }}</td>
-      <td class="meta-label">Durum</td>
-      <td class="meta-value">{{ assignment_status_label(assignment.status) }}</td>
-    </tr>
-    <tr>
-      <td class="meta-label">Teslim Eden</td>
-      <td class="meta-value">{{ assignment.delivered_by_name or (assignment.delivered_by.tam_ad if assignment.delivered_by else '-') }}</td>
-      <td class="meta-label">Teslim Alan</td>
-      <td class="meta-value">{{ assignment.recipient_names or '-' }}</td>
-    </tr>
-  </table>
+      <td style="padding:0;">
 
-  <div class="section-title">Zimmetlenen Malzeme Listesi</div>
-  <table class="item-table">
-    <thead>
-      <tr>
-        <th style="width:6%;">#</th>
-        <th style="width:38%;">Malzeme / Ekipman</th>
-        <th style="width:18%;">Varlık / Seri No</th>
-        <th style="width:12%;">Miktar</th>
-        <th style="width:10%;">Birim</th>
-        <th style="width:16%;">Not</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for item in assignment.items %}
-      <tr>
-        <td>{{ loop.index }}</td>
-        <td>
-          <strong>{{ item.item_name }}</strong>
-          {% if item.material and item.material.havalimani %}
-          <div class="item-code">{{ item.material.havalimani.ad }}</div>
-          {% endif %}
-        </td>
-        <td>
-          {% if item.asset and item.asset.asset_code %}
-          {{ item.asset.asset_code }}
-          {% elif item.material and item.material.seri_no %}
-          {{ item.material.seri_no }}
-          {% else %}
-          -
-          {% endif %}
-        </td>
-        <td>{{ item.quantity }}</td>
-        <td>{{ item.unit or 'adet' }}</td>
-        <td>{{ item.note or '-' }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  <div class="section-title">Açıklama / Not</div>
-  <div class="note-box">{{ assignment.note or 'Ek not girilmemiştir.' }}</div>
-
-  <table class="signature-table">
-    <tr>
-      <td>
-        <div class="signature-card">
-          <div class="signature-title">Teslim Eden</div>
-          <div class="signature-name">{{ assignment.delivered_by_name or (assignment.delivered_by.tam_ad if assignment.delivered_by else '-') }}</div>
-          <div class="signature-note">Ad Soyad • İmza • Tarih</div>
+        <!-- SECTION 2: BEYAN -->
+        <div class="section">
+          <div class="section-head">
+            <table class="section-head-table">
+              <tr>
+                <td class="section-no">2</td>
+                <td class="section-title">Açıklama ve Sorumluluk Beyanı</td>
+              </tr>
+            </table>
+          </div>
+          <table class="text-box">
+            <tr>
+              <td>{{ assignment.note or 'Yukarıda bilgileri yer alan ekipmanları eksiksiz şekilde teslim aldım. Ekipmanları yalnızca görev kapsamında kullanacağımı, kullanım süresince koruyacağımı, zimmet kaydında belirtilen şartlara uyacağımı ve talep edilmesi halinde eksiksiz şekilde iade edeceğimi kabul ederim.' }}</td>
+            </tr>
+          </table>
         </div>
-      </td>
-      <td>
-        <div class="signature-card">
-          <div class="signature-title">Teslim Alan</div>
-          <div class="signature-name">{{ assignment.recipient_names or '-' }}</div>
-          <div class="signature-note">Ad Soyad • İmza • Tarih</div>
+
+        <!-- SECTION 3: İMZA -->
+        <div class="section">
+          <div class="section-head">
+            <table class="section-head-table">
+              <tr>
+                <td class="section-no">3</td>
+                <td class="section-title">İmza Alanları</td>
+              </tr>
+            </table>
+          </div>
+
+          <table class="sign-grid sign-box" width="100%">
+            <tr>
+              <td style="padding:0;">
+                <table class="sign-inner" width="100%">
+                  <tr>
+                    <td width="50%" class="sign-col sign-col-left">
+                      <table width="100%">
+                        <tr><td class="sign-role">Teslim Eden</td></tr>
+                        <tr><td class="sign-space">&nbsp;</td></tr>
+                        <tr><td class="sign-line-wrap"><div class="sign-line">İmza</div></td></tr>
+                        <tr><td class="sign-name">{{ assignment.delivered_by_name or (assignment.delivered_by.tam_ad if assignment.delivered_by else '-') }}</td></tr>
+                      </table>
+                    </td>
+                    <td width="50%" class="sign-col sign-col-right">
+                      <table width="100%">
+                        <tr><td class="sign-role">Teslim Alan</td></tr>
+                        <tr><td class="sign-space">&nbsp;</td></tr>
+                        <tr><td class="sign-line-wrap"><div class="sign-line">İmza</div></td></tr>
+                        <tr><td class="sign-name">{{ assignment.recipient_names or '-' }}</td></tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
         </div>
+
       </td>
     </tr>
   </table>
 
-  <div class="footer">SAR-X zimmet modulu tarafindan uretildi.</div>
+  <!-- FOOTER -->
+  <div id="pdf-footer">
+    <table style="width:100%; border-collapse:collapse;">
+      <tr>
+        <td class="footer-left">
+          SAR-X ARFF Arama Kurtarma Timi Envanter Yönetim Sistemi<br />
+          Bu belge sistem kaydından üretilmiştir.
+        </td>
+        <td class="footer-right">
+          Sayfa <pdf:pagenumber /> / <pdf:pagecount />
+        </td>
+      </tr>
+    </table>
+  </div>
+
 </body>
 </html>

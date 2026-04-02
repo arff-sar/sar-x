@@ -1,3 +1,5 @@
+import pytest
+
 from homepage_demo import (
     HOMEPAGE_DEMO_SEED_TAG,
     clear_homepage_demo_data,
@@ -178,3 +180,28 @@ def test_homepage_demo_routes_render_demo_content_without_mixing_real_content(cl
     assert "Gerçek Form Başlığı" in client.get("/formlar").data.decode("utf-8")
     assert HomeSlider.query.filter_by(title="Gerçek Slider Başlığı").first() is not None
     assert Announcement.query.filter_by(slug="gercek-duyuru-basligi").first() is not None
+
+
+def test_homepage_demo_seed_is_blocked_in_production_env(app):
+    app.config["DEMO_TOOLS_ENABLED"] = True
+    app.config["ENV"] = "production"
+
+    with app.app_context():
+        with pytest.raises(RuntimeError, match="kapalı"):
+            seed_homepage_demo_data()
+
+
+def test_homepage_demo_routes_are_blocked_in_production_even_if_flag_enabled(client, app):
+    app.config["DEMO_TOOLS_ENABLED"] = True
+    app.config["ENV"] = "production"
+
+    owner = KullaniciFactory(rol="sahip")
+    db.session.add(owner)
+    db.session.commit()
+    _login(client, owner)
+
+    seed_response = client.post("/demo-veri/anasayfa/olustur", follow_redirects=False)
+    clear_response = client.post("/demo-veri/anasayfa/temizle", follow_redirects=False)
+
+    assert seed_response.status_code == 404
+    assert clear_response.status_code == 404

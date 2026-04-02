@@ -1,7 +1,7 @@
 import json
 from functools import wraps
 
-from flask import abort, current_app, has_app_context, has_request_context, request, session, url_for
+from flask import abort, current_app, g, has_app_context, has_request_context, request, session, url_for
 from flask_login import current_user
 from sqlalchemy import text
 
@@ -109,6 +109,16 @@ def _rollback_session_safely():
         db.session.rollback()
     except Exception:
         pass
+
+
+def _auth_request_cache():
+    if not has_request_context():
+        return None
+    cache = getattr(g, "_auth_runtime_cache", None)
+    if cache is None:
+        cache = {}
+        g._auth_runtime_cache = cache
+    return cache
 
 
 def _permission(key, label, module, summary, description=None):
@@ -1127,6 +1137,11 @@ def get_role_definition(role_key, include_custom=True, allow_legacy=True):
 
 def get_role_permissions(role):
     role_key = _normalize_role_key(role)
+    cache = _auth_request_cache()
+    cache_key = f"role_permissions:{role_key}"
+    if cache is not None and cache_key in cache:
+        return set(cache[cache_key])
+
     canonical = _canonical_role(role_key)
     if role_key in LEGACY_ROLE_DEFAULT_PERMISSIONS:
         granted = set(LEGACY_ROLE_DEFAULT_PERMISSIONS.get(role_key, set()))
@@ -1172,11 +1187,19 @@ def get_role_permissions(role):
             granted.add(item)
     for item in custom.get("deny", []):
         granted.discard(item)
+    if cache is not None:
+        cache[cache_key] = set(granted)
     return granted
 
 
 def get_user_permission_overrides(user):
     user_id = str(getattr(user, "id", "") or "")
+    cache = _auth_request_cache()
+    cache_key = f"user_permission_overrides:{user_id}"
+    if cache is not None and cache_key in cache:
+        cached = cache[cache_key]
+        return {"allow": set(cached["allow"]), "deny": set(cached["deny"])}
+
     if not user_id:
         return {"allow": set(), "deny": set()}
     if table_exists("user_permission_override"):
@@ -1185,10 +1208,13 @@ def get_user_permission_overrides(user):
 
             rows = UserPermissionOverride.query.filter_by(user_id=int(user_id)).all()
             if rows:
-                return {
+                result = {
                     "allow": {row.permission_key for row in rows if row.is_allowed},
                     "deny": {row.permission_key for row in rows if not row.is_allowed},
                 }
+                if cache is not None:
+                    cache[cache_key] = {"allow": set(result["allow"]), "deny": set(result["deny"])}
+                return result
         except Exception:
             _rollback_session_safely()
     meta = _load_authorization_meta()
@@ -1196,7 +1222,10 @@ def get_user_permission_overrides(user):
     raw = overrides.get(user_id, {})
     allow = {item for item in raw.get("allow", []) if isinstance(item, str) and item}
     deny = {item for item in raw.get("deny", []) if isinstance(item, str) and item}
-    return {"allow": allow, "deny": deny}
+    result = {"allow": allow, "deny": deny}
+    if cache is not None:
+        cache[cache_key] = {"allow": set(result["allow"]), "deny": set(result["deny"])}
+    return result
 
 
 def get_effective_permissions(user=None):
@@ -1205,11 +1234,17 @@ def get_effective_permissions(user=None):
         return set()
     override_role = get_session_role_override(user)
     raw_role = _normalize_role_key(getattr(user, "rol", ""))
+    cache = _auth_request_cache()
+    cache_key = f"effective_permissions:{getattr(user, 'id', '')}:{raw_role}:{override_role or ''}"
+    if cache is not None and cache_key in cache:
+        return set(cache[cache_key])
     permission_profile_role = override_role or (raw_role if raw_role in LEGACY_ROLE_DEFAULT_PERMISSIONS else get_effective_role(user))
     permissions = set(get_role_permissions(permission_profile_role))
     overrides = get_user_permission_overrides(user)
     permissions.update(overrides["allow"])
     permissions.difference_update(overrides["deny"])
+    if cache is not None:
+        cache[cache_key] = set(permissions)
     return permissions
 
 

@@ -183,7 +183,7 @@
                     <div class="history-item">
                         <strong>{{ item.assignment.assignment_no }}</strong>
                         <div class="history-meta">{{ item.assignment.assignment_date.strftime('%d.%m.%Y') if item.assignment.assignment_date else '-' }} • {{ item.assignment.recipient_names or '-' }}</div>
-                        <div class="history-meta">{{ item.quantity }} {{ item.unit or 'adet' }} • Durum: {{ assignment_status_label(item.assignment.status) }}</div>
+                        <div class="history-meta">{{ format_assignment_qty(item.quantity) }} {{ item.unit or 'adet' }} • Durum: {{ assignment_status_label(item.assignment.status) }}</div>
                         <div style="margin-top:10px;">
                             <a href="{{ url_for('inventory.zimmet_detay', assignment_id=item.assignment.id) }}" class="row-btn">Zimmet Detayı</a>
                         </div>
@@ -215,7 +215,7 @@
                         {% for order in related_work_orders %}
                         <tr>
                             <td>{{ order.work_order_no }}</td>
-                            <td>{{ order.status|replace('_',' ')|upper }}</td>
+                            <td>{{ work_order_status_label(order.status) }}</td>
                             <td>{{ order.priority|upper }}</td>
                             <td>{{ order.opened_at.strftime('%d.%m.%Y %H:%M') if order.opened_at else '-' }}</td>
                             <td class="row-actions">
