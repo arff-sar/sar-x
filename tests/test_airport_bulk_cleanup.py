@@ -205,3 +205,27 @@ def test_bulk_cleanup_soft_deletes_only_selected_airport_scope(client, app):
 
     # Sistem yöneticisi kendi hesabını silme kapsamı dışında kalmalı.
     assert db.session.get(type(owner), owner.id).is_deleted is False
+
+
+def test_bulk_cleanup_accepts_password_with_accidental_whitespace(client, app):
+    owner = KullaniciFactory(rol="sahip")
+    airport = Havalimani(ad="Antalya", kodu="AYT")
+    db.session.add_all([owner, airport])
+    db.session.flush()
+    scoped = _create_airport_scope(owner, airport, "AYT-1")
+    db.session.commit()
+
+    _login(client, owner.id)
+    response = client.post(
+        "/havalimani-toplu-silme",
+        data={
+            "airport_id": airport.id,
+            "confirm_text": "SIL-AYT",
+            "confirm_password": " 123456 ",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    db.session.expire_all()
+    assert db.session.get(Malzeme, scoped["material_id"]).is_deleted is True

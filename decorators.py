@@ -34,7 +34,6 @@ REMOVED_ROLE_KEYS = {
     ROLE_OWNER,
     ROLE_SYSTEM_OWNER,
     ROLE_ADMIN,
-    ROLE_EDITOR,
     ROLE_MANAGER,
     ROLE_AIRPORT_MANAGER,
     ROLE_MAINTENANCE,
@@ -48,15 +47,17 @@ ROLE_ALIASES = {
     CANONICAL_ROLE_TEAM_LEAD: CANONICAL_ROLE_TEAM_LEAD,
     CANONICAL_ROLE_TEAM_MEMBER: CANONICAL_ROLE_TEAM_MEMBER,
     CANONICAL_ROLE_ADMIN: CANONICAL_ROLE_ADMIN,
-    ROLE_OWNER: ROLE_OWNER,
-    ROLE_SYSTEM_OWNER: ROLE_SYSTEM_OWNER,
-    ROLE_MANAGER: ROLE_MANAGER,
-    ROLE_AIRPORT_MANAGER: ROLE_AIRPORT_MANAGER,
-    ROLE_EDITOR: CANONICAL_ROLE_TEAM_MEMBER,
-    ROLE_PERSONNEL: ROLE_PERSONNEL,
-    ROLE_MAINTENANCE: ROLE_MAINTENANCE,
+    # Legacy/removed role keys are still present in historical records and tests.
+    # Map them onto canonical roles so permissions and route guards behave consistently.
+    ROLE_OWNER: CANONICAL_ROLE_SYSTEM,
+    ROLE_SYSTEM_OWNER: CANONICAL_ROLE_SYSTEM,
+    ROLE_MANAGER: CANONICAL_ROLE_TEAM_LEAD,
+    ROLE_AIRPORT_MANAGER: CANONICAL_ROLE_TEAM_LEAD,
+    ROLE_EDITOR: ROLE_EDITOR,
+    ROLE_PERSONNEL: CANONICAL_ROLE_TEAM_MEMBER,
+    ROLE_MAINTENANCE: CANONICAL_ROLE_TEAM_MEMBER,
     ROLE_WAREHOUSE: CANONICAL_ROLE_TEAM_MEMBER,
-    ROLE_READONLY: ROLE_READONLY,
+    ROLE_READONLY: CANONICAL_ROLE_ADMIN,
     ROLE_HQ: CANONICAL_ROLE_TEAM_MEMBER,
     ROLE_ADMIN: ROLE_ADMIN,
 }
@@ -91,6 +92,7 @@ ROLE_OPTIONS = [
 ]
 
 LEGACY_ROLE_OPTIONS = [
+    {"key": ROLE_EDITOR, "label": "İçerik Editörü", "scope": "global", "critical": False, "is_core": False},
     {"key": ROLE_MAINTENANCE, "label": "Bakım Sorumlusu", "scope": "airport", "critical": False, "is_core": False},
     {"key": ROLE_WAREHOUSE, "label": "Depo Sorumlusu", "scope": "airport", "critical": False, "is_core": False},
     {"key": ROLE_HQ, "label": "Genel Müdürlük", "scope": "global", "critical": False, "is_core": False},
@@ -489,6 +491,13 @@ DEFAULT_ROLE_PERMISSIONS = {
 }
 
 LEGACY_ROLE_DEFAULT_PERMISSIONS = {
+    ROLE_OWNER: set(DEFAULT_ROLE_PERMISSIONS[CANONICAL_ROLE_SYSTEM]),
+    ROLE_SYSTEM_OWNER: set(DEFAULT_ROLE_PERMISSIONS[CANONICAL_ROLE_SYSTEM]),
+    ROLE_EDITOR: {
+        "homepage.view",
+        "homepage.edit",
+        "homepage.media",
+    },
     ROLE_MAINTENANCE: set(),
     ROLE_WAREHOUSE: {
         "dashboard.view",

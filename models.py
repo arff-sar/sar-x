@@ -739,7 +739,7 @@ class InventoryAsset(db.Model, TimestampMixin, SoftDeleteMixin):
 
     @property
     def qr_serial(self):
-        return f"{self.id:06d}" if self.id else None
+        return f"{self.id:04d}" if self.id else None
 
     @property
     def asset_code(self):

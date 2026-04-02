@@ -59,9 +59,14 @@ def notifications_read(id):
 @admin_bp.route("/admin/notifications/read-all", methods=["POST"])
 @login_required
 def notifications_read_all():
+    is_async_request = (request.headers.get("X-Requested-With") or "").strip().lower() == "xmlhttprequest"
     if not table_exists("notification"):
+        if is_async_request:
+            return ("", 204)
         return redirect(url_for("admin.notifications"))
     Notification.query.filter_by(user_id=current_user.id, is_read=False).update({"is_read": True})
     db.session.commit()
+    if is_async_request:
+        return ("", 204)
     flash("Tüm bildirimler okundu olarak işaretlendi.", "success")
     return redirect(url_for("admin.notifications"))

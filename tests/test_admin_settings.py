@@ -9,7 +9,7 @@ def test_update_site_settings(client, app):
     from models import SiteAyarlari
     from tests.factories import KullaniciFactory
 
-    admin = KullaniciFactory(rol="sahip")
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
     
     # ✅ KRİTİK EKSİK BURADAYDI: Admini ve Ayarları DB'ye ekliyoruz
     db.session.add(admin) 
@@ -65,7 +65,7 @@ def test_site_settings_page_renders_footer_content_inputs(client, app):
     from models import SiteAyarlari
     from tests.factories import KullaniciFactory
 
-    owner = KullaniciFactory(rol="sahip")
+    owner = KullaniciFactory(rol="sistem_sorumlusu")
     settings = SiteAyarlari(
         baslik="SAR-X",
         iletisim_notu=json.dumps(
@@ -104,7 +104,7 @@ def test_site_settings_page_uses_footer_fallbacks_when_db_empty(client, app):
     from extensions import db
     from tests.factories import KullaniciFactory
 
-    owner = KullaniciFactory(rol="sahip")
+    owner = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(owner)
     db.session.commit()
 
@@ -133,7 +133,7 @@ def test_site_settings_backfills_public_menu_records_without_duplicates(client, 
     from models import NavMenu
     from tests.factories import KullaniciFactory
 
-    owner = KullaniciFactory(rol="sahip")
+    owner = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(owner)
     db.session.commit()
 

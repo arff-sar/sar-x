@@ -30,6 +30,7 @@ from decorators import (
     get_effective_role,
     get_effective_role_label,
     get_effective_permissions,
+    has_permission,
     get_role_switch_options,
     role_home_endpoint,
     set_role_override,
@@ -65,6 +66,8 @@ SETTINGS_DEMO_SIM_SESSION_KEY = "settings_demo_sim_enabled"
 SETTINGS_DEMO_EMAIL_VERIFY_PATH_SESSION_KEY = "settings_demo_email_verify_path"
 SETTINGS_DEMO_EMAIL_TARGET_SESSION_KEY = "settings_demo_email_target"
 ERROR_REPORT_SESSION_KEY = "pending_error_report"
+PASSKEY_AUTO_PROMPT_SESSION_KEY = "passkey_auto_prompt_after_password_login"
+BLOCKED_GOV_TR_EMAIL_MESSAGE = 'Güvenlik nedeniyle "gov.tr" uzantılı e-posta adresleri kabul edilmemektedir.'
 
 # --- YARDIMCI FONKSİYONLAR ---
 
@@ -132,12 +135,37 @@ def _passkey_json_error(message="Biyometrik giriş şu an tamamlanamadı.", stat
     return response, status_code
 
 
+def _post_login_default_url(user):
+    fallback_url = url_for("auth.ayarlar")
+    try:
+        home_endpoint = role_home_endpoint(user)
+        required_permission = ""
+        if home_endpoint == "inventory.dashboard":
+            required_permission = "dashboard.view"
+        elif home_endpoint == "content.homepage_dashboard":
+            required_permission = "homepage.view"
+
+        if required_permission and not has_permission(required_permission, user=user):
+            return fallback_url
+        return url_for(home_endpoint)
+    except Exception:
+        db.session.rollback()
+        return fallback_url
+
+
 def _passkey_success_redirect_url(user):
-    return url_for(role_home_endpoint(user))
+    return _post_login_default_url(user)
 
 
 def _passkey_remember_value(payload):
     return bool((payload or {}).get("remember_me"))
+
+
+def _passkey_login_identifier(payload):
+    candidate = _normalize_login_email((payload or {}).get("login_identifier"))
+    if not candidate or not _looks_like_email(candidate):
+        return ""
+    return candidate
 
 
 def _passkey_transports_from_json(raw_value):
@@ -169,6 +197,16 @@ def _default_passkey_friendly_name():
     if len(compact) > 80:
         compact = compact[:77].rstrip() + "..."
     return compact or "Kayıtlı Cihaz"
+
+
+def _user_has_active_passkey(user):
+    if not user:
+        return False
+    try:
+        return any(getattr(credential, "is_active", True) for credential in (user.passkey_credentials or []))
+    except Exception:
+        db.session.rollback()
+        return False
 
 def gizli_sifreyi_getir():
     # 1) Secret Manager erişimi yoksa/kapalıysa env üzerinden devam et.
@@ -240,6 +278,16 @@ def _normalize_login_email(raw_value):
 
 def _looks_like_email(value):
     return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", value or ""))
+
+
+def _is_disallowed_gov_tr_email(value):
+    normalized = _normalize_login_email(value)
+    if not normalized or "@" not in normalized:
+        return False
+    domain = normalized.rsplit("@", 1)[-1].strip(".")
+    if not domain:
+        return False
+    return domain == "gov.tr" or domain.endswith(".gov.tr")
 
 
 def _auth_identifier(username):
@@ -621,7 +669,7 @@ def mail_gonder(alici_mail, konu, icerik):
 @limiter.limit(lambda: current_app.config.get("LOGIN_RATE_LIMIT", "5 per minute"), methods=["POST"])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for(role_home_endpoint(current_user)))
+        return redirect(_post_login_default_url(current_user))
 
     raw_next_target = request.form.get("next") if request.method == "POST" else request.args.get("next")
     next_target = _safe_redirect_target(raw_next_target, url_for("inventory.dashboard"))
@@ -633,6 +681,11 @@ def login():
         security_answer = request.form.get('security_verification')
         security_token = request.form.get('security_verification_token')
         identifier = _auth_identifier(kullanici_adi)
+
+        if _is_disallowed_gov_tr_email(kullanici_adi):
+            flash(BLOCKED_GOV_TR_EMAIL_MESSAGE, "warning")
+            audit_log("auth.login", outcome="blocked_email_domain", username=kullanici_adi, ip=_client_ip())
+            return _render_login_page(status_code=400, force_new=True, next_target=next_target)
 
         try:
             lock_record = _get_lock_record(identifier)
@@ -683,17 +736,20 @@ def login():
         user = _find_active_user_by_email(kullanici_adi)
         
         if user and user.sifre_kontrol(sifre):
+            should_prompt_passkey = bool(is_passkey_enabled() and not _user_has_active_passkey(user))
             invalidate_login_captcha(clear_session=True)
             session.clear()
             login_user(user, remember=remember_me)
             session.permanent = True
+            if should_prompt_passkey:
+                session[PASSKEY_AUTO_PROMPT_SESSION_KEY] = True
             try:
                 _reset_failed_login(identifier)
             except Exception:
                 db.session.rollback()
             log_kaydet('Giriş', f'{user.kullanici_adi} sisteme giriş yaptı.')
             audit_log("auth.login", outcome="success", user_id=user.id, role=user.rol, ip=_client_ip())
-            return redirect(_safe_redirect_target(raw_next_target, url_for(role_home_endpoint(user))))
+            return redirect(_safe_redirect_target(raw_next_target, _post_login_default_url(user)))
 
         try:
             record = _register_failed_login(identifier)
@@ -816,6 +872,7 @@ def passkey_register_finish():
             return _passkey_json_error("Biyometrik giriş bu cihaz için etkinleştirilemedi.", 500)
         log_kaydet("Güvenlik", f"{current_user.kullanici_adi} için kaldırılmış passkey yeniden etkinleştirildi.", event_key="auth.passkey.register", outcome="success")
         audit_log("auth.passkey.register.finish", outcome="reactivated", user_id=current_user.id, ip=_client_ip())
+        session.pop(PASSKEY_AUTO_PROMPT_SESSION_KEY, None)
         return jsonify({"status": "success", "message": "Biyometrik giriş kaydı yeniden etkinleştirildi."})
 
     credential = PasskeyCredential(
@@ -841,6 +898,7 @@ def passkey_register_finish():
 
     log_kaydet("Güvenlik", f"{current_user.kullanici_adi} için yeni bir passkey kaydedildi.", event_key="auth.passkey.register", outcome="success")
     audit_log("auth.passkey.register.finish", outcome="success", user_id=current_user.id, ip=_client_ip())
+    session.pop(PASSKEY_AUTO_PROMPT_SESSION_KEY, None)
     return jsonify({"status": "success", "message": "Biyometrik giriş bu cihaz için etkinleştirildi."})
 
 
@@ -918,6 +976,31 @@ def login_passkey_begin():
         return jsonify({"status": "success", "redirect_url": _passkey_success_redirect_url(current_user)})
 
     payload = request.get_json(silent=True) or {}
+    login_identifier = _passkey_login_identifier(payload)
+    if login_identifier and _is_disallowed_gov_tr_email(login_identifier):
+        audit_log("auth.passkey.login.begin", outcome="blocked_email_domain", username=login_identifier, ip=_client_ip())
+        return _passkey_json_error(BLOCKED_GOV_TR_EMAIL_MESSAGE, 400)
+
+    allow_credentials = []
+    if login_identifier:
+        target_user = _find_active_user_by_email(login_identifier)
+        if target_user:
+            for credential in target_user.passkey_credentials:
+                if not getattr(credential, "is_active", True):
+                    continue
+                transports = _passkey_transports_from_json(getattr(credential, "transports_json", None))
+                allow_credentials.append(
+                    {
+                        "id": credential.credential_id,
+                        "type": "public-key",
+                        "transports": transports if isinstance(transports, list) else [],
+                    }
+                )
+        if not allow_credentials:
+            return _passkey_json_error(
+                "Bu hesap için aktif biyometrik giriş kaydı bulunamadı. Önce normal giriş yapın ve Ayarlar ekranından passkey kaydı oluşturun.",
+                400,
+            )
     try:
         challenge = create_challenge()
         store_authentication_state(challenge=challenge, remember_me=_passkey_remember_value(payload))
@@ -933,7 +1016,7 @@ def login_passkey_begin():
                 "rpId": resolve_rp_id(),
                 "timeout": 60000,
                 "userVerification": "required",
-                "allowCredentials": [],
+                "allowCredentials": allow_credentials,
             },
         }
     )
@@ -974,29 +1057,6 @@ def login_passkey_finish():
             429,
         )
 
-    captcha_valid, captcha_state = validate_login_captcha(
-        payload.get("security_verification"),
-        submitted_token=payload.get("security_verification_token"),
-    )
-    if not captcha_valid:
-        try:
-            _register_failed_login(identifier)
-        except Exception:
-            db.session.rollback()
-        invalidate_login_captcha(clear_session=True)
-        event_key = "auth.passkey.login.captcha_failed"
-        if captcha_state == "expired":
-            event_key = "auth.passkey.login.captcha_expired"
-        elif captcha_state in {"stale", "used"}:
-            event_key = "auth.passkey.login.captcha_refresh_required"
-        capture_error(
-            error_code="SAR-X-AUTH-1202",
-            status_code=400,
-            detail=f"Passkey login captcha failed | state={captcha_state or 'unknown'}",
-        )
-        audit_log(event_key, outcome="failed", username=getattr(user, "kullanici_adi", ""), ip=_client_ip())
-        return _passkey_json_error("Güvenlik doğrulaması başarısız oldu.", 400)
-
     if not credential or not user:
         try:
             _register_failed_login(identifier)
@@ -1036,6 +1096,7 @@ def login_passkey_finish():
     session.clear()
     login_user(user, remember=bool(state.get("remember_me")))
     session.permanent = True
+    session.pop(PASSKEY_AUTO_PROMPT_SESSION_KEY, None)
     try:
         _reset_failed_login(identifier)
     except Exception:
@@ -1061,6 +1122,7 @@ def login_captcha_refresh():
 
 
 @auth_bp.route("/login/captcha/<string:token>.svg", methods=["GET"])
+@limiter.exempt
 def login_captcha_image(token):
     svg = render_login_captcha_svg(token)
     response = make_response(svg, 200)
@@ -1730,6 +1792,11 @@ def sifre_sifirla_talep():
 
     if not k_ad:
         flash(generic_message, "info")
+        return redirect(url_for('auth.login'))
+
+    if _is_disallowed_gov_tr_email(k_ad):
+        flash(BLOCKED_GOV_TR_EMAIL_MESSAGE, "warning")
+        audit_log("auth.password_reset.request", outcome="blocked_email_domain", username=k_ad, ip=_client_ip())
         return redirect(url_for('auth.login'))
 
     if not _looks_like_email(k_ad):

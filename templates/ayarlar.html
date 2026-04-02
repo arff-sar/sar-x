@@ -20,9 +20,18 @@
 .settings-check input { width: 17px; height: 17px; }
 .settings-warning { border: 1px solid var(--amber-border); background: var(--amber-light); color: #92400e; border-radius: 10px; padding: 10px 12px; font-size: 12px; line-height: 1.45; }
 .settings-muted { border: 1px dashed var(--border-dark); background: var(--surface2); color: var(--text3); border-radius: 10px; padding: 10px 12px; font-size: 12px; line-height: 1.45; }
+.settings-passkey-list { display: grid; gap: 10px; margin-top: 10px; }
+.settings-passkey-list[aria-busy="true"] { opacity: .76; }
+.settings-passkey-item { border: 1px solid var(--border); border-radius: 10px; background: #fff; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.settings-passkey-item-main { min-width: 0; display: grid; gap: 4px; }
+.settings-passkey-item-title { font-size: 13px; font-weight: 800; color: var(--navy); line-height: 1.35; word-break: break-word; }
+.settings-passkey-item-meta { font-size: 11.5px; color: var(--text3); line-height: 1.45; word-break: break-word; }
+.settings-passkey-delete { min-height: 34px; padding: 0 12px; flex-shrink: 0; }
 
 @media (max-width: 760px) {
   .settings-row { grid-template-columns: 1fr; }
+  .settings-passkey-item { align-items: flex-start; flex-direction: column; }
+  .settings-passkey-delete { width: 100%; }
 }
 </style>
 {% endblock %}
@@ -125,6 +134,19 @@
       </div>
     </form>
   </section>
+
+  {% if passkey_enabled %}
+  <section class="settings-card" id="passkeySettingsCard">
+    <h3>Biyometrik / Passkey</h3>
+    <div class="hint">Bu cihazda biyometrik giriş ekleyebilir, kayıtlı passkey listeni görüntüleyip tek tıkla kaldırabilirsin.</div>
+    <div class="settings-actions">
+      <button type="button" class="btn btn-primary" id="settingsPasskeyRegisterButton" hidden>Biyometrik Giriş Ekle</button>
+      <button type="button" class="btn" id="settingsPasskeyRefreshButton">Listeyi Yenile</button>
+    </div>
+    <div class="settings-muted" id="settingsPasskeyEmptyState" style="margin-top: 10px;" hidden>Bu hesap için aktif passkey kaydı bulunmuyor.</div>
+    <div class="settings-passkey-list" id="settingsPasskeyList" aria-live="polite"></div>
+  </section>
+  {% endif %}
 
   <section class="settings-card">
     <h3>Beden Bilgileri</h3>
@@ -229,6 +251,31 @@
 
 {% block extra_js %}
 <script>
+{% if passkey_enabled %}
+(function () {
+  if (!window.SARXPasskey) return;
+
+  var management = window.SARXPasskey.initManagementList({
+    listContainerId: 'settingsPasskeyList',
+    emptyStateId: 'settingsPasskeyEmptyState',
+    refreshButtonId: 'settingsPasskeyRefreshButton',
+    listUrl: '{{ passkey_credentials_url }}',
+    revokeUrl: '{{ passkey_revoke_url }}'
+  });
+
+  window.SARXPasskey.initRegistration({
+    buttonId: 'settingsPasskeyRegisterButton',
+    beginUrl: '{{ passkey_register_begin_url }}',
+    finishUrl: '{{ passkey_register_finish_url }}',
+    onSuccess: function () {
+      if (management && typeof management.refresh === 'function') {
+        management.refresh();
+      }
+    }
+  });
+})();
+{% endif %}
+
 (function () {
   const notificationDemoSimulation = {{ "true" if notification_demo_simulation else "false" }};
   const storageKey = 'sarx.push.device.id';

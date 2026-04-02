@@ -25,7 +25,8 @@
             <tbody>
                 {% for asset in assets %}
                 {% set is_overdue = asset.next_maintenance_date and asset.next_maintenance_date < today %}
-                <tr>
+                {% set quick_form_url = url_for('maintenance.asset_hizli_bakim_legacy', asset_id=asset.id) if asset and asset.id else '' %}
+                <tr {% if overdue_only and quick_form_url %}data-href="{{ quick_form_url }}" style="cursor:pointer;"{% endif %}>
                     <td>{{ asset.equipment_template.name if asset.equipment_template else '-' }}</td>
                     <td>{{ asset.airport.kodu if asset.airport else '-' }}</td>
                     <td>{{ asset.serial_no or '-' }}</td>
@@ -38,6 +39,9 @@
                         {% else %}
                         <span class="status-pill status-aktif">Planlı</span>
                         {% endif %}
+                        {% if overdue_only and quick_form_url %}
+                        <a href="{{ quick_form_url }}" class="row-btn" style="margin-left:8px;">Bakım Formu</a>
+                        {% endif %}
                     </td>
                 </tr>
                 {% else %}
@@ -47,4 +51,17 @@
         </table>
     </div>
 </div>
+{% if overdue_only %}
+<script>
+document.addEventListener('click', function (event) {
+    const row = event.target.closest('tr[data-href]');
+    if (!row) return;
+    if (event.target.closest('a, button, input, select, textarea, form')) return;
+    const href = row.getAttribute('data-href');
+    if (href) {
+        window.location.assign(href);
+    }
+});
+</script>
+{% endif %}
 {% endblock %}

@@ -1,5 +1,7 @@
 from datetime import timedelta
 
+import pytest
+
 from app import create_app
 from extensions import db
 from tests.factories import KullaniciFactory
@@ -97,8 +99,8 @@ def test_production_defaults_to_memory_rate_limit_storage_when_unset(monkeypatch
     monkeypatch.delenv("RATELIMIT_STORAGE_URI", raising=False)
     monkeypatch.delenv("ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION", raising=False)
 
-    app = create_app("production")
-    assert app.config["RATELIMIT_STORAGE_URI"] == "memory://"
+    with pytest.raises(RuntimeError, match="ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION"):
+        create_app("production")
 
 
 def test_authenticated_dashboard_response_uses_private_no_store_cache_headers(client, app):

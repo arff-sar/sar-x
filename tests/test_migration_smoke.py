@@ -29,6 +29,18 @@ def _run_upgrade(project_root, env):
     )
 
 
+def _current_migration_heads(project_root):
+    from alembic.config import Config as AlembicConfig
+    from alembic.script import ScriptDirectory
+
+    alembic_ini = project_root / "migrations" / "alembic.ini"
+    script_location = project_root / "migrations"
+    config = AlembicConfig(str(alembic_ini))
+    config.set_main_option("script_location", str(script_location))
+    script = ScriptDirectory.from_config(config)
+    return set(script.get_heads() or [])
+
+
 def test_fresh_database_can_upgrade_with_migrations(app, monkeypatch):
     project_root = Path(app.root_path)
     db_path = project_root / "instance" / "test_migration_smoke.db"
@@ -154,6 +166,7 @@ def test_fresh_database_can_upgrade_with_migrations(app, monkeypatch):
 
 def test_drifted_database_recovers_missing_havalimani_drive_folder_column(app):
     project_root = Path(app.root_path)
+    expected_heads = _current_migration_heads(project_root)
     db_path = project_root / "instance" / "test_migration_drive_folder_repair.db"
     if db_path.exists():
         db_path.unlink()
@@ -194,11 +207,12 @@ def test_drifted_database_recovers_missing_havalimani_drive_folder_column(app):
 
     assert "drive_folder_id" in havalimani_columns
     assert "ix_havalimani_drive_folder_id" in havalimani_indexes
-    assert current_revision == "c6d8e2f4a1b3"
+    assert current_revision in expected_heads
 
 
 def test_drifted_a7_database_recovers_missing_ppe_assignment_link_column(app):
     project_root = Path(app.root_path)
+    expected_heads = _current_migration_heads(project_root)
     db_path = project_root / "instance" / "test_migration_ppe_assignment_link_repair.db"
     if db_path.exists():
         db_path.unlink()
@@ -248,7 +262,7 @@ def test_drifted_a7_database_recovers_missing_ppe_assignment_link_column(app):
 
     assert "ppe_assignment_id" in ppe_columns
     assert "ix_ppe_record_ppe_assignment_id" in ppe_indexes
-    assert current_revision == "c6d8e2f4a1b3"
+    assert current_revision in expected_heads
 
 
 def test_runtime_sqlite_schema_compat_repairs_drifted_user_and_passkey_columns(app, monkeypatch):

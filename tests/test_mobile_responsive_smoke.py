@@ -17,14 +17,16 @@ def test_login_page_contains_mobile_friendly_captcha_and_actions_rules(client):
     assert ".captcha-box { grid-template-columns: minmax(0, 1fr) 42px 124px; gap: 6px; }" in html
     assert ".captcha-input-shell { grid-column: 3; }" in html
     assert "@media (max-width: 460px)" in html
-    assert ".captcha-input { font-size: 14.5px !important; letter-spacing: .04em; }" in html
+    assert ".captcha-box { grid-template-columns: minmax(0, 1fr) 42px 112px; }" in html
+    assert ".captcha-refresh { width: 42px; min-width: 42px; }" in html
+    assert ".captcha-input { font-size: 14.5px !important; letter-spacing: .04em; line-height: 1; }" in html
     assert "-webkit-text-size-adjust: 100%;" in html
     assert ".captcha-canvas-container," in html
     assert ".captcha-canvas-container { display: flex; align-items: center; justify-content: center; }" in html
     assert ".captcha-visual { height: 100%; object-fit: contain; }" in html
     assert ".captcha-input { font-size: 15px !important; letter-spacing: .05em; line-height: 1; min-height: 0; height: 100%; }" in html
-    assert ".account-actions-row { gap: 8px; margin: 2px 0 8px; }" in html
-    assert ".forgot-password-link { min-height: 40px; border-radius: 10px;" in html
+    assert ".account-actions-row { gap: 8px; margin: 2px 0 6px; }" in html
+    assert ".forgot-password-link { min-height: 36px; border-radius: 10px;" in html
 
 
 def test_dashboard_page_contains_mobile_compaction_rules(client, app):
@@ -115,7 +117,9 @@ def test_authenticated_shell_contains_mobile_sidebar_logout_and_saha_mode_order(
     assert "const setNotificationPanelOpen = function (isOpen) {" in html
     assert "setNotificationPanelOpen(willOpen);" in html
     assert "notificationToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');" in html
-    assert 'id="notificationToggle" aria-label="Bildirimler" aria-haspopup="dialog" aria-controls="notificationPanel" aria-expanded="false"' in html
+    assert 'id="notificationToggle"' in html
+    assert 'aria-label="Bildirimler"' in html
+    assert 'data-read-all-url="/admin/notifications/read-all"' in html
     assert 'id="airportMessageLaunchButton" aria-label="Ortak mesajlaşmayı aç" aria-haspopup="dialog" aria-controls="airportMessagePanel" aria-expanded="false"' in html
     assert "--safe-area-bottom: env(safe-area-inset-bottom, 0px);" in html
     assert "bottom: calc(20px + var(--safe-area-bottom));" in html

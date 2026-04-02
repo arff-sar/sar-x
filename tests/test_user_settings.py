@@ -41,6 +41,43 @@ def test_settings_page_renders_for_authenticated_user(client, app):
     assert "<select" in html
 
 
+def test_settings_page_shows_passkey_management_when_enabled(client, app):
+    app.config["PASSKEY_ENABLED"] = True
+    with app.app_context():
+        user = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="settings-passkey-on@sarx.com")
+        db.session.add(user)
+        db.session.commit()
+        user_id = user.id
+
+    _login(client, user_id)
+    response = client.get("/ayarlar")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Biyometrik / Passkey" in html
+    assert 'id="settingsPasskeyRegisterButton"' in html
+    assert 'id="settingsPasskeyList"' in html
+    assert 'id="passkeyRegisterButton"' not in html
+    assert 'id="passkeyManageButton"' not in html
+
+
+def test_settings_page_hides_passkey_management_when_disabled(client, app):
+    app.config["PASSKEY_ENABLED"] = False
+    with app.app_context():
+        user = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="settings-passkey-off@sarx.com")
+        db.session.add(user)
+        db.session.commit()
+        user_id = user.id
+
+    _login(client, user_id)
+    response = client.get("/ayarlar")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Biyometrik / Passkey" not in html
+    assert 'id="settingsPasskeyList"' not in html
+
+
 def test_email_change_request_waits_for_verification_before_updating_email(client, app):
     with app.app_context():
         user = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="mail-change@sarx.com")

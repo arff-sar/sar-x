@@ -53,6 +53,7 @@ load_dotenv()
 
 
 ERROR_REPORT_SESSION_KEY = "pending_error_report"
+PASSKEY_AUTO_PROMPT_SESSION_KEY = "passkey_auto_prompt_after_password_login"
 
 
 def _normalize_config_name(value):
@@ -319,6 +320,7 @@ def _apply_runtime_env_overrides(app):
         "GCS_MAKE_UPLOADS_PUBLIC",
         "ALLOW_CLOUD_RUN_WEB_SCHEDULER",
         "ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION",
+        "ALLOW_LOCAL_STORAGE_IN_PRODUCTION",
         "PASSKEY_ENABLED",
     ]
     for key in bool_keys:
@@ -805,14 +807,36 @@ def create_app(config_name=None):
     rate_limit_storage = str(app.config.get("RATELIMIT_STORAGE_URI", "")).strip() or "memory://"
     app.config["RATELIMIT_STORAGE_URI"] = rate_limit_storage
     if rate_limit_storage.startswith("memory://"):
-        if selected_env == "production" and not _is_sqlite_url(database_url):
-            raise RuntimeError(
-                "Production ortamında memory rate-limit storage kullanılamaz. "
-                "RATELIMIT_STORAGE_URI için merkezi bir backend (ör. redis://) zorunludur."
-            )
+        if selected_env == "production":
+            if not _is_sqlite_url(database_url):
+                raise RuntimeError(
+                    "Production ortamında memory rate-limit storage kullanılamaz. "
+                    "RATELIMIT_STORAGE_URI için merkezi bir backend (ör. redis://) zorunludur."
+                )
+            if not app.config.get("ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION", False):
+                raise RuntimeError(
+                    "Production ortamında memory rate-limit storage sadece kontrollü override ile açılabilir. "
+                    "Geçici tek-instance/sqlite senaryosu için ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION=1 ayarlayın."
+                )
         elif selected_env != "testing":
             app.logger.info(
                 "RATELIMIT_STORAGE_URI tanımlı değil. Development ortamında memory rate-limit storage ile devam ediliyor."
+            )
+
+    storage_backend = str(app.config.get("STORAGE_BACKEND") or "local").strip().lower() or "local"
+    app.config["STORAGE_BACKEND"] = storage_backend
+    if selected_env == "production":
+        if storage_backend == "gcs" and not str(app.config.get("GCS_BUCKET_NAME") or "").strip():
+            raise RuntimeError("STORAGE_BACKEND=gcs için production ortamında GCS_BUCKET_NAME zorunludur.")
+        if (
+            storage_backend == "local"
+            and not _is_sqlite_url(database_url)
+            and not app.config.get("ALLOW_LOCAL_STORAGE_IN_PRODUCTION", False)
+        ):
+            raise RuntimeError(
+                "Production ortamında local storage backend varsayılan olarak kapalıdır. "
+                "Kalıcı medya için STORAGE_BACKEND=gcs kullanın; geçici kurtarma/smoke için "
+                "ALLOW_LOCAL_STORAGE_IN_PRODUCTION=1 ile kontrollü override açabilirsiniz."
             )
 
     _validate_passkey_runtime_config(app, selected_env=selected_env)
@@ -922,6 +946,7 @@ def create_app(config_name=None):
             "homepage_demo_logo_url": demo_logo,
             "site_contact_note": public_contact_note or demo_contact_note,
             "homepage_demo_contact_note": demo_contact_note,
+            "current_year": datetime.now().year,
         }
         passkey_shared = {
             "passkey_enabled": bool(app.config.get("PASSKEY_ENABLED")),
@@ -959,6 +984,20 @@ def create_app(config_name=None):
                     db.session.rollback()
                     unread_notifications = []
                     unread_notification_count = 0
+            passkey_auto_prompt = False
+            if passkey_shared.get("passkey_enabled"):
+                passkey_auto_prompt = bool(session.pop(PASSKEY_AUTO_PROMPT_SESSION_KEY, False))
+                if passkey_auto_prompt:
+                    try:
+                        has_active_passkey = any(
+                            getattr(credential, "is_active", True)
+                            for credential in (current_user.passkey_credentials or [])
+                        )
+                        if has_active_passkey:
+                            passkey_auto_prompt = False
+                    except Exception:
+                        db.session.rollback()
+                        passkey_auto_prompt = False
             permissions = sorted(get_effective_permissions(current_user))
             return {
                 "rol": get_legacy_compatible_role(current_user),
@@ -979,6 +1018,7 @@ def create_app(config_name=None):
                 "impersonation_mode": impersonation_mode,
                 "unread_notifications": unread_notifications,
                 "unread_notification_count": unread_notification_count,
+                "passkey_auto_prompt": passkey_auto_prompt,
                 **shared_context,
                 **passkey_shared,
             }
@@ -1000,6 +1040,7 @@ def create_app(config_name=None):
             "impersonation_mode": False,
             "unread_notifications": [],
             "unread_notification_count": 0,
+            "passkey_auto_prompt": False,
             **shared_context,
             **passkey_shared,
         }

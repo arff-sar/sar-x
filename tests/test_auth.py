@@ -90,6 +90,21 @@ def test_login_success(client, app):
     assert response.request.path == '/dashboard'
 
 
+def test_login_rejects_gov_tr_domain_email(client, app):
+    app.config['WTF_CSRF_ENABLED'] = False
+    answer = _extract_challenge_answer(client, app)
+
+    response = client.post('/login', data={
+        'kullanici_adi': 'personel@icisleri.gov.tr',
+        'sifre': '123456',
+        'security_verification': answer,
+    }, follow_redirects=True)
+
+    html = response.data.decode('utf-8')
+    assert response.status_code == 400
+    assert 'Güvenlik nedeniyle "gov.tr" uzantılı e-posta adresleri kabul edilmemektedir.' in html
+
+
 def test_login_success_for_user_without_airport_does_not_crash_dashboard(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
 
@@ -294,6 +309,18 @@ def test_sifre_sifirla_talep_success(client, app):
 
     assert response.status_code == 200
     assert "e-posta adresinize gönderildi" in response.data.decode('utf-8')
+
+
+def test_sifre_sifirla_talep_rejects_gov_tr_domain_email(client, app):
+    app.config['WTF_CSRF_ENABLED'] = False
+
+    response = client.post('/sifre-sifirla-talep', data={
+        'kullanici_adi': 'iletisim@gov.tr'
+    }, follow_redirects=True)
+
+    html = response.data.decode('utf-8')
+    assert response.status_code == 200
+    assert 'Güvenlik nedeniyle "gov.tr" uzantılı e-posta adresleri kabul edilmemektedir.' in html
 
 
 def test_sifre_sifirla_talep_unknown_user_returns_generic_response_without_mail(client, app):

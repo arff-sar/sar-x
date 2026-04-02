@@ -127,7 +127,7 @@ class WorkOrderFactory(factory.alchemy.SQLAlchemyModelFactory):
     asset = factory.SubFactory(InventoryAssetFactory)
     maintenance_type = "bakim"
     description = "Test iş emri"
-    created_user = factory.SubFactory(KullaniciFactory, rol="sahip")
+    created_user = factory.SubFactory(KullaniciFactory, rol="sistem_sorumlusu")
     status = "acik"
     priority = "orta"
 

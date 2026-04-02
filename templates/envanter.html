@@ -711,11 +711,15 @@
                                         {% endif %}
 
                                         {% if has_permission('maintenance.edit') %}
-                                        <form method="POST" action="{{ url_for('inventory.bakim_kaydet', id=m.id) }}" style="display:inline-flex;">
-                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                            <input type="hidden" name="not" value="Envanter panelinden hızlı bakım kaydı.">
-                                            <button type="submit" class="row-btn" style="background: var(--navy); color: #fff; border-color: var(--navy);">🛠️ Bakım</button>
-                                        </form>
+                                        {% if linked_asset %}
+                                        <a
+                                            href="{{ url_for('maintenance.asset_hizli_bakim_legacy', asset_id=linked_asset.id) }}"
+                                            class="row-btn"
+                                            style="background: var(--navy); color: #fff; border-color: var(--navy);"
+                                        >🛠️ Bakım Formu</a>
+                                        {% else %}
+                                        <span class="row-btn inventory-action-disabled" aria-disabled="true" title="Bu kayıt için bakım formu açılamaz">🛠️ Bakım Formu</span>
+                                        {% endif %}
                                         {% endif %}
                                     </div>
 

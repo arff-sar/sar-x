@@ -106,9 +106,9 @@ def test_quick_close_route_completes_work_order(client, app):
     assert order.status == "tamamlandi"
 
 
-def test_legacy_quick_maintenance_get_does_not_create_work_order(client, app):
+def test_legacy_quick_maintenance_get_opens_real_work_order_form(client, app):
     airport = HavalimaniFactory(kodu="GZT")
-    manager = KullaniciFactory(rol="yetkili", havalimani=airport)
+    manager = KullaniciFactory(rol="sahip", havalimani=airport)
     template = EquipmentTemplateFactory(name="Projektor")
     asset = InventoryAssetFactory(equipment_template=template, airport=airport, serial_no="PRJ-01", qr_code="PRJ-QR-01")
     db.session.add_all([airport, manager, template, asset])
@@ -118,4 +118,6 @@ def test_legacy_quick_maintenance_get_does_not_create_work_order(client, app):
     response = client.get(f"/bakim/asset/{asset.id}/hizli", follow_redirects=False)
 
     assert response.status_code == 302
-    assert WorkOrder.query.filter_by(asset_id=asset.id).count() == 0
+    assert "/work-orders/" in response.headers["Location"]
+    assert "/quick-close" in response.headers["Location"]
+    assert WorkOrder.query.filter_by(asset_id=asset.id).count() == 1

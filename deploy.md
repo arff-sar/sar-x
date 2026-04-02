@@ -288,3 +288,31 @@ if grep -Ein "Güçlü bir SECRET_KEY zorunludur|Worker failed to boot|password 
   exit 1
 fi
 ```
+
+## 13) Kısa Go-Live Preflight
+Deploy öncesi repo içinde en az şu kontrolleri çalıştırın:
+
+1. Zorunlu env + yasak tracked dosya kontrolü
+```bash
+python scripts/deploy_preflight.py --env production
+```
+
+2. Referanssız medya dry-run raporu (silme yapmaz)
+```bash
+python scripts/media_audit.py --env development --json-out docs/reports/media-audit.json
+```
+
+3. Migration head doğrulama
+```bash
+flask --app app:create_app db heads
+flask --app app:create_app db current
+```
+
+4. Deploy smoke
+```bash
+pytest -q tests/test_auth.py tests/test_security_headers.py tests/test_config_production.py tests/test_inventory.py tests/test_notifications.py tests/test_drill_documents.py tests/test_public_homepage_render.py tests/test_admin_settings.py tests/test_homepage_content.py tests/test_homepage_publish_workflow.py
+```
+
+5. Rollback önkoşulu
+- Son başarılı Cloud Run revision adı ve image digest deploy başlamadan not alınmalı.
+- Rollback komutu için ilgili revision trafiği geri alacak yetki/komut erişimi hazır olmalı.

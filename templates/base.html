@@ -125,9 +125,6 @@ body[data-display-mode="standalone"] {
 .pwa-text { font-size: 10.5px; color: var(--text3); line-height: 1.4; }
 .pwa-text strong { display: block; font-weight: 700; margin-bottom: 2px; }
 .pwa-action { margin-left: auto; align-self: center; border-radius: 999px; border: 1px solid rgba(37, 99, 235, 0.26); background: #eff6ff; color: #1d4ed8; font-size: 10.5px; font-weight: 800; padding: 4px 9px; white-space: nowrap; }
-.sidebar-passkey-btn { width: 100%; min-height: 40px; border-radius: 10px; border: 1px solid rgba(15,45,74,.14); background: rgba(239,246,255,.96); color: var(--navy); font-family: var(--sans); font-size: 12px; font-weight: 800; cursor: pointer; }
-.sidebar-passkey-btn:hover { background: #dbeafe; }
-.sidebar-passkey-btn.is-loading { opacity: .72; cursor: wait; }
 .sidebar-qr-scan-btn { display: none; width: 100%; min-height: 44px; border-radius: 10px; border: 1px solid rgba(14, 116, 144, 0.22); background: rgba(236, 254, 255, 0.95); color: #155e75; font-family: var(--sans); font-size: 12px; font-weight: 800; cursor: pointer; align-items: center; justify-content: center; gap: 6px; position: relative; z-index: 10; pointer-events: auto; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .sidebar-qr-scan-btn:hover { background: #cffafe; }
 .sidebar-settings-link { display: inline-flex; width: 100%; min-height: 40px; border-radius: 10px; border: 1px solid rgba(37, 99, 235, 0.2); background: #eff6ff; color: #1d4ed8; font-family: var(--sans); font-size: 12px; font-weight: 800; cursor: pointer; align-items: center; justify-content: center; text-decoration: none; }
@@ -483,7 +480,17 @@ body[data-display-mode="standalone"] .logo-text-main {
     
     <div class="topbar-end">
       <div class="notification-wrap">
-        <button type="button" class="notification-btn" id="notificationToggle" aria-label="Bildirimler" aria-haspopup="dialog" aria-controls="notificationPanel" aria-expanded="false">
+        <button
+          type="button"
+          class="notification-btn"
+          id="notificationToggle"
+          aria-label="Bildirimler"
+          aria-haspopup="dialog"
+          aria-controls="notificationPanel"
+          aria-expanded="false"
+          data-read-all-url="{{ url_for('admin.notifications_read_all') }}"
+          data-csrf-token="{{ csrf_token() }}"
+        >
           🔔
           {% if unread_notification_count %}
           <span class="notification-count">{{ unread_notification_count }}</span>
@@ -600,10 +607,6 @@ body[data-display-mode="standalone"] .logo-text-main {
           </div>
           <span class="pwa-action" id="pwaInstallAction">Yükle</span>
         </button>
-        {% if passkey_enabled %}
-        <button type="button" class="sidebar-passkey-btn" id="passkeyRegisterButton" hidden>Biyometrik Giriş Ekle</button>
-        <button type="button" class="sidebar-passkey-btn" id="passkeyManageButton" hidden>Kayıtlı Passkeyleri Yönet</button>
-        {% endif %}
         <button type="button" class="sidebar-qr-scan-btn" id="qrScanLaunchButton">QR ile Tara</button>
         <a href="{{ url_for('auth.ayarlar') }}" class="sidebar-settings-link">Ayarlar</a>
         <form method="POST" action="{{ url_for('auth.logout') }}" class="sidebar-logout-form">
@@ -1164,9 +1167,39 @@ body[data-display-mode="standalone"] .logo-text-main {
         const notificationToggle = document.getElementById('notificationToggle');
         const notificationPanel = document.getElementById('notificationPanel');
         if (notificationToggle && notificationPanel) {
+            let notificationReadSyncInFlight = false;
             const setNotificationPanelOpen = function (isOpen) {
                 notificationPanel.classList.toggle('is-open', Boolean(isOpen));
                 notificationToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            };
+            const markAllNotificationsAsRead = function () {
+                if (notificationReadSyncInFlight) {
+                    return;
+                }
+                const readAllUrl = String(notificationToggle.dataset.readAllUrl || '').trim();
+                const csrfToken = String(notificationToggle.dataset.csrfToken || '').trim();
+                if (!readAllUrl || !csrfToken) {
+                    return;
+                }
+                notificationReadSyncInFlight = true;
+                fetch(readAllUrl, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: new URLSearchParams({ csrf_token: csrfToken }).toString(),
+                    keepalive: true
+                }).catch(function () {
+                    return null;
+                }).finally(function () {
+                    notificationReadSyncInFlight = false;
+                });
+                const notificationCount = notificationToggle.querySelector('.notification-count');
+                if (notificationCount) {
+                    notificationCount.remove();
+                }
             };
 
             setNotificationPanelOpen(false);
@@ -1176,9 +1209,13 @@ body[data-display-mode="standalone"] .logo-text-main {
                 if (willOpen && mobileSidebarMedia.matches && sidebar && sidebar.classList.contains('is-open')) {
                     closeSidebar();
                     window.setTimeout(function () {
+                        markAllNotificationsAsRead();
                         setNotificationPanelOpen(true);
                     }, 190);
                     return;
+                }
+                if (willOpen) {
+                    markAllNotificationsAsRead();
                 }
                 setNotificationPanelOpen(willOpen);
             });
@@ -1841,18 +1878,30 @@ body[data-display-mode="standalone"] .logo-text-main {
     })();
 </script>
 {% if passkey_enabled %}
+<button type="button" id="passkeyRegisterAutoTrigger" hidden aria-hidden="true" tabindex="-1"></button>
 <script src="{{ url_for('static', filename='passkey.js') }}"></script>
 <script>
-    window.SARXPasskey.initRegistration({
-        buttonId: 'passkeyRegisterButton',
+    const passkeyRegistrationSetup = window.SARXPasskey.initRegistration({
+        buttonId: 'passkeyRegisterAutoTrigger',
         beginUrl: '{{ passkey_register_begin_url }}',
-        finishUrl: '{{ passkey_register_finish_url }}'
+        finishUrl: '{{ passkey_register_finish_url }}',
+        keepHidden: true
     });
-    window.SARXPasskey.initManagement({
-        buttonId: 'passkeyManageButton',
-        listUrl: '{{ passkey_credentials_url }}',
-        revokeUrl: '{{ passkey_revoke_url }}'
-    });
+    (function () {
+        const shouldAutoPrompt = {{ "true" if passkey_auto_prompt else "false" }};
+        if (!shouldAutoPrompt) return;
+        Promise.resolve(passkeyRegistrationSetup).then(function (registrationReady) {
+            if (!registrationReady) return;
+            const registerButton = document.getElementById('passkeyRegisterAutoTrigger');
+            if (!registerButton) return;
+            window.setTimeout(function () {
+                const confirmMessage = "Sonraki girişlerde şifre ve doğrulama kodu girmemek için bu cihazda biyometrik giriş etkinleştirilsin mi?";
+                if (window.confirm(confirmMessage)) {
+                    registerButton.click();
+                }
+            }, 480);
+        });
+    })();
 </script>
 {% endif %}
 

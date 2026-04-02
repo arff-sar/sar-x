@@ -4,7 +4,13 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import and_, func
 from sqlalchemy.orm import joinedload
 
-from decorators import has_permission
+from decorators import (
+    CANONICAL_ROLE_SYSTEM,
+    CANONICAL_ROLE_TEAM_LEAD,
+    CANONICAL_ROLE_TEAM_MEMBER,
+    get_effective_role,
+    has_permission,
+)
 from extensions import table_exists
 from models import (
     AssetMeterReading,
@@ -618,7 +624,12 @@ def _visible_airports(user):
 
 
 def _can_view_all(user):
-    return getattr(user, "rol", "") in {"sahip", "genel_mudurluk", "admin"} or has_permission("logs.view", user=user) or has_permission("settings.manage", user=user)
+    actor_role = get_effective_role(user)
+    if actor_role == CANONICAL_ROLE_SYSTEM:
+        return True
+    if actor_role in {CANONICAL_ROLE_TEAM_LEAD, CANONICAL_ROLE_TEAM_MEMBER}:
+        return False
+    return has_permission("logs.view", user=user) or has_permission("settings.manage", user=user)
 
 
 def _filter_demo_rows(rows, model_name, demo_scope):

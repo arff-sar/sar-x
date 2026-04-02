@@ -35,7 +35,7 @@ def _assert_all_create_accordions_closed_in_rendered_html(html):
 def test_kkd_page_shows_separate_add_and_assignment_accordions(client, app):
     with app.app_context():
         airport = HavalimaniFactory(kodu="AYT", ad="Antalya Havalimanı")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-ux-owner@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-ux-owner@sarx.com")
         recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="KKD Personeli")
         db.session.add_all([airport, owner, recipient])
         db.session.commit()
@@ -55,7 +55,7 @@ def test_kkd_page_shows_separate_add_and_assignment_accordions(client, app):
 def test_kkd_page_redirects_without_503_when_schema_link_column_missing(client, app, monkeypatch):
     with app.app_context():
         airport = HavalimaniFactory(kodu="TZX", ad="Test Havalimanı")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-drift-owner@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-drift-owner@sarx.com")
         db.session.add_all([airport, owner])
         db.session.commit()
         owner_id = owner.id
@@ -71,7 +71,7 @@ def test_kkd_page_redirects_without_503_when_schema_link_column_missing(client, 
 def test_kkd_page_personnel_flow_renders_accordion_structure(client, app):
     with app.app_context():
         airport = HavalimaniFactory(kodu="SAW", ad="Sabiha Gökçen")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-accordion-owner@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-accordion-owner@sarx.com")
         staff = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Akış Personeli")
         db.session.add_all([airport, owner, staff])
         db.session.flush()
@@ -105,7 +105,7 @@ def test_kkd_page_personnel_flow_renders_accordion_structure(client, app):
 def test_kkd_personnel_flow_defaults_closed_without_selected_user(client, app):
     with app.app_context():
         airport = HavalimaniFactory(kodu="HTY", ad="Hatay")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-default-closed-owner@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-default-closed-owner@sarx.com")
         staff = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Kapalı Varsayılan Personel")
         db.session.add_all([airport, owner, staff])
         db.session.flush()
@@ -140,7 +140,7 @@ def test_kkd_personnel_flow_defaults_closed_without_selected_user(client, app):
 def test_kkd_personnel_flow_defaults_closed_with_selected_user(client, app):
     with app.app_context():
         airport = HavalimaniFactory(kodu="ESB", ad="Esenboğa")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-selected-closed-owner@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-selected-closed-owner@sarx.com")
         staff = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Seçili Kapalı Personel")
         db.session.add_all([airport, owner, staff])
         db.session.flush()
@@ -176,7 +176,7 @@ def test_kkd_personnel_flow_defaults_closed_with_selected_user(client, app):
 def test_kkd_personnel_flow_js_init_forces_closed_state(client, app):
     with app.app_context():
         airport = HavalimaniFactory(kodu="GZT", ad="Gaziantep")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-js-init-owner@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-js-init-owner@sarx.com")
         staff = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="JS Init Personeli")
         db.session.add_all([airport, owner, staff])
         db.session.flush()
@@ -211,7 +211,7 @@ def test_kkd_personnel_flow_js_init_forces_closed_state(client, app):
 def test_kkd_personnel_flow_css_hides_closed_accordion_body(client, app):
     with app.app_context():
         airport = HavalimaniFactory(kodu="VAN", ad="Van")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-css-closed-owner@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-css-closed-owner@sarx.com")
         staff = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="CSS Kapalı Personel")
         db.session.add_all([airport, owner, staff])
         db.session.flush()
@@ -244,7 +244,7 @@ def test_kkd_personnel_flow_css_hides_closed_accordion_body(client, app):
 def test_kkd_linked_assignment_options_show_only_ppe_assignments(client, app):
     with app.app_context():
         airport = HavalimaniFactory(kodu="DLM", ad="Dalaman")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-link-owner@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-link-owner@sarx.com")
         recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Bağlantı Personeli")
         db.session.add_all([airport, owner, recipient])
         db.session.flush()
@@ -287,7 +287,7 @@ def test_kkd_add_creates_pool_record_without_user_selection(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         airport = HavalimaniFactory(kodu="ADB", ad="İzmir Havalimanı")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-pool-owner@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-pool-owner@sarx.com")
         db.session.add_all([airport, owner])
         db.session.commit()
         owner_id = owner.id
@@ -321,7 +321,7 @@ def test_kkd_add_links_only_to_ppe_assignment_reference(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         airport = HavalimaniFactory(kodu="BZI", ad="Balıkesir")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-link-form-owner@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-link-form-owner@sarx.com")
         recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Bağlı KKD Personeli")
         db.session.add_all([airport, owner, recipient])
         db.session.flush()
@@ -421,7 +421,7 @@ def test_kkd_assignment_create_flow_creates_record_and_item(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         airport = HavalimaniFactory(kodu="ADA", ad="Adana")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-assign-owner@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-assign-owner@sarx.com")
         recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Teslim Personeli")
         db.session.add_all([airport, owner, recipient])
         db.session.flush()
@@ -476,7 +476,7 @@ def test_kkd_assignment_create_flow_creates_record_and_item(client, app):
 def test_kkd_assignment_pdf_and_uppercase_turkish_render(client, app):
     with app.app_context():
         airport = HavalimaniFactory(kodu="GZT", ad="Gaziantep")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-pdf-owner@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-pdf-owner@sarx.com")
         recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Çağrı Işık")
         db.session.add_all([airport, owner, recipient])
         db.session.flush()
@@ -519,7 +519,7 @@ def test_kkd_assignment_pdf_and_uppercase_turkish_render(client, app):
 def test_kkd_report_pdf_uses_corporate_template_and_font_face(client, app):
     with app.app_context():
         airport = HavalimaniFactory(kodu="BJV", ad="Bodrum")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-report-owner@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-report-owner@sarx.com")
         recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Rapor Personeli")
         db.session.add_all([airport, owner, recipient])
         db.session.flush()
@@ -581,7 +581,7 @@ def test_kkd_assignment_signed_document_upload_stores_drive_and_local_metadata(c
 
     with app.app_context():
         airport = HavalimaniFactory(kodu="AYT", ad="Antalya")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-upload-owner@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-upload-owner@sarx.com")
         recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Belge Alan")
         db.session.add_all([airport, owner, recipient])
         db.session.flush()
@@ -624,7 +624,7 @@ def test_kkd_assignment_signed_document_upload_stores_drive_and_local_metadata(c
 def test_kkd_recent_assignment_list_shows_return_and_delete_actions(client, app):
     with app.app_context():
         airport = HavalimaniFactory(kodu="MZH", ad="Amasya")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-actions-owner@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-actions-owner@sarx.com")
         recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Aksiyon Personeli")
         db.session.add_all([airport, owner, recipient])
         db.session.flush()
@@ -667,7 +667,7 @@ def test_kkd_assignment_return_flow_marks_record_returned_and_restores_available
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         airport = HavalimaniFactory(kodu="IST", ad="İstanbul")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-return-owner@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-return-owner@sarx.com")
         recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="İade Personeli")
         db.session.add_all([airport, owner, recipient])
         db.session.flush()
@@ -743,7 +743,7 @@ def test_kkd_assignment_return_requires_system_or_team_lead_role(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         airport = HavalimaniFactory(kodu="KYA", ad="Konya")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-return-owner-role@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-return-owner-role@sarx.com")
         unauthorized = KullaniciFactory(rol="admin", havalimani=airport, is_deleted=False, kullanici_adi="kkd-return-admin@sarx.com")
         recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Yetki İade")
         db.session.add_all([airport, owner, unauthorized, recipient])
@@ -776,7 +776,7 @@ def test_kkd_assignment_delete_flow_archives_non_active_assignment(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         airport = HavalimaniFactory(kodu="AYT", ad="Antalya")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-delete-owner@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-delete-owner@sarx.com")
         recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Silme Personeli")
         db.session.add_all([airport, owner, recipient])
         db.session.flush()
@@ -820,7 +820,7 @@ def test_kkd_assignment_delete_rejects_active_assignment(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         airport = HavalimaniFactory(kodu="ADA", ad="Adana")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-delete-active-owner@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-delete-active-owner@sarx.com")
         recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Aktif Silme Personeli")
         db.session.add_all([airport, owner, recipient])
         db.session.flush()
@@ -854,7 +854,7 @@ def test_kkd_assignment_delete_requires_system_or_team_lead_role(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         airport = HavalimaniFactory(kodu="ESB", ad="Esenboğa")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-delete-owner-role@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-delete-owner-role@sarx.com")
         unauthorized = KullaniciFactory(rol="admin", havalimani=airport, is_deleted=False, kullanici_adi="kkd-delete-admin@sarx.com")
         recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Yetki Silme")
         db.session.add_all([airport, owner, unauthorized, recipient])

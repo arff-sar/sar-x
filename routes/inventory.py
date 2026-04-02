@@ -86,11 +86,6 @@ from decorators import (
     CANONICAL_ROLE_SYSTEM,
     CANONICAL_ROLE_TEAM_LEAD,
     CANONICAL_ROLE_TEAM_MEMBER,
-    ROLE_ADMIN,
-    ROLE_AIRPORT_MANAGER,
-    ROLE_MANAGER,
-    ROLE_OWNER,
-    ROLE_SYSTEM_OWNER,
     get_effective_role,
     has_permission,
     permission_required,
@@ -1871,10 +1866,7 @@ def _create_asset_and_legacy_material(template, kutu, havalimani_id, form_data):
 
 
 def _is_system_owner():
-    raw_role = str(getattr(current_user, "rol", "") or "").strip().lower()
-    if raw_role in {"sahip", "sistem_sahibi", "sistem_sorumlusu"}:
-        return True
-    return bool(getattr(current_user, "is_sahip", False))
+    return get_effective_role(current_user) == CANONICAL_ROLE_SYSTEM
 
 
 def _import_allowed_airports():

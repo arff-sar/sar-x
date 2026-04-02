@@ -41,8 +41,8 @@ def test_production_defaults_to_memory_rate_limit_storage_when_unset(monkeypatch
     monkeypatch.delenv("RATELIMIT_STORAGE_URI", raising=False)
     monkeypatch.delenv("ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION", raising=False)
 
-    app = create_app("production")
-    assert app.config["RATELIMIT_STORAGE_URI"] == "memory://"
+    with pytest.raises(RuntimeError, match="ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION"):
+        create_app("production")
 
 
 def test_production_uses_explicit_rate_limit_storage_uri(monkeypatch):
@@ -50,6 +50,7 @@ def test_production_uses_explicit_rate_limit_storage_uri(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
     monkeypatch.setenv("ALLOW_SQLITE_IN_PRODUCTION", "1")
     monkeypatch.setenv("RATELIMIT_STORAGE_URI", "memory://")
+    monkeypatch.setenv("ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION", "1")
 
     app = create_app("production")
     assert app.config["RATELIMIT_STORAGE_URI"] == "memory://"
@@ -131,4 +132,15 @@ def test_production_rejects_memory_rate_limit_storage_for_non_sqlite(monkeypatch
     monkeypatch.setenv("DEMO_TOOLS_ENABLED", "0")
 
     with pytest.raises(RuntimeError, match="memory rate-limit storage"):
+        create_app("production")
+
+
+def test_production_rejects_local_storage_for_non_sqlite_without_override(monkeypatch):
+    monkeypatch.setenv("SECRET_KEY", "x" * 48)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/sarx")
+    monkeypatch.setenv("RATELIMIT_STORAGE_URI", "redis://localhost:6379/0")
+    monkeypatch.setenv("STORAGE_BACKEND", "local")
+    monkeypatch.delenv("ALLOW_LOCAL_STORAGE_IN_PRODUCTION", raising=False)
+
+    with pytest.raises(RuntimeError, match="local storage backend"):
         create_app("production")

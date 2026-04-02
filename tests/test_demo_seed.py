@@ -228,10 +228,12 @@ def test_seed_demo_data_creates_expected_records(app):
         summary = seed_demo_data(reset=True)
 
         assert summary["havalimani"] == 3
+        assert summary["personel"] == len(AIRPORTS) * AIRPORT_PERSONNEL_COUNT
         assert summary["kullanici"] == (len(AIRPORTS) * AIRPORT_PERSONNEL_COUNT) + 2
+        assert summary["asset"] == 50
         assert Havalimani.query.count() == 3
         assert Kullanici.query.count() == (len(AIRPORTS) * AIRPORT_PERSONNEL_COUNT) + 2
-        assert InventoryAsset.query.count() > 0
+        assert InventoryAsset.query.count() == 50
         assert Kutu.query.count() > 0
         assert MaintenancePlan.query.count() > 0
         assert AssetOperationalState.query.count() > 0
@@ -275,10 +277,18 @@ def test_seed_demo_data_creates_expected_records(app):
             assert AssignmentRecord.query.count() > 0
             assert AssignmentRecipient.query.count() > 0
             assert AssignmentItem.query.count() > 0
+            assert AssignmentRecord.query.filter_by(status="active").count() > 0
+            assert AssignmentRecord.query.filter_by(status="partial").count() > 0
+            assert AssignmentRecord.query.filter_by(status="returned").count() > 0
+            assert AssignmentRecord.query.filter(AssignmentRecord.signed_document_url.isnot(None)).count() > 0
         if table_exists("asset_spare_part_link"):
             assert AssetSparePartLink.query.count() > 0
         if table_exists("work_order_part_usage"):
             assert WorkOrderPartUsage.query.count() > 0
+        if table_exists("ppe_assignment_record"):
+            assert PPEAssignmentRecord.query.filter_by(status="active").count() > 0
+            assert PPEAssignmentRecord.query.filter_by(status="returned").count() > 0
+            assert PPEAssignmentRecord.query.filter(PPEAssignmentRecord.signed_document_url.isnot(None)).count() > 0
 
         assert DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG).count() > 0
 
@@ -297,6 +307,51 @@ def test_clear_demo_data_only_removes_demo_records(app):
         )
         real_user.sifre_set("real-password")
         db.session.add(real_user)
+        db.session.flush()
+
+        real_assignment = AssignmentRecord(
+            assignment_no="REAL-ASG-001",
+            assignment_date=date(2026, 4, 1),
+            delivered_by_id=real_user.id,
+            delivered_by_name=real_user.tam_ad,
+            airport_id=real_airport.id,
+            status="active",
+            note="Gerçek zimmet kaydı",
+            created_by_id=real_user.id,
+        )
+        db.session.add(real_assignment)
+        db.session.flush()
+        db.session.add(AssignmentRecipient(assignment_id=real_assignment.id, user_id=real_user.id))
+        db.session.add(
+            AssignmentItem(
+                assignment_id=real_assignment.id,
+                item_name="Gerçek Zimmet Kalemi",
+                quantity=1,
+                unit="adet",
+            )
+        )
+
+        real_ppe_assignment = PPEAssignmentRecord(
+            assignment_no="REAL-KKD-001",
+            assignment_date=date(2026, 4, 1),
+            delivered_by_id=real_user.id,
+            delivered_by_name=real_user.tam_ad,
+            recipient_user_id=real_user.id,
+            airport_id=real_airport.id,
+            note="Gerçek KKD tahsisi",
+            status="active",
+            created_by_id=real_user.id,
+        )
+        db.session.add(real_ppe_assignment)
+        db.session.flush()
+        db.session.add(
+            PPEAssignmentItem(
+                assignment_id=real_ppe_assignment.id,
+                item_name="Gerçek KKD Kalemi",
+                quantity=1,
+                unit="adet",
+            )
+        )
         db.session.commit()
 
         seed_demo_data(reset=True)
@@ -305,9 +360,46 @@ def test_clear_demo_data_only_removes_demo_records(app):
         assert result["deleted"] > 0
         assert Havalimani.query.filter_by(kodu="REAL").first() is not None
         assert Kullanici.query.filter_by(kullanici_adi="real.user@sarx.local").first() is not None
+        assert AssignmentRecord.query.filter_by(assignment_no="REAL-ASG-001").first() is not None
+        assert PPEAssignmentRecord.query.filter_by(assignment_no="REAL-KKD-001").first() is not None
         assert DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG).count() == 0
         assert Havalimani.query.count() == 1
         assert Kullanici.query.count() == 1
+        assert AssignmentRecord.query.count() == 1
+        assert PPEAssignmentRecord.query.count() == 1
+
+
+def test_seed_demo_data_populates_assignment_and_ppe_lists_without_manual_actions(client, app):
+    with app.app_context():
+        owner = KullaniciFactory(
+            rol="sistem_sorumlusu",
+            is_deleted=False,
+            tam_ad="Demo Liste Sahibi",
+            kullanici_adi="demo.list.owner@sarx.local",
+        )
+        db.session.add(owner)
+        db.session.commit()
+        owner_id = owner.id
+
+        seed_demo_data(reset=True)
+        seeded_assignment = AssignmentRecord.query.order_by(AssignmentRecord.id.desc()).first()
+        seeded_ppe_assignment = PPEAssignmentRecord.query.order_by(PPEAssignmentRecord.id.desc()).first()
+        assert seeded_assignment is not None
+        assert seeded_ppe_assignment is not None
+        seeded_assignment_no = seeded_assignment.assignment_no
+        seeded_ppe_assignment_no = seeded_ppe_assignment.assignment_no
+
+    _login(client, owner_id)
+
+    zimmet_response = client.get("/zimmetler")
+    zimmet_html = zimmet_response.data.decode("utf-8")
+    assert zimmet_response.status_code == 200
+    assert seeded_assignment_no in zimmet_html
+
+    kkd_response = client.get("/kkd")
+    kkd_html = kkd_response.data.decode("utf-8")
+    assert kkd_response.status_code == 200
+    assert seeded_ppe_assignment_no in kkd_html
 
 
 def test_clear_demo_data_fails_with_clear_message_when_ppe_assignment_link_column_missing(app, monkeypatch):
@@ -507,7 +599,7 @@ def test_clear_demo_data_deletes_demo_airport_boxes_without_nulling_fk(app):
 def test_demo_clear_endpoint_succeeds_with_dependent_assets(client, app):
     with app.app_context():
         owner = KullaniciFactory(
-            rol="sahip",
+            rol="sistem_sorumlusu",
             is_deleted=False,
             tam_ad="Demo Owner",
             kullanici_adi="demo.owner@sarx.local",
@@ -572,7 +664,7 @@ def test_demo_clear_endpoint_succeeds_with_dependent_assets(client, app):
 def test_demo_clear_endpoint_requires_exact_confirm(client, app):
     with app.app_context():
         owner = KullaniciFactory(
-            rol="sahip",
+            rol="sistem_sorumlusu",
             is_deleted=False,
             tam_ad="Demo Owner Confirm",
             kullanici_adi="demo.owner.confirm@sarx.local",
@@ -601,7 +693,7 @@ def test_demo_clear_endpoint_requires_exact_confirm(client, app):
 def test_demo_clear_endpoint_shows_partial_status_when_homepage_clear_fails(client, app, monkeypatch):
     with app.app_context():
         owner = KullaniciFactory(
-            rol="sahip",
+            rol="sistem_sorumlusu",
             is_deleted=False,
             tam_ad="Demo Owner Partial",
             kullanici_adi="demo.owner.partial@sarx.local",
@@ -704,7 +796,7 @@ def test_demo_endpoints_are_blocked_in_production_even_if_flag_enabled(client, a
 
     with app.app_context():
         owner = KullaniciFactory(
-            rol="sahip",
+            rol="sistem_sorumlusu",
             is_deleted=False,
             tam_ad="Prod Demo Block Owner",
             kullanici_adi="prod.demo.block@sarx.local",

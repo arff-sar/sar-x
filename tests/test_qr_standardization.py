@@ -1,5 +1,5 @@
 from extensions import db
-from tests.factories import HavalimaniFactory, InventoryAssetFactory, KullaniciFactory
+from tests.factories import EquipmentTemplateFactory, HavalimaniFactory, InventoryAssetFactory, KullaniciFactory
 
 
 def _login(client, user_id):
@@ -15,7 +15,7 @@ def test_asset_code_uses_standard_format(app):
         db.session.add_all([airport, asset])
         db.session.commit()
 
-        assert asset.asset_code == f"ARFF-SAR-{asset.id:06d}"
+        assert asset.asset_code == f"ARFF-SAR-{asset.id:04d}"
 
 
 def test_same_asset_does_not_generate_duplicate_code(app):
@@ -34,9 +34,10 @@ def test_same_asset_does_not_generate_duplicate_code(app):
 def test_qr_print_contains_asset_code_and_airport_name(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Erzurum Havalimanı", kodu="ERZ")
-        asset = InventoryAssetFactory(airport=airport)
-        user = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False)
-        db.session.add_all([airport, asset, user])
+        template = EquipmentTemplateFactory(name="Termal Kamera", brand="FLIR", model_code="K65")
+        asset = InventoryAssetFactory(airport=airport, equipment_template=template)
+        user = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False)
+        db.session.add_all([airport, template, asset, user])
         db.session.commit()
         user_id = user.id
         asset_id = asset.id
@@ -49,3 +50,21 @@ def test_qr_print_contains_asset_code_and_airport_name(client, app):
     assert response.status_code == 200
     assert asset_code in html
     assert "ERZURUM HAVALİMANI" in html
+    assert "SAR-X ARFF ENVANTER YÖNETİM SİSTEMİ" in html
+    assert "FLIR K65" in html
+
+
+def test_legacy_six_digit_asset_code_still_resolves_qr_image(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Erzurum Havalimanı", kodu="ERZ")
+        asset = InventoryAssetFactory(airport=airport)
+        user = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False)
+        db.session.add_all([airport, asset, user])
+        db.session.commit()
+        user_id = user.id
+        asset_id = asset.id
+
+    _login(client, user_id)
+    response = client.get(f"/api/qr-img/ARFF-SAR-{asset_id:06d}")
+    assert response.status_code == 200
+    assert response.mimetype == "image/png"

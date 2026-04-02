@@ -3,18 +3,18 @@ from tests.factories import KullaniciFactory
 from tests.test_auth import _extract_challenge_answer
 
 
-def test_login_page_renders_updated_titles_and_home_link(client):
+def test_login_page_renders_updated_titles_and_footer_links(client):
     response = client.get("/login")
     html = response.data.decode("utf-8")
 
     assert response.status_code == 200
-    assert "ARFF ARAMA KURTARMA TİMİ" in html
+    assert "ÖZEL ARFF ARAMA KURTARMA TİMİ" in html
     assert "ENVANTER YÖNETİM SİSTEMİ" in html
-    assert "SAR-X Envanter Yönetim Sistemi" in html
     assert "Bu sistem yalnızca mevcut arama kurtarma ekiplerinde görevli ARFF personelinin kullanımına açıktır." in html
-    assert 'yalnızca zorunlu teknik çerezler kullanılır; analitik veya reklam çerezi kullanılmaz.' in html
-    assert "Anasayfaya Dön" in html
-    assert "justify-content: flex-start;" in html
+    assert "arff.org.tr" in html
+    assert "Mehmet CİNOÇEVİ tarafından geliştirilmiştir." in html
+    assert "Anasayfaya Dön" not in html
+    assert "html, body { overflow: hidden; }" in html
 
 
 def test_login_page_renders_password_toggle_and_remember_me_layout(client):
@@ -29,6 +29,8 @@ def test_login_page_renders_password_toggle_and_remember_me_layout(client):
     assert 'maxlength="5"' in html
     assert "grid-template-columns: 148px 46px 132px;" in html
     assert "grid-template-columns: minmax(0, 1fr) 42px 124px;" in html
+    assert 'Güvenlik nedeniyle "gov.tr" uzantılı e-posta adresleri kabul edilmemektedir.' in html
+    assert "initGovTrEmailValidation" in html
 
 
 def test_logout_flash_is_rendered_as_transient_login_toast(client, app):

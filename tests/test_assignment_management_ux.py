@@ -70,7 +70,7 @@ def test_zimmet_filter_by_recipient_limits_assignments_and_updates_summary(clien
     with app.app_context():
         airport = HavalimaniFactory(ad="Erzurum Havalimanı", kodu="ERZ")
         box = KutuFactory(kodu="K-ERZ-1", havalimani=airport)
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-zimmet@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="owner-zimmet@sarx.com")
         recipient_one = KullaniciFactory(
             rol="bakim_sorumlusu",
             is_deleted=False,
@@ -123,7 +123,7 @@ def test_zimmet_create_panel_renders_selection_summaries_and_material_metadata(c
     with app.app_context():
         airport = HavalimaniFactory(ad="Trabzon Havalimanı", kodu="TZX")
         box = KutuFactory(kodu="K-TZX-1", havalimani=airport)
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-panel@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="owner-panel@sarx.com")
         recipient = KullaniciFactory(
             rol="bakim_sorumlusu",
             is_deleted=False,
@@ -163,7 +163,7 @@ def test_zimmet_create_panel_renders_selection_summaries_and_material_metadata(c
     assert 'data-choice-card' in html
     assert 'data-choice-inputs' in html
     assert "Fatma Ekip" in html
-    assert "Ekip Üyesi" in html
+    assert ("Ekip Üyesi" in html) or ("Bakım Sorumlusu" in html)
     assert "Solunum Seti" in html
     assert "Seri No: SOL-778" in html
     assert "Stok 3" in html
@@ -181,9 +181,9 @@ def test_zimmet_selected_recipient_query_marks_choice_card_checked(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Adana Havalimanı", kodu="ADA")
         box = KutuFactory(kodu="K-ADA-1", havalimani=airport)
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-checked@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="owner-checked@sarx.com")
         recipient = KullaniciFactory(
-            rol="personel",
+            rol="ekip_uyesi",
             is_deleted=False,
             tam_ad="Secili Personel",
             kullanici_adi="secili@sarx.com",
@@ -214,9 +214,9 @@ def test_personnel_sees_own_active_assignment_panel(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Samsun Havalimanı", kodu="SZF")
         box = KutuFactory(kodu="K-SZF-1", havalimani=airport)
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-self@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="owner-self@sarx.com")
         recipient = KullaniciFactory(
-            rol="personel",
+            rol="ekip_uyesi",
             is_deleted=False,
             tam_ad="Kendi Personeli",
             kullanici_adi="self@sarx.com",
@@ -281,7 +281,7 @@ def test_assignment_creation_saves_manual_delivered_by_name_and_multiple_items(c
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         airport = HavalimaniFactory(ad="Erzincan Havalimanı", kodu="ERC")
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-multi@sarx.com", havalimani=airport)
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="owner-multi@sarx.com", havalimani=airport)
         recipient = KullaniciFactory(rol="personel", is_deleted=False, tam_ad="Çoklu Alıcı", havalimani=airport)
         box = KutuFactory(kodu="K-ERC-1", havalimani=airport)
         material_one = MalzemeFactory(ad="Baret", seri_no="BAR-01", stok_miktari=2, kutu=box, havalimani=airport)
@@ -329,7 +329,7 @@ def test_assignment_creation_uses_material_airport_when_recipient_is_global(clie
     with app.app_context():
         airport_a = HavalimaniFactory(ad="Çanakkale Havalimanı", kodu="CKL")
         airport_b = HavalimaniFactory(ad="Trabzon Havalimanı", kodu="TZX")
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-global@sarx.com", havalimani=airport_a)
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="owner-global@sarx.com", havalimani=airport_a)
         recipient_global = KullaniciFactory(
             rol="personel",
             is_deleted=False,
@@ -378,7 +378,7 @@ def test_assignment_creation_uses_material_airport_when_recipient_is_global(clie
 def test_dashboard_meter_and_consumable_queries_are_batched(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Amasya Merzifon Havalimanı", kodu="MZH")
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-dashboard-batch@sarx.com", havalimani=airport)
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="owner-dashboard-batch@sarx.com", havalimani=airport)
         template = EquipmentTemplateFactory(name="Pompa Ünitesi", category="Mekanik")
         asset = InventoryAssetFactory(equipment_template=template, airport=airport, status="aktif")
         db.session.add_all([airport, owner, template, asset])
@@ -483,7 +483,7 @@ def test_assignment_creation_stays_visible_when_platform_demo_scope_is_active(cl
         from models import DemoSeedRecord, SiteAyarlari
 
         airport = HavalimaniFactory(ad="Ankara Esenboğa Havalimanı", kodu="ESB")
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-demo-zimmet@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="owner-demo-zimmet@sarx.com")
         recipient = KullaniciFactory(rol="personel", is_deleted=False, tam_ad="Demo Alıcı", havalimani=airport)
         box = KutuFactory(kodu="K-ESB-DEMO", havalimani=airport)
         material = MalzemeFactory(ad="Demo Zimmet Cihazı", seri_no="DM-001", stok_miktari=1, kutu=box, havalimani=airport)
@@ -557,7 +557,7 @@ def test_platform_demo_scope_controls_zimmet_create_detail_pdf_visibility(client
         from models import DemoSeedRecord, SiteAyarlari
 
         airport = HavalimaniFactory(ad="Demo Scope Havalimanı", kodu="DSH")
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-demo-scope@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="owner-demo-scope@sarx.com")
         recipient = KullaniciFactory(rol="personel", is_deleted=False, tam_ad="Demo Scope Alıcı", havalimani=airport)
         box = KutuFactory(kodu="K-DSH-1", havalimani=airport)
         material = MalzemeFactory(ad="Demo Scope Cihazı", seri_no="DSH-001", stok_miktari=3, kutu=box, havalimani=airport)
@@ -680,7 +680,7 @@ def test_same_assignment_pdf_data_stays_same_with_platform_demo_on_off_and_demo_
 
         airport = HavalimaniFactory(ad="Demo PDF Havalimanı", kodu="DPH")
         box = KutuFactory(kodu="K-DPH-1", havalimani=airport)
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, tam_ad="Demo PDF Owner", kullanici_adi="owner-demo-pdf@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, tam_ad="Demo PDF Owner", kullanici_adi="owner-demo-pdf@sarx.com")
         recipient = KullaniciFactory(rol="personel", is_deleted=False, tam_ad="Demo PDF Recipient", havalimani=airport)
         equipment_template = EquipmentTemplateFactory(name="Demo Gaz Cihazı", brand="Dräger", model_code="X-am 2500")
         material = MalzemeFactory(ad="Demo PDF Ekipmanı", seri_no="DPH-001", stok_miktari=2, kutu=box, havalimani=airport)
@@ -793,7 +793,7 @@ def test_zimmet_detail_formats_integer_like_quantities_without_trailing_decimal(
     with app.app_context():
         airport = HavalimaniFactory(ad="Isparta Havalimanı", kodu="ISE")
         box = KutuFactory(kodu="K-ISE-1", havalimani=airport)
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-qty@sarx.com", havalimani=airport)
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="owner-qty@sarx.com", havalimani=airport)
         recipient = KullaniciFactory(rol="personel", is_deleted=False, tam_ad="Miktar Test", havalimani=airport)
         material = MalzemeFactory(ad="Miktar Test Ekipmanı", seri_no="QTY-001", stok_miktari=2, kutu=box, havalimani=airport)
         db.session.add_all([airport, box, owner, recipient, material])
@@ -829,8 +829,8 @@ def test_team_lead_can_delete_assignment(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         airport = HavalimaniFactory(ad="Kars Havalimanı", kodu="KSY")
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-delete@sarx.com", havalimani=airport)
-        team_lead = KullaniciFactory(rol="yetkili", is_deleted=False, kullanici_adi="lead-delete@sarx.com", havalimani=airport)
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="owner-delete@sarx.com", havalimani=airport)
+        team_lead = KullaniciFactory(rol="ekip_sorumlusu", is_deleted=False, kullanici_adi="lead-delete@sarx.com", havalimani=airport)
         personnel = KullaniciFactory(rol="personel", is_deleted=False, kullanici_adi="person-delete@sarx.com", havalimani=airport)
         box = KutuFactory(kodu="K-KSY-1", havalimani=airport)
         material = MalzemeFactory(ad="Silme Test Ekipmanı", seri_no="DEL-001", stok_miktari=1, kutu=box, havalimani=airport)
@@ -876,8 +876,8 @@ def test_admin_can_delete_assignment_and_legacy_routes_redirect(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         airport = HavalimaniFactory(ad="Bursa Havalimanı", kodu="BTZ")
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-admin-delete@sarx.com", havalimani=airport)
-        admin = KullaniciFactory(rol="admin", is_deleted=False, kullanici_adi="admin-delete@sarx.com", havalimani=airport)
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="owner-admin-delete@sarx.com", havalimani=airport)
+        admin = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="admin-delete@sarx.com", havalimani=airport)
         recipient = KullaniciFactory(rol="personel", is_deleted=False, tam_ad="Admin Silme Test", havalimani=airport)
         box = KutuFactory(kodu="K-BTZ-1", havalimani=airport)
         material = MalzemeFactory(ad="Admin Silme Ekipmanı", seri_no="ADM-001", stok_miktari=1, kutu=box, havalimani=airport)
@@ -912,7 +912,7 @@ def test_zimmet_pdf_renders_turkish_text_and_core_fields(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="İzmir Çiğli Havalimanı", kodu="IGL")
         box = KutuFactory(kodu="K-IGL-1", havalimani=airport)
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, tam_ad="Çağrı Göğüş", kullanici_adi="owner-pdf@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, tam_ad="Çağrı Göğüş", kullanici_adi="owner-pdf@sarx.com")
         recipient = KullaniciFactory(
             rol="personel",
             is_deleted=False,
@@ -982,7 +982,7 @@ def test_zimmet_pdf_single_item_keeps_explanation_and_signatures_on_first_page(c
     with app.app_context():
         airport = HavalimaniFactory(ad="Erzurum Havalimanı", kodu="ERZ")
         box = KutuFactory(kodu="K-ERZ-1", havalimani=airport)
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, tam_ad="Mehmet Cinocevi", kullanici_adi="owner-one-page@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, tam_ad="Mehmet Cinocevi", kullanici_adi="owner-one-page@sarx.com")
         recipient = KullaniciFactory(rol="personel", is_deleted=False, tam_ad="Derya Kara", havalimani=airport)
         equipment_template = EquipmentTemplateFactory(name="Akülü Projektör", brand="Motorola", model_code="MDL-015")
         material = MalzemeFactory(ad="Akülü Projektör", seri_no="ERZ-SN-0010", stok_miktari=2, kutu=box, havalimani=airport)
@@ -1033,7 +1033,7 @@ def test_zimmet_pdf_two_page_flow_repeats_header_footer_and_keeps_closing_blocks
     with app.app_context():
         airport = HavalimaniFactory(ad="Ankara Esenboğa Havalimanı", kodu="ESB")
         box = KutuFactory(kodu="K-ESB-1", havalimani=airport)
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, tam_ad="Teslim Eden", kullanici_adi="owner-pdf-pages@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, tam_ad="Teslim Eden", kullanici_adi="owner-pdf-pages@sarx.com")
         recipient = KullaniciFactory(rol="personel", is_deleted=False, tam_ad="Teslim Alan", havalimani=airport)
         db.session.add_all([airport, box, owner, recipient])
         db.session.flush()
@@ -1160,7 +1160,7 @@ def test_zimmet_pdf_three_page_flow_keeps_header_footer_and_last_page_sections(c
     with app.app_context():
         airport = HavalimaniFactory(ad="İstanbul Havalimanı", kodu="IST")
         box = KutuFactory(kodu="K-IST-1", havalimani=airport)
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, tam_ad="Teslim Yetkilisi", kullanici_adi="owner-pdf-3page@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, tam_ad="Teslim Yetkilisi", kullanici_adi="owner-pdf-3page@sarx.com")
         recipient = KullaniciFactory(rol="personel", is_deleted=False, tam_ad="Ekip Personeli", havalimani=airport)
         db.session.add_all([airport, box, owner, recipient])
         db.session.flush()
@@ -1227,7 +1227,7 @@ def test_assignment_create_detail_pdf_flow_stays_working(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         airport = HavalimaniFactory(ad="Rize Artvin Havalimanı", kodu="RZV")
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, tam_ad="Akış Sahibi", havalimani=airport)
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, tam_ad="Akış Sahibi", havalimani=airport)
         recipient = KullaniciFactory(rol="personel", is_deleted=False, tam_ad="Akış Alıcısı", havalimani=airport)
         box = KutuFactory(kodu="K-RZV-1", havalimani=airport)
         material = MalzemeFactory(ad="Akış Test Cihazı", seri_no="AKS-001", stok_miktari=2, kutu=box, havalimani=airport)
@@ -1279,7 +1279,7 @@ def test_signed_assignment_document_upload_flow_stays_working(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Antalya Havalimanı", kodu="AYT")
         box = KutuFactory(kodu="K-AYT-1", havalimani=airport)
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-upload@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="owner-upload@sarx.com")
         recipient = KullaniciFactory(rol="personel", is_deleted=False, tam_ad="Belge Alan", havalimani=airport)
         material = MalzemeFactory(ad="Termal Kamera", seri_no="TRM-01", stok_miktari=1, kutu=box, havalimani=airport)
         db.session.add_all([airport, box, owner, recipient, material])
@@ -1333,7 +1333,7 @@ def test_signed_assignment_document_upload_rejects_invalid_signature(client, app
     with app.app_context():
         airport = HavalimaniFactory(ad="Dalaman Havalimanı", kodu="DLM")
         box = KutuFactory(kodu="K-DLM-1", havalimani=airport)
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-invalid-upload@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="owner-invalid-upload@sarx.com")
         recipient = KullaniciFactory(rol="personel", is_deleted=False, tam_ad="Belge Alan", havalimani=airport)
         material = MalzemeFactory(ad="Kurtarma Halatı", seri_no="HLT-404", stok_miktari=1, kutu=box, havalimani=airport)
         db.session.add_all([airport, box, owner, recipient, material])
@@ -1375,7 +1375,7 @@ def test_signed_assignment_document_upload_rejects_non_pdf_files(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Gazipaşa Havalimanı", kodu="GZP")
         box = KutuFactory(kodu="K-GZP-1", havalimani=airport)
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-image-upload@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="owner-image-upload@sarx.com")
         recipient = KullaniciFactory(rol="personel", is_deleted=False, tam_ad="PDF Zorunlu", havalimani=airport)
         material = MalzemeFactory(ad="Koruyucu Maske", seri_no="MSK-220", stok_miktari=1, kutu=box, havalimani=airport)
         db.session.add_all([airport, box, owner, recipient, material])

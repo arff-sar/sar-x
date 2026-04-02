@@ -69,7 +69,7 @@ def test_homepage_announcement_preview_payload_renders(client, app):
 
 
 def test_public_dropdown_pages_open_and_render_section_content(client, app):
-    admin = KullaniciFactory(rol="sahip")
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(admin)
     db.session.commit()
 
@@ -160,7 +160,7 @@ def test_training_and_drills_pages_render_shared_empty_safe_layout(client, app):
 
 
 def test_admin_and_editor_can_access_homepage_management(client, app):
-    admin = KullaniciFactory(rol="sahip")
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
     editor = KullaniciFactory(rol="editor")
     db.session.add_all([admin, editor])
     db.session.commit()
@@ -178,7 +178,7 @@ def test_unauthorized_user_cannot_access_homepage_management(client, app):
     anonymous_resp = client.get("/admin/homepage")
     assert anonymous_resp.status_code == 302
 
-    personel = KullaniciFactory(rol="personel")
+    personel = KullaniciFactory(rol="ekip_uyesi")
     db.session.add(personel)
     db.session.commit()
     _login(client, personel)
@@ -188,7 +188,7 @@ def test_unauthorized_user_cannot_access_homepage_management(client, app):
 
 
 def test_admin_can_access_all_homepage_management_pages(client, app):
-    admin = KullaniciFactory(rol="sahip")
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(admin)
     db.session.commit()
     _login(client, admin)
@@ -208,7 +208,7 @@ def test_admin_can_access_all_homepage_management_pages(client, app):
 
 
 def test_homepage_section_list_backfills_default_public_modules_once(client, app):
-    admin = KullaniciFactory(rol="sahip")
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(admin)
     db.session.commit()
     _login(client, admin)
@@ -242,7 +242,7 @@ def test_homepage_section_list_backfills_default_public_modules_once(client, app
 
 
 def test_homepage_section_list_renders_card_height_map_with_normalize_and_fallback(client, app):
-    admin = KullaniciFactory(rol="sahip")
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(admin)
     db.session.flush()
     db.session.add_all(
@@ -277,7 +277,7 @@ def test_homepage_section_list_renders_card_height_map_with_normalize_and_fallba
 
 
 def test_homepage_announcement_search_matches_turkish_character_variants(client, app):
-    admin = KullaniciFactory(rol="sahip", is_deleted=False)
+    admin = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False)
     published = AnnouncementFactory(
         title="Şule Çağrı İçerik Duyurusu",
         slug="sule-cagri-duyurusu",
@@ -303,7 +303,7 @@ def test_homepage_announcement_search_matches_turkish_character_variants(client,
 
 
 def test_admin_homepage_dashboard_focuses_on_core_public_modules(client, app):
-    admin = KullaniciFactory(rol="sahip")
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(admin)
     db.session.commit()
     _login(client, admin)
@@ -320,7 +320,7 @@ def test_admin_homepage_dashboard_focuses_on_core_public_modules(client, app):
 
 
 def test_admin_homepage_forms_expose_new_labels(client, app):
-    admin = KullaniciFactory(rol="sahip")
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(admin)
     db.session.commit()
     _login(client, admin)
@@ -414,7 +414,7 @@ def test_public_info_cards_use_clamped_card_height_and_keep_fixed_grid_width(cli
 
 
 def test_slider_form_renders_inline_media_picker_modal_with_select_buttons(client, app):
-    admin = KullaniciFactory(rol="sahip")
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(admin)
     db.session.flush()
     db.session.add_all(
@@ -452,7 +452,7 @@ def test_slider_form_renders_inline_media_picker_modal_with_select_buttons(clien
 
 
 def test_fixed_stats_can_be_updated_from_cms_and_rendered_on_public_homepage(client, app):
-    admin = KullaniciFactory(rol="sahip")
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(admin)
     db.session.commit()
     _login(client, admin)
@@ -502,7 +502,7 @@ def test_fixed_stats_can_be_updated_from_cms_and_rendered_on_public_homepage(cli
 
 
 def test_active_sliders_listed_on_management_page(client, app):
-    admin = KullaniciFactory(rol="sahip")
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(admin)
     db.session.commit()
     _login(client, admin)

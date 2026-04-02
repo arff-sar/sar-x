@@ -35,11 +35,10 @@ def app():
     )
 
     with app.app_context():
-        _db.drop_all()
         _db.create_all()
         yield app
         _db.session.remove()
-        _db.drop_all()
+        _db.engine.dispose()
     if os.path.exists(db_path):
         os.remove(db_path)
     if previous_test_db is None:

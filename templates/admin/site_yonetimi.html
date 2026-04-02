@@ -275,9 +275,24 @@
                         <div class="demo-status-copy">Operasyonel modüller demo seed kaydıyla filtrelenir.</div>
                     </div>
                     <div class="demo-status-box">
+                        <div class="demo-status-label">Havalimanı</div>
+                        <div class="demo-status-value">{{ platform_demo_status.summary.havalimani if platform_demo_status else 0 }}</div>
+                        <div class="demo-status-copy">Demo havalimanı</div>
+                    </div>
+                    <div class="demo-status-box">
+                        <div class="demo-status-label">Personel</div>
+                        <div class="demo-status-value">{{ platform_demo_status.summary.personel if platform_demo_status else 0 }}</div>
+                        <div class="demo-status-copy">Havalimanına bağlı demo personel</div>
+                    </div>
+                    <div class="demo-status-box">
                         <div class="demo-status-label">Asset</div>
                         <div class="demo-status-value">{{ platform_demo_status.summary.asset if platform_demo_status else 0 }}</div>
                         <div class="demo-status-copy">Demo varlık sayısı</div>
+                    </div>
+                    <div class="demo-status-box">
+                        <div class="demo-status-label">Klasik Zimmet</div>
+                        <div class="demo-status-value">{{ platform_demo_status.summary.zimmet if platform_demo_status else 0 }}</div>
+                        <div class="demo-status-copy">Demo klasik zimmet kayıtları</div>
                     </div>
                     <div class="demo-status-box">
                         <div class="demo-status-label">KKD</div>
@@ -288,6 +303,11 @@
                         <div class="demo-status-label">KKD Tahsis</div>
                         <div class="demo-status-value">{{ platform_demo_status.summary.kkd_tahsis if platform_demo_status else 0 }}</div>
                         <div class="demo-status-copy">Demo KKD zimmet/tahsis kayıtları</div>
+                    </div>
+                    <div class="demo-status-box">
+                        <div class="demo-status-label">Bakım / İş Emri</div>
+                        <div class="demo-status-value">{{ platform_demo_status.summary.bakim if platform_demo_status else 0 }}</div>
+                        <div class="demo-status-copy">Demo bakım ilişkili iş emri kayıtları</div>
                     </div>
                     <div class="demo-status-box">
                         <div class="demo-status-label">Son Güncelleme</div>

@@ -860,8 +860,21 @@ def is_emri_detay(work_order_id):
 @login_required
 @permission_required("maintenance.view")
 def asset_hizli_bakim_legacy(asset_id):
-    flash("Bakım akışı artık güvenli form gönderimi ile başlatılır.", "warning")
-    return redirect(url_for("inventory.quick_asset_view", asset_id=asset_id))
+    asset = _asset_scope().filter(InventoryAsset.id == asset_id).first_or_404()
+    if not _asset_allowed(asset):
+        abort(403)
+
+    order, created = _ensure_asset_work_order(asset)
+    if created:
+        db.session.commit()
+        log_kaydet(
+            "Bakım İş Emri",
+            f"Hızlı bakım formu için iş emri oluşturuldu: {order.work_order_no}",
+            event_key="workorder.quick_create",
+            target_model="WorkOrder",
+            target_id=order.id,
+        )
+    return redirect(url_for("maintenance.work_order_quick_close", work_order_id=order.id))
 
 
 @maintenance_bp.route("/bakim/asset/<int:asset_id>/hizli", methods=["POST"])
@@ -1029,11 +1042,90 @@ def work_order_quick_close(work_order_id):
     if not (_can_edit_work_order() or order.assigned_user_id == current_user.id):
         abort(403)
 
+    checklist_fields = []
+    if order.checklist_template:
+        checklist_fields = order.checklist_template.fields
+    elif order.asset.equipment_template and order.asset.equipment_template.default_maintenance_form:
+        checklist_fields = order.asset.equipment_template.default_maintenance_form.fields
+
+    can_direct_close = has_permission("workorder.approve") or get_effective_role(current_user) != CANONICAL_ROLE_TEAM_MEMBER
+
     if request.method == "POST":
+        action = (request.form.get("submit_action") or "submit_for_approval").strip()
+        if action == "close" and not can_direct_close:
+            abort(403)
         result_text = guvenli_metin(request.form.get("result") or "Saha hızlı kapanış")
         extra_notes = guvenli_metin(request.form.get("extra_notes") or "")
         labor_hours = request.form.get("labor_hours", type=float)
         used_parts = guvenli_metin(request.form.get("used_parts") or "")
+
+        if action == "submit_for_approval":
+            WorkOrderChecklistResponse.query.filter_by(work_order_id=order.id).delete()
+            has_critical_failure = False
+            response_snapshot = []
+            for field in checklist_fields:
+                input_name = f"field_{field.id}"
+                value = guvenli_metin(request.form.get(input_name) or "")
+                if field.is_required and not value:
+                    flash(f"Checklist alanı zorunlu: {field.label}", "danger")
+                    return redirect(url_for("maintenance.work_order_quick_close", work_order_id=order.id))
+
+                is_failure = value.strip().lower() in CHECKLIST_FAILURE_VALUES
+                has_critical_failure = has_critical_failure or (_is_critical_field(field) and is_failure)
+                db.session.add(
+                    WorkOrderChecklistResponse(
+                        work_order_id=order.id,
+                        field_id=field.id,
+                        field_key=field.field_key,
+                        field_label=field.label,
+                        response_value=value,
+                        responded_by_id=current_user.id,
+                        is_failure=is_failure,
+                        approval_note=guvenli_metin(request.form.get(f"approval_{field.id}") or ""),
+                    )
+                )
+                response_snapshot.append(
+                    {
+                        "key": field.field_key,
+                        "label": field.label,
+                        "type": field.field_type,
+                        "value": value,
+                        "is_failure": is_failure,
+                    }
+                )
+
+            order.status = "beklemede_onay"
+            order.result = result_text or order.result
+            order.extra_notes = extra_notes
+            order.used_parts = used_parts
+            order.labor_hours = labor_hours
+            order.labor_minutes = int((labor_hours or 0) * 60) if labor_hours is not None else order.labor_minutes
+            order.verification_status = "kritik_bulgu" if has_critical_failure else "beklemede"
+            order.completion_notes = extra_notes
+            order.completed_at = None
+            order.completed_by_id = None
+
+            db.session.add(
+                MaintenanceHistory(
+                    asset_id=order.asset.id,
+                    work_order_id=order.id,
+                    performed_by_id=current_user.id,
+                    maintenance_type=order.maintenance_type,
+                    performed_at=get_tr_now(),
+                    result="Checklist dolduruldu, kapatma onayına gönderildi",
+                    checklist_snapshot=json.dumps(response_snapshot, ensure_ascii=False),
+                    notes=extra_notes,
+                    next_maintenance_date=order.asset.next_maintenance_date,
+                    inspection_score=0 if has_critical_failure else 100 if response_snapshot else None,
+                    inspection_summary="Kritik checklist bulgusu var" if has_critical_failure else None,
+                    source_type=order.source_type or "manual",
+                )
+            )
+            db.session.commit()
+            log_kaydet("Saha Hızlı Kapanış", f"İş emri onaya gönderildi: {order.work_order_no}")
+            flash("Checklist kaydedildi ve kapatma onayına gönderildi.", "warning")
+            return redirect(url_for("maintenance.is_emri_detay", work_order_id=order.id))
+
         if order.priority == "kritik" and not has_permission("workorder.approve"):
             payload = json.dumps(
                 {
@@ -1089,16 +1181,12 @@ def work_order_quick_close(work_order_id):
         flash("İş emri hızlı akışla tamamlandı.", "success")
         return redirect(url_for("maintenance.is_emri_detay", work_order_id=order.id))
 
-    checklist_fields = []
-    if order.checklist_template:
-        checklist_fields = order.checklist_template.fields
-    elif order.asset.equipment_template and order.asset.equipment_template.default_maintenance_form:
-        checklist_fields = order.asset.equipment_template.default_maintenance_form.fields
     return render_template(
         "quick_close_work_order.html",
         order=order,
         checklist_fields=checklist_fields,
         field_meta=_field_meta,
+        can_direct_close=can_direct_close,
     )
 
 

@@ -104,7 +104,7 @@ def test_homepage_demo_clear_only_removes_demo_records(app):
 
 def test_site_settings_shows_homepage_demo_panel(client, app):
     app.config["DEMO_TOOLS_ENABLED"] = True
-    owner = KullaniciFactory(rol="sahip")
+    owner = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(owner)
     db.session.commit()
     _login(client, owner)
@@ -127,7 +127,7 @@ def test_site_settings_shows_homepage_demo_panel(client, app):
 def test_homepage_demo_routes_render_demo_content_without_mixing_real_content(client, app):
     app.config["DEMO_TOOLS_ENABLED"] = True
 
-    owner = KullaniciFactory(rol="sahip")
+    owner = KullaniciFactory(rol="sistem_sorumlusu")
     real_slider = HomeSliderFactory(title="Gerçek Slider Başlığı", image_url="https://example.com/gercek-slider.jpg")
     real_announcement = AnnouncementFactory(
         title="Gerçek Duyuru Başlığı",
@@ -200,7 +200,7 @@ def test_homepage_demo_routes_are_blocked_in_production_even_if_flag_enabled(cli
     app.config["DEMO_TOOLS_ENABLED"] = True
     app.config["ENV"] = "production"
 
-    owner = KullaniciFactory(rol="sahip")
+    owner = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(owner)
     db.session.commit()
     _login(client, owner)

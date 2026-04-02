@@ -1,4 +1,5 @@
 from extensions import db
+from decorators import update_user_permission_overrides
 from tests.factories import EquipmentTemplateFactory, HavalimaniFactory, InventoryAssetFactory, KullaniciFactory
 
 
@@ -86,3 +87,27 @@ def test_reports_reuses_single_snapshot_per_request(client, app, monkeypatch):
 
     assert response.status_code == 200
     assert call_count["value"] == 1
+
+
+def test_reports_scope_stays_airport_bound_for_legacy_role_with_manual_report_permission(client, app):
+    with app.app_context():
+        airport_one = HavalimaniFactory(ad="Erzurum Havalimanı", kodu="ERZ")
+        airport_two = HavalimaniFactory(ad="Trabzon Havalimanı", kodu="TZX")
+        template = EquipmentTemplateFactory(name="Kesici", category="Kurtarma")
+        own_asset = InventoryAssetFactory(equipment_template=template, airport=airport_one, serial_no="ERZ-001")
+        remote_asset = InventoryAssetFactory(equipment_template=template, airport=airport_two, serial_no="TZX-001")
+        legacy_user = KullaniciFactory(rol="sahip", havalimani=airport_one, is_deleted=False)
+        db.session.add_all([airport_one, airport_two, template, own_asset, remote_asset, legacy_user])
+        db.session.flush()
+        update_user_permission_overrides(legacy_user.id, allow_permissions=["reports.view"], deny_permissions=[])
+        db.session.commit()
+        user_id = legacy_user.id
+        other_airport_id = airport_two.id
+
+    _login(client, user_id)
+    response = client.get(f"/reports?report=inventory&airport_id={other_airport_id}")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "ERZ-001" in html
+    assert "TZX-001" not in html

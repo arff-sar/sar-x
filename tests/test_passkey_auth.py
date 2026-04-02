@@ -402,6 +402,58 @@ def test_passkey_begin_does_not_break_password_fallback(client, app):
     assert response.request.path == "/dashboard"
 
 
+def test_password_login_sets_passkey_auto_prompt_for_users_without_passkey(client, app):
+    app.config["PASSKEY_ENABLED"] = True
+    user = KullaniciFactory(kullanici_adi="auto-prompt-no-passkey@sarx.com", is_deleted=False, rol="sahip")
+    db.session.add(user)
+    db.session.commit()
+
+    answer = _extract_challenge_answer(client, app)
+    token = _captcha_token(client)
+    response = client.post(
+        "/login",
+        data={
+            "kullanici_adi": user.kullanici_adi,
+            "sifre": "123456",
+            "remember_me": "on",
+            "security_verification": answer,
+            "security_verification_token": token,
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    with client.session_transaction() as session:
+        assert session.get("passkey_auto_prompt_after_password_login") is True
+
+
+def test_password_login_skips_passkey_auto_prompt_when_credential_exists(client, app):
+    app.config["PASSKEY_ENABLED"] = True
+    user = KullaniciFactory(kullanici_adi="auto-prompt-has-passkey@sarx.com", is_deleted=False, rol="sahip")
+    db.session.add(user)
+    db.session.commit()
+    _private_key, _credential = _register_passkey(client, app, user)
+
+    client.post("/logout")
+    answer = _extract_challenge_answer(client, app)
+    token = _captcha_token(client)
+    response = client.post(
+        "/login",
+        data={
+            "kullanici_adi": user.kullanici_adi,
+            "sifre": "123456",
+            "remember_me": "on",
+            "security_verification": answer,
+            "security_verification_token": token,
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    with client.session_transaction() as session:
+        assert session.get("passkey_auto_prompt_after_password_login") is None
+
+
 def test_login_passkey_begin_uses_private_no_store_headers(client, app):
     app.config["PASSKEY_ENABLED"] = True
 
@@ -412,6 +464,38 @@ def test_login_passkey_begin_uses_private_no_store_headers(client, app):
     assert response.headers.get("Pragma") == "no-cache"
     assert response.headers.get("Expires") == "0"
     assert "Cookie" in response.headers.get("Vary", "")
+
+
+def test_login_passkey_begin_filters_allow_credentials_for_login_identifier(client, app):
+    app.config["PASSKEY_ENABLED"] = True
+    user = KullaniciFactory(kullanici_adi="allow-credentials@sarx.com", is_deleted=False, rol="sahip")
+    db.session.add(user)
+    db.session.commit()
+    _private_key, credential = _register_passkey(client, app, user)
+
+    client.post("/logout")
+    begin = client.post("/login/passkey/begin", json={"login_identifier": user.kullanici_adi})
+    payload = begin.get_json()
+    allow_credentials = payload["public_key"]["allowCredentials"]
+
+    assert begin.status_code == 200
+    assert len(allow_credentials) == 1
+    assert allow_credentials[0]["id"] == credential.credential_id
+    assert allow_credentials[0]["type"] == "public-key"
+
+
+def test_login_passkey_begin_rejects_identifier_without_active_passkey(client, app):
+    app.config["PASSKEY_ENABLED"] = True
+    user = KullaniciFactory(kullanici_adi="no-passkey-login@sarx.com", is_deleted=False, rol="sahip")
+    db.session.add(user)
+    db.session.commit()
+
+    begin = client.post("/login/passkey/begin", json={"login_identifier": user.kullanici_adi})
+    payload = begin.get_json()
+
+    assert begin.status_code == 400
+    assert payload["status"] == "error"
+    assert "aktif biyometrik giriş kaydı bulunamadı" in payload["message"]
 
 
 def test_passkey_authentication_flow_logs_user_in_and_updates_counter(client, app):
@@ -655,7 +739,7 @@ def test_passkey_finish_rejects_unknown_credential(client, app):
     assert finish.get_json()["status"] == "error"
 
 
-def test_passkey_finish_requires_captcha(client, app):
+def test_passkey_finish_works_without_captcha_when_passkey_verified(client, app):
     app.config["PASSKEY_ENABLED"] = True
     user = KullaniciFactory(kullanici_adi="captcha-passkey@sarx.com", is_deleted=False, rol="sahip")
     db.session.add(user)
@@ -687,8 +771,10 @@ def test_passkey_finish_requires_captcha(client, app):
         },
     )
 
-    assert finish.status_code == 400
-    assert finish.get_json()["status"] == "error"
+    assert finish.status_code == 200
+    assert finish.get_json()["status"] == "success"
+    with client.session_transaction() as session:
+        assert session.get("_user_id") == str(user.id)
 
 
 def test_logout_after_passkey_login_clears_session(client, app):

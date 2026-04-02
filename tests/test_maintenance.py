@@ -192,3 +192,68 @@ def test_work_order_pages_render_turkish_status_labels(client, app):
     detail_html = detail_response.data.decode("utf-8")
     assert detail_response.status_code == 200
     assert "Durum: İşlemde" in detail_html
+
+
+def test_overdue_maintenance_list_links_to_real_form(client, app):
+    today = get_tr_now().date()
+    airport = HavalimaniFactory(kodu="HTY")
+    member = KullaniciFactory(rol="ekip_uyesi", havalimani=airport)
+    template = EquipmentTemplateFactory(name="Kompresör")
+    asset = InventoryAssetFactory(
+        equipment_template=template,
+        airport=airport,
+        serial_no="HTY-SN-1",
+        next_maintenance_date=today - timedelta(days=3),
+    )
+    db.session.add_all([airport, member, template, asset])
+    db.session.commit()
+    _login(client, member)
+
+    response = client.get("/bakim/geciken")
+    html = response.data.decode("utf-8")
+    assert response.status_code == 200
+    assert f'data-href="/bakim/asset/{asset.id}/hizli"' in html
+    assert "Bakım Formu" in html
+
+
+def test_team_member_can_submit_checklist_for_lead_approval_flow(client, app):
+    airport = HavalimaniFactory(kodu="DIY")
+    member = KullaniciFactory(rol="ekip_uyesi", havalimani=airport)
+    lead = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport)
+    template = EquipmentTemplateFactory(name="Yakıt Pompası")
+    asset = InventoryAssetFactory(
+        equipment_template=template,
+        airport=airport,
+        serial_no="DIY-SN-7",
+    )
+    order = WorkOrder(
+        work_order_no="WO-DIY-1",
+        asset=asset,
+        maintenance_type="bakim",
+        description="Form akışı testi",
+        created_user=lead,
+        assigned_user=member,
+        status="acik",
+        priority="orta",
+    )
+    db.session.add_all([airport, member, lead, template, asset, order])
+    db.session.commit()
+
+    _login(client, member)
+    submit_response = client.post(
+        f"/work-orders/{order.id}/quick-close",
+        data={
+            "result": "Checklist tamamlandı",
+            "extra_notes": "Ekip üyesi tarafından dolduruldu",
+            "submit_action": "submit_for_approval",
+        },
+        follow_redirects=True,
+    )
+    assert submit_response.status_code == 200
+    db.session.refresh(order)
+    assert order.status == "beklemede_onay"
+
+    _login(client, lead)
+    detail_response = client.get(f"/bakim/is-emri/{order.id}")
+    assert detail_response.status_code == 200
+    assert "Durum: Onay Bekleniyor" in detail_response.data.decode("utf-8")

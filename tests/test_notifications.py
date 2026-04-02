@@ -54,6 +54,44 @@ def test_mark_all_notifications_read(client, app):
         assert unread == 0
 
 
+def test_mark_all_notifications_read_supports_async_requests(client, app):
+    with app.app_context():
+        user = KullaniciFactory(rol="personel", is_deleted=False)
+        db.session.add(user)
+        db.session.commit()
+        create_notification(user.id, "info", "Test Async 1", "Mesaj 1")
+        create_notification(user.id, "info", "Test Async 2", "Mesaj 2")
+        user_id = user.id
+
+    _login(client, user_id)
+    response = client.post(
+        "/admin/notifications/read-all",
+        headers={"X-Requested-With": "XMLHttpRequest"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 204
+    with app.app_context():
+        unread = Notification.query.filter_by(user_id=user_id, is_read=False).count()
+        assert unread == 0
+
+
+def test_notifications_page_hides_manual_mark_read_actions(client, app):
+    with app.app_context():
+        user = KullaniciFactory(rol="personel", is_deleted=False)
+        db.session.add(user)
+        db.session.commit()
+        create_notification(user.id, "info", "Panel Test", "Mesaj")
+        user_id = user.id
+
+    _login(client, user_id)
+    response = client.get("/admin/notifications")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Tümünü Okundu Yap" not in html
+    assert ">Okundu<" not in html
+
+
 def test_notification_read_redirect_rejects_external_link(client, app):
     with app.app_context():
         user = KullaniciFactory(rol="personel", is_deleted=False)

@@ -231,6 +231,20 @@ def _resolve_site_tab(raw_tab):
     return tab if tab in _ALLOWED_SITE_TABS else "genel"
 
 
+def _verify_current_user_password(raw_password):
+    password = str(raw_password or "")
+    if not password:
+        return False
+    candidates = [password]
+    trimmed = password.strip()
+    if trimmed and trimmed != password:
+        candidates.append(trimmed)
+    for candidate in candidates:
+        if current_user.sifre_kontrol(candidate):
+            return True
+    return False
+
+
 def _collect_ids(query):
     return [int(row[0]) for row in query.all() if row and row[0] is not None]
 
@@ -773,8 +787,7 @@ def havalimani_toplu_silme():
         flash(f"Onay metni hatalı. Lütfen {expected_confirm} ifadesini girin.", "danger")
         return redirect(url_for('admin.site_yonetimi', tab='silme'))
 
-    password = request.form.get("confirm_password") or ""
-    if not password or not current_user.sifre_kontrol(password):
+    if not _verify_current_user_password(request.form.get("confirm_password")):
         flash("Şifre doğrulaması başarısız. İşlem iptal edildi.", "danger")
         return redirect(url_for('admin.site_yonetimi', tab='silme'))
 
