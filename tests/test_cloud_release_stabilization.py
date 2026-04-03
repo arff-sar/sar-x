@@ -115,6 +115,8 @@ def test_production_deploy_workflow_requires_centralized_rate_limit_backend(app)
     assert "RATELIMIT_STORAGE_URI: ${{ vars.RATELIMIT_STORAGE_URI }}" in workflow
     assert 'Missing production variable RATELIMIT_STORAGE_URI' in workflow
     assert 'RATELIMIT_STORAGE_URI=${RATELIMIT_STORAGE_URI}' in workflow
+    assert 'STORAGE_BACKEND=${STORAGE_BACKEND}' in workflow
+    assert 'GCS_BUCKET_NAME=${GCS_BUCKET_NAME}' in workflow
     assert "RATELIMIT_STORAGE_URI must be a centralized backend in production." in workflow
 
 
@@ -123,3 +125,9 @@ def test_cloud_run_service_template_wires_rate_limit_backend_env(app):
 
     assert '- name: RATELIMIT_STORAGE_URI' in template
     assert 'value: "${RATELIMIT_STORAGE_URI}"' in template
+
+
+def test_requirements_include_redis_dependency_for_rate_limit_storage(app):
+    requirements = (Path(app.root_path) / "requirements.txt").read_text(encoding="utf-8").lower()
+
+    assert "redis==" in requirements or "\nredis\n" in requirements
