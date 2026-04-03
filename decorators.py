@@ -1125,7 +1125,9 @@ def get_role_permissions(role):
                 text("SELECT id FROM role WHERE key = :role_key LIMIT 1"),
                 {"role_key": role_key},
             ).scalar()
-            if db_role_id is None and canonical != role_key:
+            # Legacy alias roles keep their explicit legacy permission profile.
+            # Do not silently inherit canonical DB assignments when alias row is absent.
+            if db_role_id is None and canonical != role_key and role_key not in LEGACY_ROLE_DEFAULT_PERMISSIONS:
                 db_role_id = db.session.execute(
                     text("SELECT id FROM role WHERE key = :role_key LIMIT 1"),
                     {"role_key": canonical},
