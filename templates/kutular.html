@@ -4,9 +4,9 @@
 {% block extra_css %}
 <style>
   .box-toolbar { display:grid; gap:14px; margin-bottom:18px; }
-  .box-toolbar-row { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(320px, .9fr); gap:12px; align-items:stretch; }
-  .box-filter-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; gap:12px; align-items:end; height:100%; }
-  .box-create-form { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:end; height:100%; }
+  .box-toolbar-row { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); gap:12px; align-items:start; }
+  .box-filter-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; gap:12px; align-items:end; }
+  .box-create-form { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:end; }
   .box-create-form .form-group { margin:0; }
   .box-filter-actions { display:flex; gap:8px; align-items:stretch; }
   .box-filter-actions .btn { min-height:44px; display:inline-flex; align-items:center; justify-content:center; }
@@ -15,10 +15,11 @@
   .box-select-col { width:72px; text-align:center; }
   .box-content-count { text-align:center; font-weight:700; }
   .box-airport-code { font-family:var(--mono); font-size:12.5px; font-weight:700; }
-  .box-actions-shell { display:flex; justify-content:flex-end; width:100%; }
+  .box-actions-shell { display:grid; gap:10px; width:100%; align-content:start; }
   .box-bulk-checkbox { width:18px; height:18px; accent-color:#1d4ed8; cursor:pointer; }
-  .box-toolbar-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
-  .box-toolbar-actions form { display:inline-flex; }
+  .box-bulk-form .btn { width:100%; min-height:44px; }
+  .box-create-form .form-control,
+  .box-bulk-form .btn { margin-bottom:0; }
   @media (max-width: 900px) {
     .box-toolbar-row,
     .box-filter-grid,
@@ -26,8 +27,6 @@
     .box-actions-shell { justify-content:stretch; }
     .box-filter-actions .btn,
     .box-create-form .btn { width:100%; }
-    .box-toolbar-actions { justify-content:stretch; }
-    .box-toolbar-actions .btn { width:100%; }
   }
 </style>
 {% endblock %}
@@ -74,31 +73,29 @@
             </form>
 
             <div class="box-actions-shell">
-                <div class="box-toolbar-actions">
-                    {% if can_create_box %}
-                    <form method="POST" action="{{ url_for('inventory.kutu_olustur') }}" class="box-create-form">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input
-                            type="hidden"
-                            name="havalimani_id"
-                            id="boxCreateAirportInput"
-                            value="{{ selected_airport or current_user.havalimani_id or (havalimanlari[0].id if havalimanlari else '') }}"
-                        >
-                        <div class="form-group" style="margin:0;">
-                            <label>Marka</label>
-                            <input type="text" name="marka" class="form-control" placeholder="Örn. Pelican">
-                        </div>
-                        <button type="submit" class="btn btn-primary">➕ Yeni Kutu Oluştur</button>
-                    </form>
-                    {% endif %}
-                    {% if has_permission('qr.generate') %}
-                    <form id="boxBulkQrForm" method="POST" action="{{ url_for('inventory.qr_uret_toplu_kutular') }}" target="_blank">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <div id="boxBulkQrSelectedInputs"></div>
-                        <button type="submit" class="btn btn-secondary" id="boxBulkQrPrintButton" disabled>🖨️ Toplu Kutu QR (0/10)</button>
-                    </form>
-                    {% endif %}
-                </div>
+                {% if can_create_box %}
+                <form method="POST" action="{{ url_for('inventory.kutu_olustur') }}" class="box-create-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input
+                        type="hidden"
+                        name="havalimani_id"
+                        id="boxCreateAirportInput"
+                        value="{{ selected_airport or current_user.havalimani_id or (havalimanlari[0].id if havalimanlari else '') }}"
+                    >
+                    <div class="form-group" style="margin:0;">
+                        <label>Marka</label>
+                        <input type="text" name="marka" class="form-control" placeholder="Örn. Pelican">
+                    </div>
+                    <button type="submit" class="btn btn-primary">➕ Yeni Kutu Oluştur</button>
+                </form>
+                {% endif %}
+                {% if has_permission('qr.generate') %}
+                <form id="boxBulkQrForm" class="box-bulk-form" method="POST" action="{{ url_for('inventory.qr_uret_toplu_kutular') }}" target="_blank">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div id="boxBulkQrSelectedInputs"></div>
+                    <button type="submit" class="btn btn-secondary" id="boxBulkQrPrintButton" disabled>🖨️ Toplu Kutu QR (0/10)</button>
+                </form>
+                {% endif %}
             </div>
         </div>
     </div>
