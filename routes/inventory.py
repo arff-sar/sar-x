@@ -1060,8 +1060,10 @@ def _asset_qr_context(asset):
     }
 
 
-def _box_scope():
-    query = Kutu.query.filter_by(is_deleted=False)
+def _box_scope(include_deleted=False):
+    query = Kutu.query
+    if not include_deleted:
+        query = query.filter_by(is_deleted=False)
     if _can_view_all_box_scope():
         scoped = query
     else:
@@ -1093,7 +1095,7 @@ def _extract_box_sequence(code, airport_code):
     if not code:
         return None
     normalized = str(code).strip().upper()
-    prefix = f"{airport_code}-SAR-"
+    prefix = f"{airport_code}-BOX-"
     if not normalized.startswith(prefix):
         return None
     serial_part = normalized[len(prefix):]
@@ -1116,7 +1118,7 @@ def _next_box_code_for_airport(airport):
     ]
     sequences = [seq for seq in (_extract_box_sequence(code, airport_code) for code in existing_codes) if seq is not None]
     next_serial = (max(sequences) + 1) if sequences else 1
-    return f"{airport_code}-SAR-{next_serial:02d}"
+    return f"{airport_code}-BOX-{next_serial:02d}"
 
 
 def _create_box_with_generated_code(airport_id, marka=None):
@@ -5678,7 +5680,7 @@ def kutu_arsivle(kodu):
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
 @permission_required("inventory.delete")
 def kutu_sil(kodu):
-    kutu = _box_scope().filter(Kutu.kodu == kodu).first_or_404()
+    kutu = _box_scope(include_deleted=True).filter(Kutu.kodu == kodu).first_or_404()
     _validate_box_write_access(kutu.havalimani_id)
     if kutu.active_materials:
         flash("İçinde aktif malzeme bulunan kutu silinemez. Önce içeriği taşıyın.", "danger")

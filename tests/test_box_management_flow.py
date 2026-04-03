@@ -13,8 +13,8 @@ def test_box_create_generates_airport_based_code_and_brand(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Erzurum Havalimanı", kodu="ERZ")
         manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
-        KutuFactory(kodu="ERZ-SAR-01", havalimani=airport, marka="Marka A")
-        KutuFactory(kodu="ERZ-SAR-02", havalimani=airport, marka="Marka B")
+        KutuFactory(kodu="ERZ-BOX-01", havalimani=airport, marka="Marka A")
+        KutuFactory(kodu="ERZ-BOX-02", havalimani=airport, marka="Marka B")
         db.session.add_all([airport, manager])
         db.session.commit()
         manager_id = manager.id
@@ -29,7 +29,7 @@ def test_box_create_generates_airport_based_code_and_brand(client, app):
     assert response.status_code == 200
 
     with app.app_context():
-        created = Kutu.query.filter_by(havalimani_id=airport_id, kodu="ERZ-SAR-03").first()
+        created = Kutu.query.filter_by(havalimani_id=airport_id, kodu="ERZ-BOX-03").first()
         assert created is not None
         assert created.marka == "RescuePro"
 
@@ -112,7 +112,7 @@ def test_owner_can_create_box_for_any_airport(client, app):
     with app.app_context():
         created = Kutu.query.filter_by(havalimani_id=airport_id).first()
         assert created is not None
-        assert created.kodu.startswith("TZX-SAR-")
+        assert created.kodu.startswith("TZX-BOX-")
 
 
 def test_airport_manager_can_archive_own_airport_box(client, app):
@@ -226,14 +226,16 @@ def test_box_archive_and_delete_lifecycle(client, app):
     _login(client, owner_id)
     archive_response = client.post("/kutu/ERZ-SAR-20/arsivle", data={}, follow_redirects=True)
     delete_response = client.post("/kutu/ERZ-SAR-21/sil", data={}, follow_redirects=True)
+    delete_archived_response = client.post("/kutu/ERZ-SAR-20/sil", data={}, follow_redirects=True)
 
     assert archive_response.status_code == 200
     assert delete_response.status_code == 200
+    assert delete_archived_response.status_code == 200
 
     with app.app_context():
         archived = Kutu.query.filter_by(kodu="ERZ-SAR-20").first()
         deleted = Kutu.query.filter_by(kodu="ERZ-SAR-21").first()
-        assert archived is not None and archived.is_deleted is True
+        assert archived is None
         assert deleted is None
 
 
