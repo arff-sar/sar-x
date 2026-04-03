@@ -1310,9 +1310,7 @@ def create_app(config_name=None):
     def not_found(error):
         if _is_noise_404_request():
             app.logger.info("Probe/static 404 isteği sessiz işlendi: %s", request.path)
-            if _wants_json_response():
-                return jsonify({"status": "error", "message": "Not Found"}), 404
-            return "", 404
+            return "", 204
         return _render_safe_error("SAR-X-PUBLIC-3201", status_code=404, exception=error)
 
     @app.errorhandler(413)
@@ -1583,7 +1581,7 @@ def create_app(config_name=None):
         stat_cards = filter_homepage_demo_items(stat_cards)
         stats = build_fixed_homepage_stat_payload(stat_cards)
 
-        return render_template(
+        rendered = render_template(
             "index.html",
             ayarlar=ayarlar,
             menuler=menuler,
@@ -1612,6 +1610,22 @@ def create_app(config_name=None):
             stats=stats,
             quick_links=quick_links,
         )
+        response = make_response(rendered)
+        try:
+            from flask_login import current_user
+
+            is_authenticated = bool(getattr(current_user, "is_authenticated", False))
+        except Exception:
+            is_authenticated = False
+        if not is_authenticated:
+            cache_seconds = max(int(app.config.get("PUBLIC_HOMEPAGE_BROWSER_CACHE_SECONDS", 90)), 5)
+            response.headers["Cache-Control"] = (
+                f"public, max-age={cache_seconds}, stale-while-revalidate={cache_seconds}"
+            )
+            response.headers.pop("Pragma", None)
+            response.headers.pop("Expires", None)
+            response = _append_vary_header(response, "Accept-Encoding")
+        return response
 
     @app.route("/health")
     def health():
