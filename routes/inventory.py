@@ -1872,6 +1872,7 @@ def _create_asset_and_legacy_material(template, kutu, havalimani_id, form_data):
     canonical_payload["airport_id"] = havalimani_id
     values = _normalized_asset_contract_values(canonical_payload, mode="create")
     _validate_asset_contract_values(values, mode="create")
+    serial_no = values["serial_no"] or None
     status_display = _display_status(values["status"])
     status_internal = values["status"]
     is_demirbas = values["is_demirbas"]
@@ -1885,7 +1886,7 @@ def _create_asset_and_legacy_material(template, kutu, havalimani_id, form_data):
 
     legacy_material = Malzeme(
         ad=values["asset_name"] or guvenli_metin(form_data.get("ad") or template.name),
-        seri_no=values["serial_no"],
+        seri_no=serial_no,
         teknik_ozellikler=values["technical_specs"] or guvenli_metin(form_data.get("teknik") or template.technical_specs),
         stok_miktari=stock_count,
         durum=status_display,
@@ -1913,7 +1914,7 @@ def _create_asset_and_legacy_material(template, kutu, havalimani_id, form_data):
         legacy_material_id=legacy_material.id,
         parent_asset_id=parent_asset.id if parent_asset else None,
         asset_type="spare_part" if parent_asset else "equipment",
-        serial_no=values["serial_no"],
+        serial_no=serial_no,
         qr_code="",
         asset_tag=demirbas_no,
         is_demirbas=is_demirbas,
@@ -2548,6 +2549,10 @@ def malzeme_ekle():
         except ValueError as exc:
             db.session.rollback()
             flash(str(exc), "danger")
+            return redirect(url_for("inventory.malzeme_ekle"))
+        except IntegrityError:
+            db.session.rollback()
+            flash("Kayıt kaydedilemedi. Seri no veya ilişkili verilerde çakışma olabilir.", "danger")
             return redirect(url_for("inventory.malzeme_ekle"))
 
         if asset.calibration_required:

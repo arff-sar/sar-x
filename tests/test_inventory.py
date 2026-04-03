@@ -235,6 +235,30 @@ def test_malzeme_ekle_allows_blank_required_like_fields_via_fallbacks(client, ap
     assert created_asset.equipment_template is not None
     assert created_asset.equipment_template.name == "Genel Ekipman"
 
+    second_response = client.post(
+        "/malzeme-ekle",
+        data={
+            "ad": "",
+            "kategori": "",
+            "kutu_id": "",
+            "template_id": "",
+            "stok": "",
+            "seri_no": "",
+        },
+        follow_redirects=True,
+    )
+
+    assert second_response.status_code == 200
+    assert "Malzeme başarıyla eklendi" in second_response.data.decode("utf-8")
+    created_materials = (
+        Malzeme.query.filter_by(havalimani_id=airport.id, is_deleted=False)
+        .order_by(Malzeme.id.asc())
+        .all()
+    )
+    assert len(created_materials) == 2
+    assert created_materials[0].seri_no is None
+    assert created_materials[1].seri_no is None
+
 
 def test_envanter_kategori_ekle_allows_team_lead_role(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
