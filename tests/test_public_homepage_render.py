@@ -184,6 +184,7 @@ def test_header_logo_renders_when_site_logo_is_configured(client, app):
     assert response.status_code == 200
     assert "https://example.com/logo.png" in page
     assert 'alt="ARFF SAR logo"' in page
+    assert "this.src='/static/img/logo.son-Photoroom.png'" in page
 
 
 def test_public_footer_renders_custom_managed_texts(client, app):

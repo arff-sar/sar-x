@@ -119,6 +119,49 @@ def test_zimmet_filter_by_recipient_limits_assignments_and_updates_summary(clien
     assert "<strong>1 kayıt</strong> mevcut filtrelerle listeleniyor." in html
 
 
+def test_zimmet_list_normalizes_legacy_partially_returned_status(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Balıkesir Havalimanı", kodu="EDO")
+        box = KutuFactory(kodu="EDO-SAR-01", havalimani=airport)
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="owner-legacy-status@sarx.com")
+        recipient = KullaniciFactory(
+            rol="ekip_uyesi",
+            is_deleted=False,
+            tam_ad="Legacy Durum Personeli",
+            kullanici_adi="legacy@sarx.com",
+            havalimani=airport,
+        )
+        material = MalzemeFactory(ad="Gaz Ölçüm Cihazı", seri_no="LEG-001", stok_miktari=1, kutu=box, havalimani=airport)
+        db.session.add_all([airport, box, owner, recipient, material])
+        db.session.flush()
+        legacy_assignment = _build_assignment(
+            assignment_no="ZMT-LEG-001",
+            airport=airport,
+            delivered_by=owner,
+            recipient=recipient,
+            material=material,
+            status="partially_returned",
+        )
+        db.session.commit()
+        owner_id = owner.id
+        legacy_assignment_id = legacy_assignment.id
+
+    _login(client, owner_id)
+    list_response = client.get("/zimmetler")
+    list_html = list_response.data.decode("utf-8")
+    filtered_response = client.get("/zimmetler?status=partial")
+    filtered_html = filtered_response.data.decode("utf-8")
+
+    assert list_response.status_code == 200
+    assert "ZMT-LEG-001" in list_html
+    assert "partially_returned" not in list_html
+    assert "Kısmi İade" in list_html
+
+    assert filtered_response.status_code == 200
+    assert "ZMT-LEG-001" in filtered_html
+    assert f"/zimmetler/{legacy_assignment_id}" in filtered_html
+
+
 def test_zimmet_create_panel_renders_selection_summaries_and_material_metadata(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Trabzon Havalimanı", kodu="TZX")

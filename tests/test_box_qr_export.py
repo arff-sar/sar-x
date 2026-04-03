@@ -1,3 +1,5 @@
+import io
+
 from extensions import db
 from tests.factories import HavalimaniFactory, KutuFactory, KullaniciFactory, MalzemeFactory
 
@@ -34,3 +36,31 @@ def test_box_qr_and_label_export_render_expected_content(client, app):
     assert "ERZURUM HAVALİMANI" in label_html
     assert "Gaz Ölçüm Cihazı" in label_html
     assert pdf_response.mimetype == "application/pdf"
+
+
+def test_box_qr_image_payload_uses_box_detail_url(client, app, monkeypatch):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Ankara Esenboğa Havalimanı", kodu="ESB")
+        user = KullaniciFactory(rol="depo_sorumlusu", havalimani=airport, is_deleted=False)
+        box = KutuFactory(kodu="ESB-SAR-42", havalimani=airport)
+        db.session.add_all([airport, user, box])
+        db.session.commit()
+        user_id = user.id
+        box_id = box.id
+        box_code = box.kodu
+
+    _login(client, user_id)
+    captured = {}
+
+    def _fake_generate_qr_data(payload):
+        captured["payload"] = payload
+        return io.BytesIO(b"png")
+
+    monkeypatch.setattr("routes.inventory.generate_qr_data", _fake_generate_qr_data)
+
+    response = client.get(f"/api/qr-img/kutu/{box_id}")
+
+    assert response.status_code == 200
+    assert response.mimetype == "image/png"
+    assert captured["payload"].startswith("http")
+    assert captured["payload"].endswith(f"/kutu/{box_code}")
