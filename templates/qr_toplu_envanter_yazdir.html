@@ -50,11 +50,26 @@
         }
         .system-line {
             width: 100%;
-            font-size: 2.35mm;
+            font-size: 1.95mm;
             font-weight: 700;
             line-height: 1.2;
             text-align: center;
-            letter-spacing: 0.02em;
+            letter-spacing: 0.01em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: clip;
+        }
+        .brand-model-line {
+            width: 100%;
+            font-size: 2.2mm;
+            font-weight: 700;
+            line-height: 1.2;
+            text-align: center;
+            letter-spacing: 0.01em;
+            min-height: 2.7mm;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         .item-name {
             width: 100%;
@@ -121,9 +136,13 @@
             {% set item_name = asset.equipment_template.name if asset.equipment_template and asset.equipment_template.name else (asset.legacy_material.ad if asset.legacy_material else 'Ekipman') %}
             {% set asset_code = asset.asset_code if asset.asset_code else '-' %}
             {% set airport_name = asset.qr_label_airport_name %}
+            {% set brand_name = asset.equipment_template.brand if asset.equipment_template and asset.equipment_template.brand else '' %}
+            {% set model_name = asset.equipment_template.model_code if asset.equipment_template and asset.equipment_template.model_code else '' %}
+            {% set brand_model_line = (brand_name ~ ' / ' ~ model_name) if brand_name and model_name else (brand_name or model_name or 'Marka / Model') %}
             <article class="label">
                 <div class="content-wrapper">
                     <div class="system-line">SAR-X ENVANTER YÖNETİM SİSTEMİ</div>
+                    <div class="brand-model-line">{{ brand_model_line }}</div>
                     <div class="item-name">{{ item_name }}</div>
                     <div class="qr-holder">
                         <img src="{{ url_for('inventory.qr_img', asset_id=asset.id) }}" alt="{{ asset_code }} QR">

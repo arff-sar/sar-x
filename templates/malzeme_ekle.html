@@ -15,9 +15,25 @@
     .create-accordion summary::after { content:"▾"; font-size:14px; color:var(--text3); transition:transform .2s ease, color .2s ease; }
     .create-accordion[open] summary::after { transform:rotate(180deg); color:var(--navy); }
     .create-accordion-body { padding:0 16px 16px; display:grid; gap:12px; border-top:1px solid var(--border); }
+    .bulk-import-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:stretch; }
+    .bulk-upload-form { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:stretch; }
+    .bulk-import-row .btn,
+    .bulk-upload-form .btn,
+    .bulk-upload-form .form-control,
+    .category-management-row .btn,
+    .category-management-row .form-control {
+      min-height:46px;
+      height:46px;
+      margin-bottom:0;
+    }
+    .bulk-upload-form .btn,
+    .category-management-row .btn { white-space:nowrap; }
     @media (max-width: 980px) {
       .asset-form-grid,
-      .input-row { grid-template-columns:1fr; }
+      .input-row,
+      .bulk-import-row,
+      .bulk-upload-form,
+      .category-management-row { grid-template-columns:1fr; }
     }
 </style>
 {% endblock %}
@@ -34,9 +50,9 @@
     <div class="panel-body">
         <div class="inline-box" style="margin-bottom:16px;">
             <div style="font-weight:800; margin-bottom:10px;">Toplu Malzeme Ekle (Excel)</div>
-            <div class="input-row">
+            <div class="bulk-import-row">
                 <a href="{{ url_for('inventory.malzeme_excel_sablon_indir') }}" class="btn btn-primary" style="justify-content:center;">Excel Şablonu İndir</a>
-                <form method="POST" action="{{ url_for('inventory.malzeme_excel_yukle') }}" enctype="multipart/form-data" style="display:grid; grid-template-columns:1fr auto; gap:10px;">
+                <form method="POST" action="{{ url_for('inventory.malzeme_excel_yukle') }}" enctype="multipart/form-data" class="bulk-upload-form">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="file" name="excel_file" accept=".xlsx" class="form-control" required>
                     <button type="submit" class="btn btn-primary">Yükle ve İşle</button>
@@ -100,7 +116,7 @@
         {% if can_manage_category_catalog %}
         <div class="inline-box" style="margin-bottom:16px;">
             <div style="font-weight:800; margin-bottom:10px;">Kategori Yönetimi (Sistem Sorumlusu / Ekip Sorumlusu)</div>
-            <form method="POST" action="{{ url_for('inventory.envanter_kategori_ekle') }}" style="display:grid; grid-template-columns:1fr 1fr auto; gap:10px;">
+            <form method="POST" action="{{ url_for('inventory.envanter_kategori_ekle') }}" class="category-management-row" style="display:grid; grid-template-columns:1fr 1fr auto; gap:10px;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="text" name="name" class="form-control" placeholder="Yeni kategori adı" required>
                 <input type="text" name="description" class="form-control" placeholder="Açıklama (opsiyonel)">
