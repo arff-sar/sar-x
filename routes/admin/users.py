@@ -25,6 +25,7 @@ from extensions import (
 from models import Havalimani, Kullanici, TR_UPPER_MAP
 from . import admin_bp
 from decorators import (
+    CANONICAL_ROLE_ADMIN,
     CANONICAL_ROLE_SYSTEM,
     CANONICAL_ROLE_TEAM_LEAD,
     CANONICAL_ROLE_TEAM_MEMBER,
@@ -93,7 +94,7 @@ SHOE_SIZE_OPTIONS = tuple(
 def _visible_users_query(actor):
     query = Kullanici.query.outerjoin(Havalimani)
     actor_role = get_effective_role(actor)
-    if actor_role == CANONICAL_ROLE_SYSTEM:
+    if actor_role in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
         return query
     if actor.havalimani_id is None:
         return query.filter(Kullanici.havalimani_id.is_(None))
@@ -169,7 +170,7 @@ def _normalize_phone_number(raw_value):
 
 
 def _visible_airports(actor):
-    if get_effective_role(actor) == CANONICAL_ROLE_SYSTEM:
+    if get_effective_role(actor) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
         return Havalimani.query.filter_by(is_deleted=False).all()
     return Havalimani.query.filter_by(is_deleted=False, id=actor.havalimani_id).all()
 

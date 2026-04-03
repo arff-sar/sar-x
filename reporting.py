@@ -8,6 +8,8 @@ from decorators import (
     CANONICAL_ROLE_SYSTEM,
     CANONICAL_ROLE_TEAM_LEAD,
     CANONICAL_ROLE_TEAM_MEMBER,
+    ROLE_OWNER,
+    ROLE_SYSTEM_OWNER,
     get_effective_role,
     has_permission,
 )
@@ -439,18 +441,22 @@ def manager_summary(user, filters):
 
 
 def _asset_rows(user, filters):
+    can_view_all = _can_view_all(user)
     query = InventoryAsset.query.filter_by(is_deleted=False).options(
         joinedload(InventoryAsset.equipment_template),
         joinedload(InventoryAsset.airport),
         joinedload(InventoryAsset.operational_state),
     )
-    if not _can_view_all(user):
+    if not can_view_all:
         query = query.filter_by(havalimani_id=user.havalimani_id)
     rows = query.all()
     demo_scope = (filters.get("demo_scope") or "all") if isinstance(filters, dict) else "all"
     rows = _filter_demo_rows(rows, "InventoryAsset", demo_scope)
-    if filters.get("airport_id"):
-        rows = [row for row in rows if row.havalimani_id == filters["airport_id"]]
+    requested_airport_id = filters.get("airport_id")
+    if requested_airport_id and can_view_all:
+        rows = [row for row in rows if row.havalimani_id == requested_airport_id]
+    elif requested_airport_id and not can_view_all and getattr(user, "havalimani_id", None):
+        rows = [row for row in rows if row.havalimani_id == user.havalimani_id]
     if filters.get("category"):
         rows = [
             row for row in rows
@@ -476,18 +482,22 @@ def _asset_rows(user, filters):
 
 
 def _work_order_rows(user, filters):
+    can_view_all = _can_view_all(user)
     query = WorkOrder.query.filter_by(is_deleted=False).options(
         joinedload(WorkOrder.asset).joinedload(InventoryAsset.airport),
         joinedload(WorkOrder.asset).joinedload(InventoryAsset.equipment_template),
         joinedload(WorkOrder.assigned_user),
     )
-    if not _can_view_all(user):
+    if not can_view_all:
         query = query.join(InventoryAsset).filter(InventoryAsset.havalimani_id == user.havalimani_id)
     rows = query.all()
     demo_scope = (filters.get("demo_scope") or "all") if isinstance(filters, dict) else "all"
     rows = _filter_demo_rows(rows, "WorkOrder", demo_scope)
-    if filters.get("airport_id"):
-        rows = [row for row in rows if row.asset and row.asset.havalimani_id == filters["airport_id"]]
+    requested_airport_id = filters.get("airport_id")
+    if requested_airport_id and can_view_all:
+        rows = [row for row in rows if row.asset and row.asset.havalimani_id == requested_airport_id]
+    elif requested_airport_id and not can_view_all and getattr(user, "havalimani_id", None):
+        rows = [row for row in rows if row.asset and row.asset.havalimani_id == user.havalimani_id]
     if filters.get("category"):
         rows = [
             row for row in rows
@@ -507,17 +517,21 @@ def _work_order_rows(user, filters):
 
 
 def _stock_rows(user, filters):
+    can_view_all = _can_view_all(user)
     query = SparePartStock.query.filter_by(is_deleted=False, is_active=True).options(
         joinedload(SparePartStock.spare_part),
         joinedload(SparePartStock.airport_stock),
     )
-    if not _can_view_all(user):
+    if not can_view_all:
         query = query.filter_by(airport_id=user.havalimani_id)
     rows = query.all()
     demo_scope = (filters.get("demo_scope") or "all") if isinstance(filters, dict) else "all"
     rows = _filter_demo_rows(rows, "SparePartStock", demo_scope)
-    if filters.get("airport_id"):
-        rows = [row for row in rows if row.airport_id == filters["airport_id"]]
+    requested_airport_id = filters.get("airport_id")
+    if requested_airport_id and can_view_all:
+        rows = [row for row in rows if row.airport_id == requested_airport_id]
+    elif requested_airport_id and not can_view_all and getattr(user, "havalimani_id", None):
+        rows = [row for row in rows if row.airport_id == user.havalimani_id]
     if filters.get("stock_level") == "low":
         rows = [row for row in rows if row.is_low_stock()]
     elif filters.get("stock_level") == "critical":
@@ -535,12 +549,16 @@ def _stock_rows(user, filters):
 def _consumable_rows(user, filters):
     if not table_exists("consumable_item") or not table_exists("consumable_stock_movement"):
         return []
+    can_view_all = _can_view_all(user)
     items = ConsumableItem.query.filter_by(is_deleted=False, is_active=True).order_by(ConsumableItem.title.asc()).all()
     movements = ConsumableStockMovement.query.filter_by(is_deleted=False).order_by(ConsumableStockMovement.created_at.asc()).all()
-    if not _can_view_all(user):
+    if not can_view_all:
         movements = [row for row in movements if row.airport_id == user.havalimani_id]
-    if filters.get("airport_id"):
-        movements = [row for row in movements if row.airport_id == filters["airport_id"]]
+    requested_airport_id = filters.get("airport_id")
+    if requested_airport_id and can_view_all:
+        movements = [row for row in movements if row.airport_id == requested_airport_id]
+    elif requested_airport_id and not can_view_all and getattr(user, "havalimani_id", None):
+        movements = [row for row in movements if row.airport_id == user.havalimani_id]
     demo_scope = (filters.get("demo_scope") or "all") if isinstance(filters, dict) else "all"
     items = _filter_demo_rows(items, "ConsumableItem", demo_scope)
 
@@ -626,7 +644,12 @@ def _visible_airports(user):
 def _can_view_all(user):
     actor_role = get_effective_role(user)
     if actor_role == CANONICAL_ROLE_SYSTEM:
-        return True
+        raw_role = str(getattr(user, "rol", "") or "").strip().lower()
+        if raw_role == CANONICAL_ROLE_SYSTEM:
+            return True
+        if raw_role in {ROLE_OWNER, ROLE_SYSTEM_OWNER}:
+            return not getattr(user, "havalimani_id", None)
+        return False
     if actor_role in {CANONICAL_ROLE_TEAM_LEAD, CANONICAL_ROLE_TEAM_MEMBER}:
         return False
     return has_permission("logs.view", user=user) or has_permission("settings.manage", user=user)

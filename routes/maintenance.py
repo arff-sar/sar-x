@@ -1051,7 +1051,8 @@ def work_order_quick_close(work_order_id):
     can_direct_close = has_permission("workorder.approve") or get_effective_role(current_user) != CANONICAL_ROLE_TEAM_MEMBER
 
     if request.method == "POST":
-        action = (request.form.get("submit_action") or "submit_for_approval").strip()
+        default_action = "close" if can_direct_close else "submit_for_approval"
+        action = (request.form.get("submit_action") or default_action).strip()
         if action == "close" and not can_direct_close:
             abort(403)
         result_text = guvenli_metin(request.form.get("result") or "Saha hızlı kapanış")

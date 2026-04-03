@@ -26,6 +26,7 @@ CANONICAL_ROLE_ADMIN = "admin"
 
 CORE_ROLE_KEYS = {
     CANONICAL_ROLE_SYSTEM,
+    CANONICAL_ROLE_ADMIN,
     CANONICAL_ROLE_TEAM_LEAD,
     CANONICAL_ROLE_TEAM_MEMBER,
 }
@@ -33,13 +34,11 @@ ROLE_SWITCH_SESSION_KEY = "temporary_role_override"
 REMOVED_ROLE_KEYS = {
     ROLE_OWNER,
     ROLE_SYSTEM_OWNER,
-    ROLE_ADMIN,
     ROLE_MANAGER,
     ROLE_AIRPORT_MANAGER,
-    ROLE_MAINTENANCE,
     ROLE_PERSONNEL,
+    ROLE_MAINTENANCE,
     ROLE_READONLY,
-    CANONICAL_ROLE_ADMIN,
 }
 
 ROLE_ALIASES = {
@@ -75,18 +74,21 @@ AIRPORT_SCOPED_ROLE_KEYS = {
 
 DEFAULT_ROLE_LABELS = {
     CANONICAL_ROLE_SYSTEM: "Sistem Sorumlusu",
+    CANONICAL_ROLE_ADMIN: "Admin",
     CANONICAL_ROLE_TEAM_LEAD: "Ekip Sorumlusu",
     CANONICAL_ROLE_TEAM_MEMBER: "Ekip Üyesi",
 }
 
 DEFAULT_ROLE_DESCRIPTIONS = {
     CANONICAL_ROLE_SYSTEM: "Tüm modüller, tüm havalimanları ve kritik yönetim işlemleri üzerinde tam yetkiye sahiptir.",
+    CANONICAL_ROLE_ADMIN: "Tüm havalimanlarını readonly kapsamda izler; kayıtları denetler, ancak değişiklik yapmaz.",
     CANONICAL_ROLE_TEAM_LEAD: "Kendi havalimanında envanter, bakım, zimmet, tatbikat ve operasyonel kullanıcı işlemlerini yönetebilir.",
     CANONICAL_ROLE_TEAM_MEMBER: "Kendi havalimanı kapsamındaki operasyon kayıtlarını görüntüler, bakım doldurur ve kendine ait zimmetleri izler.",
 }
 
 ROLE_OPTIONS = [
     {"key": CANONICAL_ROLE_SYSTEM, "label": "Sistem Sorumlusu", "scope": "global", "critical": True, "is_core": True},
+    {"key": CANONICAL_ROLE_ADMIN, "label": "Admin", "scope": "global", "critical": False, "is_core": True},
     {"key": CANONICAL_ROLE_TEAM_LEAD, "label": "Ekip Sorumlusu", "scope": "airport", "critical": True, "is_core": True},
     {"key": CANONICAL_ROLE_TEAM_MEMBER, "label": "Ekip Üyesi", "scope": "airport", "critical": False, "is_core": True},
 ]
@@ -438,7 +440,20 @@ PERMISSION_DEFINITIONS = [
 
 DEFAULT_ROLE_PERMISSIONS = {
     CANONICAL_ROLE_SYSTEM: {item["key"] for item in PERMISSION_DEFINITIONS},
-    CANONICAL_ROLE_ADMIN: set(),
+    CANONICAL_ROLE_ADMIN: {
+        "dashboard.view",
+        "inventory.view",
+        "assignment.view",
+        "drill.view",
+        "maintenance.view",
+        "workorder.view",
+        "parts.view",
+        "ppe.view",
+        "reports.view",
+        "users.manage",
+        "logs.view",
+        "qr.generate",
+    },
     CANONICAL_ROLE_TEAM_LEAD: {
         "dashboard.view",
         "inventory.view",
@@ -487,6 +502,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "ppe.view",
         "ppe.request",
         "qr.generate",
+        "reports.view",
     },
 }
 
@@ -498,6 +514,7 @@ LEGACY_ROLE_DEFAULT_PERMISSIONS = {
         "homepage.edit",
         "homepage.media",
     },
+    ROLE_PERSONNEL: set(DEFAULT_ROLE_PERMISSIONS[CANONICAL_ROLE_TEAM_MEMBER]),
     ROLE_MAINTENANCE: set(),
     ROLE_WAREHOUSE: {
         "dashboard.view",
@@ -586,6 +603,7 @@ MENU_GROUPS = [
 
 ROLE_SWITCH_LABELS = {
     CANONICAL_ROLE_SYSTEM: "Sistem Sorumlusu",
+    CANONICAL_ROLE_ADMIN: "Admin",
     CANONICAL_ROLE_TEAM_LEAD: "Ekip Sorumlusu",
     CANONICAL_ROLE_TEAM_MEMBER: "Ekip Üyesi",
 }
@@ -1051,9 +1069,15 @@ def get_role_definition(role_key, include_custom=True, allow_legacy=True):
     requested = _normalize_role_key(role_key)
     if not requested:
         return None
-    for option in get_manageable_role_options(include_inactive=allow_legacy):
+    canonical_requested = _canonical_role(requested)
+    manageable_options = get_manageable_role_options(include_inactive=allow_legacy)
+    for option in manageable_options:
         if option["key"] == requested:
             return option
+    if canonical_requested and canonical_requested != requested:
+        for option in manageable_options:
+            if option["key"] == canonical_requested:
+                return option
     if allow_legacy:
         labels = get_role_labels()
         descriptions = get_role_descriptions()
@@ -1184,6 +1208,9 @@ def get_effective_permissions(user=None):
     if cache is not None and cache_key in cache:
         return set(cache[cache_key])
     permission_profile_role = override_role or (raw_role if raw_role in LEGACY_ROLE_DEFAULT_PERMISSIONS else get_effective_role(user))
+    # Legacy bakım rolü, request bağlamında canonical ekip üyesi davranışıyla çalışmaya devam eder.
+    if has_request_context() and not override_role and raw_role == ROLE_MAINTENANCE:
+        permission_profile_role = get_effective_role(user)
     permissions = set(get_role_permissions(permission_profile_role))
     overrides = get_user_permission_overrides(user)
     permissions.update(overrides["allow"])

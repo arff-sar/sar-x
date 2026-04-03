@@ -48,6 +48,7 @@ from models import (
 )
 from . import admin_bp
 from decorators import (
+    CANONICAL_ROLE_ADMIN,
     DEFAULT_ROLE_LABELS,
     get_effective_role,
     get_manageable_role_options,
@@ -204,8 +205,10 @@ def _can_manage_demo_mode():
             return False
         if not getattr(user, "is_authenticated", True):
             return False
+        effective_role = get_effective_role(user)
         return bool(
             getattr(user, "is_sahip", False)
+            or effective_role == CANONICAL_ROLE_ADMIN
             or has_permission("settings.manage", user=user)
         )
 

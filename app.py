@@ -116,6 +116,26 @@ def _is_sqlite_memory_url(database_url):
     return normalized in {"sqlite://", "sqlite:///:memory:"} or normalized.endswith("/:memory:")
 
 
+def _ensure_sqlite_parent_dir(database_url):
+    if not _is_sqlite_url(database_url) or _is_sqlite_memory_url(database_url):
+        return
+    raw_url = str(database_url or "").strip()
+    raw_path = raw_url
+    if raw_url.startswith("sqlite:///"):
+        raw_path = raw_url[len("sqlite:///"):]
+    if not raw_path:
+        return
+    raw_path = raw_path.split("?", 1)[0].split("#", 1)[0].strip()
+    if not raw_path or raw_path.startswith("file:"):
+        return
+    if raw_path == ":memory:":
+        return
+    file_path = raw_path if os.path.isabs(raw_path) else os.path.abspath(raw_path)
+    parent_dir = os.path.dirname(file_path)
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
+
+
 def _bool_env(name):
     raw = os.getenv(name)
     if raw is None:
@@ -788,6 +808,7 @@ def create_app(config_name=None):
     database_url = app.config.get("SQLALCHEMY_DATABASE_URI")
     if not database_url:
         raise RuntimeError("SQLALCHEMY_DATABASE_URI/DATABASE_URL tanımlı olmalıdır.")
+    _ensure_sqlite_parent_dir(database_url)
 
     if (
         selected_env == "production"

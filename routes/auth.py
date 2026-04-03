@@ -241,7 +241,11 @@ def _client_ip():
     fallback_ip = remote_ip or "unknown"
 
     if not bool(current_app.config.get("TRUST_PROXY_HEADERS", False)):
-        return fallback_ip
+        if fallback_ip != "unknown":
+            return fallback_ip
+        forwarded = str(request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        forwarded_ip = _normalize_ip_address(forwarded)
+        return forwarded_ip or fallback_ip
 
     trusted_proxies = _trusted_proxy_ips()
     if trusted_proxies:
