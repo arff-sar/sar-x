@@ -85,7 +85,7 @@
             <tr data-media-row data-search-text="{{ (asset.title ~ ' ' ~ asset.file_path)|lower }}">
               <td style="width:72px;">
                 {% if asset.file_type == 'image' %}
-                  <img src="{{ asset.file_path }}" alt="{{ asset.alt_text or asset.title }}" style="width:56px; height:40px; object-fit:cover; border-radius:6px; border:1px solid var(--border);">
+                  <img src="{{ url_for('content.media_asset_file', asset_id=asset.id) }}" alt="{{ asset.alt_text or asset.title }}" style="width:56px; height:40px; object-fit:cover; border-radius:6px; border:1px solid var(--border);">
                 {% else %}
                   📄
                 {% endif %}
@@ -95,7 +95,7 @@
               <td>{{ asset.file_type }}</td>
               <td>
                 {% if asset.file_type == 'image' %}
-                  <button type="button" class="row-btn" data-media-select="{{ asset.file_path }}">Seç</button>
+                  <button type="button" class="row-btn" data-media-select="{{ url_for('content.media_asset_file', asset_id=asset.id) }}">Seç</button>
                 {% else %}
                   <span style="font-size:12px; color:var(--text3);">Sadece Görüntüle</span>
                 {% endif %}

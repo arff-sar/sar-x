@@ -1,9 +1,11 @@
+import io
+import mimetypes
 import re
 import unicodedata
 from datetime import datetime
 from types import SimpleNamespace
 
-from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 import sqlalchemy as sa
 from sqlalchemy.exc import SQLAlchemyError
@@ -163,6 +165,9 @@ def _restrict_content_mutations_to_owner():
             abort(403)
         return None
 
+    if endpoint == "content.media_asset_file":
+        return None
+
     if endpoint.startswith("content.media_"):
         if not has_permission("homepage.media"):
             abort(403)
@@ -278,6 +283,8 @@ def _validate_media_path(value):
         return False
 
     if lowered.startswith(("http://", "https://")):
+        return True
+    if re.fullmatch(r"/media/\d+/file", cleaned):
         return True
 
     allowed_ext = current_app.config.get("ALLOWED_UPLOAD_EXTENSIONS", set())
@@ -1840,6 +1847,39 @@ def media_library():
             )
     assets = query.limit(300).all()
     return render_template("admin/media_library.html", assets=assets, search_query=search)
+
+
+@content_bp.route("/media/<int:asset_id>/file")
+def media_asset_file(asset_id):
+    asset = db.get_or_404(MediaAsset, asset_id)
+    can_manage_media = bool(current_user.is_authenticated and has_permission("homepage.media"))
+    if not asset.is_active and not can_manage_media:
+        abort(404)
+
+    storage_adapter = get_storage_adapter()
+    storage_key = storage_adapter.storage_key_from_public_url(asset.file_path) or ""
+    if not storage_key:
+        return redirect(asset.file_path)
+
+    try:
+        payload = storage_adapter.read_bytes(storage_key)
+    except Exception:
+        current_app.logger.exception("Medya dosyası okunamadı. asset_id=%s", asset.id)
+        return redirect(asset.file_path)
+
+    filename = storage_key.rsplit("/", 1)[-1] or f"media-{asset.id}"
+    guessed_mime = mimetypes.guess_type(filename)[0]
+    fallback_mime = "application/pdf" if filename.lower().endswith(".pdf") else "image/jpeg"
+
+    response = send_file(
+        io.BytesIO(payload),
+        mimetype=guessed_mime or fallback_mime,
+        as_attachment=False,
+        download_name=filename,
+        max_age=3600,
+    )
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    return response
 
 
 @content_bp.route("/admin/homepage/media/upload", methods=["POST"])

@@ -58,6 +58,10 @@ jobs:
       MAIL_REPLY_TO: ${{ vars.MAIL_REPLY_TO }}
       SESSION_COOKIE_SAMESITE: ${{ vars.SESSION_COOKIE_SAMESITE }}
       RATELIMIT_STORAGE_URI: ${{ vars.RATELIMIT_STORAGE_URI }}
+      PASSKEY_ENABLED: ${{ vars.PASSKEY_ENABLED }}
+      PASSKEY_RP_ID: ${{ vars.PASSKEY_RP_ID }}
+      PASSKEY_RP_NAME: ${{ vars.PASSKEY_RP_NAME }}
+      PASSKEY_ORIGIN: ${{ vars.PASSKEY_ORIGIN }}
       CLOUD_RUN_MIN_INSTANCES: ${{ vars.CLOUD_RUN_MIN_INSTANCES }}
       CLOUD_RUN_MAX_INSTANCES: ${{ vars.CLOUD_RUN_MAX_INSTANCES }}
       CLOUD_RUN_CONCURRENCY: ${{ vars.CLOUD_RUN_CONCURRENCY }}
@@ -108,6 +112,52 @@ jobs:
             exit 1
           fi
 
+          passkey_enabled_normalized="$(printf '%s' "${PASSKEY_ENABLED:-1}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+          case "${passkey_enabled_normalized}" in
+            ""|1|true|yes|on)
+              passkey_enabled_value="1"
+              ;;
+            0|false|no|off)
+              passkey_enabled_value="0"
+              ;;
+            *)
+              echo "PASSKEY_ENABLED değeri geçersiz. Beklenen: 1/0, true/false, yes/no, on/off"
+              exit 1
+              ;;
+          esac
+
+          passkey_rp_id="${PASSKEY_RP_ID:-}"
+          passkey_origin="${PASSKEY_ORIGIN:-}"
+          passkey_rp_name="${PASSKEY_RP_NAME:-SAR-X ARFF}"
+
+          if [ "${passkey_enabled_value}" = "1" ]; then
+            readarray -t _passkey_defaults < <(PUBLIC_BASE_URL="${PUBLIC_BASE_URL}" python - <<'PY'
+from urllib.parse import urlsplit
+import os
+
+public_base_url = os.environ["PUBLIC_BASE_URL"].strip()
+parsed = urlsplit(public_base_url)
+if parsed.scheme != "https" or not parsed.hostname:
+    raise SystemExit("PASSKEY vars türetmek için PUBLIC_BASE_URL https ve geçerli host içermelidir.")
+origin = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+print(origin)
+print(parsed.hostname.lower())
+PY
+)
+            derived_origin="${_passkey_defaults[0]:-}"
+            derived_rp_id="${_passkey_defaults[1]:-}"
+            if [ -z "${passkey_origin}" ]; then
+              passkey_origin="${derived_origin}"
+            fi
+            if [ -z "${passkey_rp_id}" ]; then
+              passkey_rp_id="${derived_rp_id}"
+            fi
+            if [ -z "${passkey_origin}" ] || [ -z "${passkey_rp_id}" ]; then
+              echo "PASSKEY_ENABLED aktifken PASSKEY_ORIGIN ve PASSKEY_RP_ID boş olamaz."
+              exit 1
+            fi
+          fi
+
           echo "STORAGE_BACKEND=${STORAGE_BACKEND:-gcs}" >> "$GITHUB_ENV"
           echo "GCS_PROJECT_ID=${GCS_PROJECT_ID:-$GCP_PROJECT_ID}" >> "$GITHUB_ENV"
           echo "GCS_UPLOAD_PREFIX=${GCS_UPLOAD_PREFIX:-uploads}" >> "$GITHUB_ENV"
@@ -118,6 +168,10 @@ jobs:
           echo "MAIL_REPLY_TO=${MAIL_REPLY_TO:-$MAIL_FROM_EMAIL}" >> "$GITHUB_ENV"
           echo "SESSION_COOKIE_SAMESITE=${SESSION_COOKIE_SAMESITE:-Lax}" >> "$GITHUB_ENV"
           echo "RATELIMIT_STORAGE_URI=${RATELIMIT_STORAGE_URI}" >> "$GITHUB_ENV"
+          echo "PASSKEY_ENABLED=${passkey_enabled_value}" >> "$GITHUB_ENV"
+          echo "PASSKEY_RP_ID=${passkey_rp_id}" >> "$GITHUB_ENV"
+          echo "PASSKEY_RP_NAME=${passkey_rp_name}" >> "$GITHUB_ENV"
+          echo "PASSKEY_ORIGIN=${passkey_origin}" >> "$GITHUB_ENV"
           echo "SECRET_KEY_SECRET_VERSION=${SECRET_KEY_SECRET_VERSION}" >> "$GITHUB_ENV"
           echo "DATABASE_URL_SECRET_VERSION=${DATABASE_URL_SECRET_VERSION}" >> "$GITHUB_ENV"
           echo "SMTP_PASSWORD_SECRET_VERSION=${SMTP_PASSWORD_SECRET_VERSION}" >> "$GITHUB_ENV"
@@ -245,7 +299,7 @@ jobs:
             --project "${GCP_PROJECT_ID}" \
             --service-account "${CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT}" \
             --set-cloudsql-instances "${CLOUD_SQL_CONNECTION_NAME}" \
-            --set-env-vars "APP_ENV=production,ENABLE_SCHEDULER=0,ALLOW_CLOUD_RUN_WEB_SCHEDULER=0,ALLOW_SQLITE_IN_PRODUCTION=0,SESSION_COOKIE_SECURE=1,REMEMBER_COOKIE_SECURE=1,SESSION_COOKIE_SAMESITE=${SESSION_COOKIE_SAMESITE},RATELIMIT_STORAGE_URI=${RATELIMIT_STORAGE_URI},STORAGE_BACKEND=${STORAGE_BACKEND},GCS_BUCKET_NAME=${GCS_BUCKET_NAME},GCS_PROJECT_ID=${GCS_PROJECT_ID},GCS_UPLOAD_PREFIX=${GCS_UPLOAD_PREFIX},GCS_PUBLIC_BASE_URL=${GCS_PUBLIC_BASE_URL},GCS_CACHE_CONTROL=${GCS_CACHE_CONTROL}" \
+            --set-env-vars "APP_ENV=production,ENABLE_SCHEDULER=0,ALLOW_CLOUD_RUN_WEB_SCHEDULER=0,ALLOW_SQLITE_IN_PRODUCTION=0,SESSION_COOKIE_SECURE=1,REMEMBER_COOKIE_SECURE=1,SESSION_COOKIE_SAMESITE=${SESSION_COOKIE_SAMESITE},RATELIMIT_STORAGE_URI=${RATELIMIT_STORAGE_URI},STORAGE_BACKEND=${STORAGE_BACKEND},GCS_BUCKET_NAME=${GCS_BUCKET_NAME},GCS_PROJECT_ID=${GCS_PROJECT_ID},GCS_UPLOAD_PREFIX=${GCS_UPLOAD_PREFIX},GCS_PUBLIC_BASE_URL=${GCS_PUBLIC_BASE_URL},GCS_CACHE_CONTROL=${GCS_CACHE_CONTROL},PASSKEY_ENABLED=${PASSKEY_ENABLED},PASSKEY_RP_ID=${PASSKEY_RP_ID},PASSKEY_RP_NAME=${PASSKEY_RP_NAME},PASSKEY_ORIGIN=${PASSKEY_ORIGIN}" \
             --set-secrets "SECRET_KEY=${SECRET_KEY_SECRET_NAME}:${SECRET_KEY_SECRET_VERSION},DATABASE_URL=${DATABASE_URL_SECRET_NAME}:${DATABASE_URL_SECRET_VERSION}" \
             --command "flask" \
             --args="--app" \
@@ -344,6 +398,10 @@ jobs:
               "MAIL_USERNAME",
               "MAIL_FROM_EMAIL",
               "SMTP_PASSWORD",
+              "PASSKEY_ENABLED",
+              "PASSKEY_RP_ID",
+              "PASSKEY_RP_NAME",
+              "PASSKEY_ORIGIN",
           ]
           missing = [name for name in required_envs if name not in env_by_name]
           if missing:
@@ -356,6 +414,14 @@ jobs:
           rate_limit_storage = str(env_by_name["RATELIMIT_STORAGE_URI"].get("value", "")).strip().lower()
           if not rate_limit_storage or rate_limit_storage.startswith("memory://"):
               raise SystemExit("RATELIMIT_STORAGE_URI must be a centralized backend in production.")
+
+          passkey_enabled_raw = str(env_by_name["PASSKEY_ENABLED"].get("value", "")).strip().lower()
+          passkey_enabled = passkey_enabled_raw in {"1", "true", "yes", "on"}
+          if passkey_enabled:
+              if not str(env_by_name["PASSKEY_RP_ID"].get("value", "")).strip():
+                  raise SystemExit("PASSKEY_ENABLED aktifken PASSKEY_RP_ID boş olamaz.")
+              if not str(env_by_name["PASSKEY_ORIGIN"].get("value", "")).strip():
+                  raise SystemExit("PASSKEY_ENABLED aktifken PASSKEY_ORIGIN boş olamaz.")
 
           expected_secret_refs = {
               "SECRET_KEY": (os.environ["SECRET_KEY_SECRET_NAME"], os.environ["SECRET_KEY_SECRET_VERSION"]),

@@ -40,7 +40,7 @@
           <tr>
             <td style="width:72px;">
               {% if asset.file_type == 'image' %}
-                <img src="{{ asset.file_path }}" alt="{{ asset.alt_text or asset.title }}" style="width:56px; height:40px; object-fit:cover; border-radius:6px; border:1px solid var(--border);">
+                <img src="{{ url_for('content.media_asset_file', asset_id=asset.id) }}" alt="{{ asset.alt_text or asset.title }}" style="width:56px; height:40px; object-fit:cover; border-radius:6px; border:1px solid var(--border);">
               {% else %}
                 📄
               {% endif %}
@@ -55,7 +55,7 @@
             </td>
             <td>
               <div class="row-actions">
-                <a class="row-btn" href="{{ asset.file_path }}" target="_blank">Aç</a>
+                <a class="row-btn" href="{{ url_for('content.media_asset_file', asset_id=asset.id) }}" target="_blank">Aç</a>
                 <form method="POST" action="{{ url_for('content.media_toggle', asset_id=asset.id) }}">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button class="row-btn" type="submit">{{ 'Pasif Et' if asset.is_active else 'Aktif Et' }}</button>
