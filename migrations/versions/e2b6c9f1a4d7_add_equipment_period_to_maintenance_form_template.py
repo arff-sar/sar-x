@@ -58,7 +58,7 @@ def upgrade():
     ):
         with op.batch_alter_table("maintenance_form_template", schema=None) as batch_op:
             batch_op.create_foreign_key(
-                "fk_maintenance_form_template_equipment_template_id_equipment_template",
+                "fk_mft_equipment_template_id",
                 "equipment_template",
                 ["equipment_template_id"],
                 ["id"],
@@ -112,7 +112,7 @@ def downgrade():
     ):
         with op.batch_alter_table("maintenance_form_template", schema=None) as batch_op:
             batch_op.drop_constraint(
-                "fk_maintenance_form_template_equipment_template_id_equipment_template",
+                "fk_mft_equipment_template_id",
                 type_="foreignkey",
             )
 
