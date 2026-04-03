@@ -136,14 +136,19 @@
     }
 
     async function supportsPasskeys() {
-        if (!window.isSecureContext || !window.PublicKeyCredential || !navigator.credentials) {
+        if (
+            !window.isSecureContext ||
+            !window.PublicKeyCredential ||
+            !navigator.credentials ||
+            typeof navigator.credentials.get !== "function"
+        ) {
             return false;
         }
         if (typeof window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === "function") {
             try {
-                return await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+                await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
             } catch (_error) {
-                return true;
+                // Bazı tarayıcılarda bu kontrol hata verebilir; temel WebAuthn API varsa devam edilir.
             }
         }
         return true;

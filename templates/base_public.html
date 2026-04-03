@@ -7,6 +7,11 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="shortcut icon" href="/favicon.ico">
+  <meta name="theme-color" content="#0f2d4a">
+  <meta name="application-name" content="SAR-X">
+  <meta name="apple-mobile-web-app-title" content="SAR-X">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="/static/img/icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -661,6 +666,27 @@
       <span>{{ footer_bottom_slogan }}</span>
     </div>
   </footer>
+
+  <script>
+    if ("serviceWorker" in navigator) {
+      const disableServiceWorkerInLocalDev = {{ (config.DEBUG or config.TESTING)|tojson }};
+      window.addEventListener("load", function () {
+        if (disableServiceWorkerInLocalDev) {
+          navigator.serviceWorker.getRegistrations().then(function (registrations) {
+            return Promise.all(registrations.map(function (registration) {
+              return registration.unregister();
+            }));
+          }).catch(function () {
+            return null;
+          });
+          return;
+        }
+        navigator.serviceWorker.register("/sw.js").catch(function () {
+          return null;
+        });
+      });
+    }
+  </script>
 
   <script>
     (function () {

@@ -417,24 +417,26 @@ def test_slider_form_renders_inline_media_picker_modal_with_select_buttons(clien
     admin = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(admin)
     db.session.flush()
+    slider_asset = MediaAsset(
+        title="Slider Görseli",
+        file_path="/static/uploads/cms/slider.png",
+        file_type="image",
+        alt_text="Slider",
+        uploaded_by_id=admin.id,
+        is_active=True,
+    )
+    document_asset = MediaAsset(
+        title="Doküman",
+        file_path="/static/uploads/cms/form.pdf",
+        file_type="document",
+        alt_text="",
+        uploaded_by_id=admin.id,
+        is_active=True,
+    )
     db.session.add_all(
         [
-            MediaAsset(
-                title="Slider Görseli",
-                file_path="/static/uploads/cms/slider.png",
-                file_type="image",
-                alt_text="Slider",
-                uploaded_by_id=admin.id,
-                is_active=True,
-            ),
-            MediaAsset(
-                title="Doküman",
-                file_path="/static/uploads/cms/form.pdf",
-                file_type="document",
-                alt_text="",
-                uploaded_by_id=admin.id,
-                is_active=True,
-            ),
+            slider_asset,
+            document_asset,
         ]
     )
     db.session.commit()
@@ -446,7 +448,7 @@ def test_slider_form_renders_inline_media_picker_modal_with_select_buttons(clien
     assert response.status_code == 200
     assert "id=\"mediaPickerModal\"" in page
     assert "id=\"mediaPickerRows\"" in page
-    assert "data-media-select=\"/static/uploads/cms/slider.png\"" in page
+    assert f"data-media-select=\"/media/{slider_asset.id}/file\"" in page
     assert "Sadece Görüntüle" in page
     assert "applySelectedMedia" in page
 
