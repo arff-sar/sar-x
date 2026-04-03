@@ -149,10 +149,11 @@
 {% block body %}
 {% set stats = namespace(open_count=0, returned_count=0) %}
 {% for assignment in assignments %}
-  {% if assignment.status in ['active', 'partial'] %}
+  {% set normalized_status = normalize_assignment_status(assignment.status) %}
+  {% if normalized_status in ['active', 'partial'] %}
     {% set stats.open_count = stats.open_count + 1 %}
   {% endif %}
-  {% if assignment.status == 'returned' %}
+  {% if normalized_status == 'returned' %}
     {% set stats.returned_count = stats.returned_count + 1 %}
   {% endif %}
 {% endfor %}
@@ -168,7 +169,7 @@
   {% endif %}
 {% endfor %}
 {% if selected_status %}
-  {% set filter_meta.status_label = assignment_status_labels.get(selected_status, selected_status) %}
+  {% set filter_meta.status_label = assignment_status_label(selected_status) %}
 {% endif %}
 <div class="page-header">
     <div>
@@ -350,6 +351,7 @@
                 </thead>
                 <tbody>
                     {% for assignment in assignments %}
+                    {% set normalized_status = normalize_assignment_status(assignment.status) %}
                     <tr>
                         <td>
                             <div style="font-weight:800; color:var(--navy);">{{ assignment.assignment_no }}</div>
@@ -361,7 +363,7 @@
                         </td>
                         <td>{{ assignment.airport.ad if assignment.airport else 'Global' }}</td>
                         <td>{{ assignment.items|length }} kalem</td>
-                        <td><span class="status-pill {% if assignment.status == 'returned' %}status-aktif{% elif assignment.status == 'cancelled' %}status-pasif{% else %}status-bakim{% endif %}">{{ assignment_status_labels.get(assignment.status, assignment.status) }}</span></td>
+                        <td><span class="status-pill {% if normalized_status == 'returned' %}status-aktif{% elif normalized_status == 'cancelled' %}status-pasif{% else %}status-bakim{% endif %}">{{ assignment_status_label(assignment.status) }}</span></td>
                         <td class="row-actions">
                             <a href="{{ url_for('inventory.zimmet_detay', assignment_id=assignment.id) }}" class="row-btn">Detay</a>
                             {% if has_permission('assignment.pdf') %}

@@ -122,6 +122,11 @@ ASSIGNMENT_STATUS_LABELS = {
     "partial": "Kısmi İade",
     "cancelled": "İptal",
 }
+ASSIGNMENT_STATUS_ALIASES = {
+    "partially_returned": "partial",
+    "partial_returned": "partial",
+    "kismi_iade": "partial",
+}
 PPE_ASSIGNMENT_STATUS_LABELS = {
     "active": "Aktif",
     "returned": "İade Edildi",
@@ -693,7 +698,24 @@ def _recalculate_assignment_status(assignment):
 
 
 def _assignment_status_label(value):
-    return ASSIGNMENT_STATUS_LABELS.get(value, value)
+    normalized = _normalize_assignment_status(value)
+    return ASSIGNMENT_STATUS_LABELS.get(normalized, value)
+
+
+def _normalize_assignment_status(value):
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return ""
+    return ASSIGNMENT_STATUS_ALIASES.get(normalized, normalized)
+
+
+def _assignment_status_query_values(value):
+    normalized = _normalize_assignment_status(value)
+    if not normalized:
+        return ()
+    if normalized == "partial":
+        return ("partial", "partially_returned", "partial_returned", "kismi_iade")
+    return (normalized,)
 
 
 def _work_order_status_label(value):
@@ -1123,10 +1145,19 @@ def _create_box_with_generated_code(airport_id, marka=None):
 
 def _box_qr_context(box):
     return {
-        "qr_payload": box.qr_payload,
+        "qr_payload": _box_qr_payload(box),
         "box_code": box.qr_code_label,
         "airport_name": box.qr_label_airport_name,
     }
+
+
+def _box_qr_url(box):
+    return url_for("inventory.kutu_detay", kodu=box.kodu, _external=True)
+
+
+def _box_qr_payload(box):
+    # Asset QR ile aynı standardı korumak için kutu QR payload'u da doğrudan detay URL'si olur.
+    return _box_qr_url(box)
 
 
 def _sync_asset_location(material):
@@ -3101,7 +3132,7 @@ def envanter_pdf():
 @permission_required("assignment.view")
 def zimmetler():
     selected_airport = request.args.get("airport_id", type=int)
-    selected_status = (request.args.get("status") or "").strip()
+    selected_status = _normalize_assignment_status(request.args.get("status"))
     selected_recipient = request.args.get("recipient_id", type=int)
 
     visible_airports = _visible_operational_airports()
@@ -3267,7 +3298,9 @@ def zimmetler():
 
     query = _assignment_scope()
     if selected_status:
-        query = query.filter(AssignmentRecord.status == selected_status)
+        query_values = _assignment_status_query_values(selected_status)
+        if query_values:
+            query = query.filter(AssignmentRecord.status.in_(query_values))
     if selected_recipient:
         query = query.join(AssignmentRecipient).filter(AssignmentRecipient.user_id == selected_recipient)
     if selected_airport:
@@ -3293,7 +3326,11 @@ def zimmetler():
             )
         recipient_active_assignments = (
             recipient_assignment_query
-            .filter(AssignmentRecord.status.in_(["active", "partial"]))
+            .filter(
+                AssignmentRecord.status.in_(
+                    _assignment_status_query_values("active") + _assignment_status_query_values("partial")
+                )
+            )
             .order_by(AssignmentRecord.assignment_date.desc(), AssignmentRecord.created_at.desc())
             .distinct()
             .all()
@@ -3313,6 +3350,8 @@ def zimmetler():
         recipient_active_assignments=recipient_active_assignments,
         can_create_assignment=can_create_assignment,
         can_delete_assignment=can_delete_assignment,
+        assignment_status_label=_assignment_status_label,
+        normalize_assignment_status=_normalize_assignment_status,
         format_assignment_qty=_format_assignment_quantity,
     )
 
@@ -3539,7 +3578,7 @@ def zimmet_sil(assignment_id):
 @permission_required("assignment.manage")
 def zimmet_durum_guncelle(assignment_id):
     assignment = _assignment_scope().filter(AssignmentRecord.id == assignment_id).first_or_404()
-    new_status = (request.form.get("status") or "").strip()
+    new_status = _normalize_assignment_status(request.form.get("status"))
     if new_status not in ASSIGNMENT_STATUS_LABELS:
         flash("Geçersiz zimmet durumu.", "danger")
         return redirect(url_for("inventory.zimmet_detay", assignment_id=assignment.id))
@@ -5980,7 +6019,7 @@ def kutu_qr_uret(box_id):
 @permission_required("qr.generate")
 def kutu_qr_img(box_id):
     kutu = _box_scope().filter(Kutu.id == box_id).first_or_404()
-    img_io = generate_qr_data(kutu.qr_payload)
+    img_io = generate_qr_data(_box_qr_payload(kutu))
     return send_file(img_io, mimetype="image/png") if img_io else ("QR Hatası", 500)
 
 
@@ -5998,7 +6037,7 @@ def kutu_etiket(kodu):
 @permission_required("qr.generate")
 def kutu_etiket_pdf(kodu):
     kutu = _box_scope().filter(Kutu.kodu == kodu).first_or_404()
-    qr_img = generate_qr_data(kutu.qr_payload)
+    qr_img = generate_qr_data(_box_qr_payload(kutu))
     qr_data_uri = None
     if qr_img:
         qr_data_uri = "data:image/png;base64," + base64.b64encode(qr_img.getvalue()).decode("ascii")
@@ -6039,7 +6078,7 @@ def qr_img_legacy(kodu):
 
     kutu = _box_scope().filter(Kutu.kodu == normalized_code).first()
     if kutu:
-        img_io = generate_qr_data(kutu.qr_payload)
+        img_io = generate_qr_data(_box_qr_payload(kutu))
         return send_file(img_io, mimetype="image/png") if img_io else ("QR Hatası", 500)
 
     asset = _asset_scope().filter(InventoryAsset.qr_code == normalized_code).first()

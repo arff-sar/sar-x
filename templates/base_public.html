@@ -572,7 +572,7 @@
       <a href="{{ home_url }}" class="public-brand" aria-label="ARFF SAR anasayfa">
         <span class="public-brand-mark">
           {% if public_logo %}
-            <img src="{{ public_logo }}" alt="ARFF SAR logo" class="public-brand-logo">
+            <img src="{{ public_logo }}" alt="ARFF SAR logo" class="public-brand-logo" onerror="this.onerror=null;this.src='{{ url_for('static', filename='img/logo.son-Photoroom.png') }}';">
           {% else %}
             <span class="public-brand-fallback" aria-hidden="true">
               <svg viewBox="0 0 24 24"><path d="M12 2L4 6.5v5.2c0 4.8 3.2 9.3 8 10.8 4.8-1.5 8-6 8-10.8V6.5L12 2z"/><path d="M9.5 12.5l1.8 1.8 3.2-3.6"/></svg>
