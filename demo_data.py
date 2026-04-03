@@ -398,6 +398,12 @@ def get_platform_demo_status():
 
 
 def platform_demo_is_active():
+    runtime_env = str(current_app.config.get("ENV") or "").strip().lower()
+    if runtime_env == "production":
+        return False
+    if not current_app.config.get("DEMO_TOOLS_ENABLED", False):
+        return False
+
     cache = _demo_request_cache()
     if cache is not None and "platform_demo_active" in cache:
         return bool(cache["platform_demo_active"])

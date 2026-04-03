@@ -1,5 +1,5 @@
 from decorators import ROLE_PERSONNEL
-from demo_data import DEMO_SEED_TAG, get_platform_demo_status, seed_demo_data
+from demo_data import DEMO_SEED_TAG, get_platform_demo_status, platform_demo_is_active, seed_demo_data
 from extensions import db
 from models import DemoSeedRecord, EquipmentTemplate, Havalimani, InventoryAsset, Kutu, Malzeme, PPERecord, Kullanici
 from tests.factories import KullaniciFactory
@@ -155,3 +155,16 @@ def test_demo_mode_scopes_maintenance_and_ppe_modules(client, app):
     assert ppe_response.status_code == 200
     assert "GERCEK KKD KAYDI" not in ppe_html
     assert demo_ppe_name in ppe_html
+
+
+def test_platform_demo_scope_forced_off_in_production_runtime(app):
+    app.config["DEMO_TOOLS_ENABLED"] = True
+    with app.app_context():
+        seed_demo_data(reset=True)
+        assert get_platform_demo_status()["active"] is True
+        assert platform_demo_is_active() is True
+
+    app.config["ENV"] = "production"
+    app.config["DEMO_TOOLS_ENABLED"] = False
+    with app.app_context():
+        assert platform_demo_is_active() is False
