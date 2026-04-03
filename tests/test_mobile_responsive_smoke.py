@@ -17,14 +17,16 @@ def test_login_page_contains_mobile_friendly_captcha_and_actions_rules(client):
     assert ".captcha-box { grid-template-columns: minmax(0, 1fr) 42px 124px; gap: 6px; }" in html
     assert ".captcha-input-shell { grid-column: 3; }" in html
     assert "@media (max-width: 460px)" in html
-    assert ".captcha-input { font-size: 14.5px !important; letter-spacing: .04em; }" in html
+    assert ".captcha-box { grid-template-columns: minmax(0, 1fr) 42px 112px; }" in html
+    assert ".captcha-refresh { width: 42px; min-width: 42px; }" in html
+    assert ".captcha-input { font-size: 14.5px !important; letter-spacing: .04em; line-height: 1; }" in html
     assert "-webkit-text-size-adjust: 100%;" in html
     assert ".captcha-canvas-container," in html
     assert ".captcha-canvas-container { display: flex; align-items: center; justify-content: center; }" in html
     assert ".captcha-visual { height: 100%; object-fit: contain; }" in html
     assert ".captcha-input { font-size: 15px !important; letter-spacing: .05em; line-height: 1; min-height: 0; height: 100%; }" in html
-    assert ".account-actions-row { gap: 8px; margin: 2px 0 8px; }" in html
-    assert ".forgot-password-link { min-height: 40px; border-radius: 10px;" in html
+    assert ".account-actions-row { gap: 8px; margin: 2px 0 6px; }" in html
+    assert ".forgot-password-link { min-height: 36px; border-radius: 10px;" in html
 
 
 def test_dashboard_page_contains_mobile_compaction_rules(client, app):
@@ -104,8 +106,94 @@ def test_authenticated_shell_contains_mobile_sidebar_logout_and_saha_mode_order(
 
     assert response.status_code == 200
     assert 'class="topbar-logout-form"' in html
+    assert 'class="topbar-settings-link"' not in html
+    assert 'class="sidebar-settings-link"' in html
     assert 'class="sidebar-footer-actions"' in html
     assert 'class="sidebar-logout-form"' in html
     assert 'class="sidebar-logout-btn"' in html
     assert html.index("<strong>Saha Modu</strong>") < html.index('class="sidebar-logout-form"')
     assert ".topbar-end > form { display: none !important; }" in html
+    assert "if (willOpen && mobileSidebarMedia.matches && sidebar && sidebar.classList.contains('is-open'))" in html
+    assert "const setNotificationPanelOpen = function (isOpen) {" in html
+    assert "setNotificationPanelOpen(willOpen);" in html
+    assert "notificationToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');" in html
+    assert 'id="notificationToggle"' in html
+    assert 'aria-label="Bildirimler"' in html
+    assert 'data-read-all-url="/admin/notifications/read-all"' in html
+    assert 'id="airportMessageLaunchButton" aria-label="Ortak mesajlaşmayı aç" aria-haspopup="dialog" aria-controls="airportMessagePanel" aria-expanded="false"' in html
+    assert "--safe-area-bottom: env(safe-area-inset-bottom, 0px);" in html
+    assert "bottom: calc(20px + var(--safe-area-bottom));" in html
+    assert "z-index: 9999;" in html
+    assert ".message-launch-btn ~ .main-content .main-inner {" in html
+    assert "const startMessagePanel = function () {" in html
+    assert "window.setTimeout(startMessagePanel, 190);" in html
+    assert "messageLaunchButton.setAttribute('aria-expanded', isOpen ? 'true' : 'false');" in html
+
+
+def test_authenticated_shell_contains_mobile_pwa_qr_scan_controls(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Rize-Artvin Havalimanı", kodu="RZV")
+        user = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False)
+        db.session.add_all([airport, user])
+        db.session.commit()
+        user_id = user.id
+
+    _login(client, user_id)
+    response = client.get("/dashboard")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert 'id="qrScanLaunchButton"' in html
+    assert html.index('id="qrScanLaunchButton"') < html.index('class="sidebar-settings-link"')
+    assert html.index('class="sidebar-settings-link"') < html.index('class="sidebar-logout-form"')
+    assert 'id="qrScanOverlay"' in html
+    assert 'class="qr-scan-corner tl"' in html
+    assert "QR kodu çerçeve içine hizalayın" in html
+    assert "Hazırlanıyor." in html
+    assert "QR aranıyor. Kodu çerçeve içinde sabit tutun." in html
+    assert "QR bulundu, yönlendiriliyor." in html
+    assert "const shouldShow = Boolean(mobileSidebarMedia.matches || standaloneMode);" in html
+    assert "qrScanButton.hidden = !shouldShow;" in html
+    assert "qrScanButton.disabled = !shouldShow;" in html
+    assert "let qrLaunchHandledAt = 0;" in html
+    assert "qrScanButton.addEventListener(\"touchstart\", triggerQrPanel, { passive: false });" in html
+    assert "parsedUrl.origin !== window.location.origin" in html
+    assert "window.location.assign(resolved.target);" in html
+    assert 'id="pwaInstallButton"' in html
+    assert 'id="pwaInstallHint"' in html
+    assert 'id="pwaInstallAction"' in html
+    assert "window.addEventListener('beforeinstallprompt'" in html
+    assert "window.addEventListener('appinstalled'" in html
+    assert "Android: tarayıcı menüsü > Ana ekrana ekle. iOS: Paylaş > Ana Ekrana Ekle." in html
+    assert "window.open(" not in html
+
+
+def test_envanter_page_contains_mobile_card_layout_hooks(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Ordu Giresun Havalimanı", kodu="OGU")
+        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False)
+        box = KutuFactory(kodu="K-OGU-1", havalimani=airport)
+        material = MalzemeFactory(ad="Mobil Kart Test Ekipmanı", havalimani=airport, kutu=box, is_deleted=False)
+        db.session.add_all([airport, owner, box, material])
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+    response = client.get("/envanter")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "@media (max-width: 900px)" in html
+    assert 'class="inventory-mobile-card"' in html
+    assert "inventory-mobile-grid" in html
+    assert "inventory-mobile-chip-row" in html
+    assert "inventory-mobile-chip-label" in html
+    assert "inventory-mobile-actions" in html
+    assert "inventory-mobile-more-btn" in html
+    assert "Diğer işlemleri göster" in html
+    assert "grid-template-columns: minmax(0, 1fr) 72px minmax(0, 140px);" in html
+    assert "min-height: 44px;" in html
+    assert "inventory-mobile-grid-item is-code" in html
+    assert "data-mobile-qr=\"1\"" in html
+    assert "window.location.assign(qrHref);" in html
+    assert "Bu kayıt için QR etiketi oluşturulmamış." in html

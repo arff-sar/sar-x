@@ -53,13 +53,16 @@ class _FakeDriveService:
             "refresh_token": "refresh-token",
         }
 
+    def build_authorization_url(self, state):
+        return f"https://accounts.google.com/o/oauth2/v2/auth?state={state}"
+
 
 def test_tatbikat_listesi_scopes_documents_to_current_airport(client, app):
     with app.app_context():
         airport_a = HavalimaniFactory(ad="Erzurum", kodu="ERZ")
         airport_b = HavalimaniFactory(ad="Trabzon", kodu="TZX")
-        manager = KullaniciFactory(rol="yetkili", havalimani=airport_a, is_deleted=False)
-        uploader = KullaniciFactory(rol="sahip", havalimani=airport_a, is_deleted=False)
+        manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport_a, is_deleted=False)
+        uploader = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport_a, is_deleted=False)
         db.session.add_all([airport_a, airport_b, manager, uploader])
         db.session.flush()
         db.session.add_all(
@@ -105,7 +108,7 @@ def test_tatbikat_listesi_scopes_documents_to_current_airport(client, app):
 def test_personnel_cannot_upload_tatbikat_document(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Ankara", kodu="ESB")
-        user = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False)
+        user = KullaniciFactory(rol="ekip_uyesi", havalimani=airport, is_deleted=False)
         db.session.add_all([airport, user])
         db.session.commit()
         user_id = user.id
@@ -131,7 +134,7 @@ def test_airport_manager_can_upload_tatbikat_document_with_drive_metadata(client
 
     with app.app_context():
         airport = HavalimaniFactory(ad="İzmir", kodu="ADB")
-        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False)
         db.session.add_all([airport, manager])
         db.session.commit()
         manager_id = manager.id
@@ -167,8 +170,8 @@ def test_cross_airport_tatbikat_detail_returns_403(client, app):
     with app.app_context():
         airport_a = HavalimaniFactory(ad="Dalaman", kodu="DLM")
         airport_b = HavalimaniFactory(ad="Antalya", kodu="AYT")
-        viewer = KullaniciFactory(rol="personel", havalimani=airport_a, is_deleted=False)
-        uploader = KullaniciFactory(rol="sahip", havalimani=airport_b, is_deleted=False)
+        viewer = KullaniciFactory(rol="ekip_uyesi", havalimani=airport_a, is_deleted=False)
+        uploader = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport_b, is_deleted=False)
         db.session.add_all([airport_a, airport_b, viewer, uploader])
         db.session.flush()
         document = TatbikatBelgesi(
@@ -197,8 +200,8 @@ def test_owner_can_soft_delete_tatbikat_document(client, app, monkeypatch):
 
     with app.app_context():
         airport = HavalimaniFactory(ad="Muğla", kodu="MGL")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False)
-        uploader = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False)
+        uploader = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False)
         db.session.add_all([airport, owner, uploader])
         db.session.flush()
         document = TatbikatBelgesi(
@@ -229,8 +232,8 @@ def test_owner_can_soft_delete_tatbikat_document(client, app, monkeypatch):
 def test_tatbikat_page_shows_airport_select_only_for_owner(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Sivas", kodu="VAS")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False)
-        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False)
+        manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False)
         db.session.add_all([airport, owner, manager])
         db.session.commit()
         owner_id = owner.id
@@ -255,6 +258,8 @@ def test_tatbikat_page_shows_airport_select_only_for_owner(client, app):
     assert 'drill-filter-actions .btn' in owner_html
     assert 'accept=".rar,.zip,.7z' in owner_html
     assert "Desteklenen türler: RAR, ZIP, 7Z" in owner_html
+    assert '<details class="drill-upload-accordion">' in owner_html
+    assert "window.addEventListener('pageshow', closeUploadAccordion);" in owner_html
 
 
 def test_airport_manager_can_upload_zip_tatbikat_document(client, app, monkeypatch):
@@ -263,7 +268,7 @@ def test_airport_manager_can_upload_zip_tatbikat_document(client, app, monkeypat
 
     with app.app_context():
         airport = HavalimaniFactory(ad="Van", kodu="VAN")
-        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False)
         db.session.add_all([airport, manager])
         db.session.commit()
         manager_id = manager.id
@@ -292,7 +297,7 @@ def test_airport_manager_can_upload_zip_tatbikat_document_with_octet_stream_mime
 
     with app.app_context():
         airport = HavalimaniFactory(ad="Van", kodu="VAN")
-        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False)
         db.session.add_all([airport, manager])
         db.session.commit()
         manager_id = manager.id
@@ -321,7 +326,7 @@ def test_airport_manager_can_upload_rar_tatbikat_document(client, app, monkeypat
 
     with app.app_context():
         airport = HavalimaniFactory(ad="Kars", kodu="KSY")
-        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False)
         db.session.add_all([airport, manager])
         db.session.commit()
         manager_id = manager.id
@@ -351,7 +356,7 @@ def test_airport_manager_can_upload_7z_tatbikat_document(client, app, monkeypatc
 
     with app.app_context():
         airport = HavalimaniFactory(ad="Kayseri", kodu="ASR")
-        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False)
         db.session.add_all([airport, manager])
         db.session.commit()
         manager_id = manager.id
@@ -378,7 +383,7 @@ def test_airport_manager_can_upload_7z_tatbikat_document(client, app, monkeypatc
 def test_tatbikat_upload_rejects_octet_stream_when_archive_signature_is_invalid(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Rize", kodu="RZV")
-        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False)
         db.session.add_all([airport, manager])
         db.session.commit()
         manager_id = manager.id
@@ -404,7 +409,7 @@ def test_tatbikat_upload_rejects_octet_stream_when_archive_signature_is_invalid(
 def test_tatbikat_upload_rejects_pdf_extension(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Adana", kodu="ADA")
-        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False)
         db.session.add_all([airport, manager])
         db.session.commit()
         manager_id = manager.id
@@ -430,7 +435,7 @@ def test_tatbikat_upload_rejects_pdf_extension(client, app):
 def test_tatbikat_upload_rejects_jpg_extension(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Ordu", kodu="OGU")
-        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False)
         db.session.add_all([airport, manager])
         db.session.commit()
         manager_id = manager.id
@@ -456,7 +461,7 @@ def test_tatbikat_upload_rejects_jpg_extension(client, app):
 def test_tatbikat_upload_rejects_when_date_missing(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Sinop", kodu="NOP")
-        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False)
         db.session.add_all([airport, manager])
         db.session.commit()
         manager_id = manager.id
@@ -481,7 +486,7 @@ def test_tatbikat_upload_rejects_when_date_missing(client, app):
 def test_tatbikat_upload_rejects_when_date_format_invalid(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Amasya", kodu="MZH")
-        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False)
         db.session.add_all([airport, manager])
         db.session.commit()
         manager_id = manager.id
@@ -509,19 +514,19 @@ def test_google_drive_oauth_callback_matches_expected_route_and_redirects_owner(
     monkeypatch.setattr("routes.inventory.get_drill_drive_service", lambda: fake_drive)
 
     with app.app_context():
-        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-drive-callback@sarx.com")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="owner-drive-callback@sarx.com")
         db.session.add(owner)
         db.session.commit()
         owner_id = owner.id
 
     _login(client, owner_id)
-    response = client.get("/google-drive/oauth/callback?code=test-auth-code", follow_redirects=True)
-    html = response.data.decode("utf-8")
+    with client.session_transaction() as session:
+        session["google_drive_oauth_state"] = "state-token-1"
+    response = client.get("/google-drive/oauth/callback?code=test-auth-code&state=state-token-1", follow_redirects=False)
 
-    assert response.status_code == 200
+    assert response.status_code == 302
     assert fake_drive.exchanged_codes == ["test-auth-code"]
-    assert "Google Drive yetkilendirmesi başarıyla alındı." in html
-    assert "/site-yonetimi" in response.request.path
+    assert "/google-drive/oauth/callback" not in response.headers["Location"]
 
 
 def test_google_drive_oauth_callback_handles_error_without_404(client, app):
@@ -529,3 +534,56 @@ def test_google_drive_oauth_callback_handles_error_without_404(client, app):
 
     assert response.status_code == 302
     assert "/login" in response.headers["Location"]
+
+
+def test_google_drive_oauth_callback_requires_login_before_exchange(client, monkeypatch):
+    class _ShouldNotBeCalledService:
+        def exchange_authorization_code(self, code):
+            raise AssertionError("Token exchange should not run without authentication.")
+
+    monkeypatch.setattr("routes.inventory.get_drill_drive_service", lambda: _ShouldNotBeCalledService())
+
+    response = client.get("/google-drive/oauth/callback?code=unauth-code", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert "/login" in response.headers["Location"]
+
+
+def test_google_drive_oauth_start_sets_state_and_redirects(client, app, monkeypatch):
+    fake_drive = _FakeDriveService()
+    monkeypatch.setattr("routes.inventory.get_drill_drive_service", lambda: fake_drive)
+
+    with app.app_context():
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="owner-drive-start@sarx.com")
+        db.session.add(owner)
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+    response = client.get("/google-drive/oauth/baslat", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["Location"].startswith("https://accounts.google.com/o/oauth2/v2/auth?")
+    with client.session_transaction() as session:
+        assert session.get("google_drive_oauth_state")
+
+
+def test_google_drive_oauth_callback_rejects_when_state_missing(client, app, monkeypatch):
+    class _ShouldNotExchangeService:
+        def exchange_authorization_code(self, code):
+            raise AssertionError("State doğrulaması olmadan token exchange yapılmamalı.")
+
+    monkeypatch.setattr("routes.inventory.get_drill_drive_service", lambda: _ShouldNotExchangeService())
+
+    with app.app_context():
+        owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="owner-drive-state@sarx.com")
+        db.session.add(owner)
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+    with client.session_transaction() as session:
+        session["google_drive_oauth_state"] = "expected-state"
+    response = client.get("/google-drive/oauth/callback?code=test-auth-code", follow_redirects=False)
+
+    assert response.status_code == 302

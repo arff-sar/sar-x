@@ -1,5 +1,7 @@
 from datetime import timedelta
 
+import pytest
+
 from app import create_app
 from extensions import db
 from tests.factories import KullaniciFactory
@@ -89,24 +91,20 @@ def test_create_app_rejects_invalid_env_name(monkeypatch):
         monkeypatch.delenv("APP_ENV", raising=False)
 
 
-def test_production_requires_non_memory_rate_limit_storage_by_default(monkeypatch):
+def test_production_defaults_to_memory_rate_limit_storage_when_unset(monkeypatch):
     monkeypatch.setenv("SECRET_KEY", "x" * 48)
     monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
     monkeypatch.setenv("ALLOW_SQLITE_IN_PRODUCTION", "1")
     monkeypatch.setenv("ENABLE_SCHEDULER", "0")
-    monkeypatch.delenv("REDIS_URL", raising=False)
     monkeypatch.delenv("RATELIMIT_STORAGE_URI", raising=False)
     monkeypatch.delenv("ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION", raising=False)
 
-    try:
+    with pytest.raises(RuntimeError, match="ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION"):
         create_app("production")
-        assert False, "Production ortamında memory:// rate-limit storage reddedilmeliydi."
-    except RuntimeError as exc:
-        assert "memory:// rate-limit storage kullanılamaz" in str(exc)
 
 
 def test_authenticated_dashboard_response_uses_private_no_store_cache_headers(client, app):
-    user = KullaniciFactory(rol="sahip", is_deleted=False)
+    user = KullaniciFactory(rol="ekip_uyesi", is_deleted=False)
     db.session.add(user)
     db.session.commit()
 

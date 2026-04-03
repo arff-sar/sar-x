@@ -4,10 +4,13 @@
 {% block extra_css %}
 <style>
   .assignment-detail-grid { display:grid; grid-template-columns:minmax(0, 1.05fr) minmax(320px, .95fr); gap:20px; align-items:start; }
+  .assignment-detail-column { display:grid; gap:16px; }
+  .assignment-detail-header-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
   .summary-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
-  .summary-card { padding:16px; border:1px solid var(--border); border-radius:16px; background:var(--surface2); }
+  .summary-card { padding:14px; border:1px solid var(--border); border-radius:14px; background:#fff; }
   .summary-label { font-size:11px; font-weight:800; color:var(--text4); text-transform:uppercase; letter-spacing:.05em; }
   .summary-value { margin-top:6px; font-size:14px; font-weight:800; color:var(--navy); line-height:1.45; }
+  .detail-note-block { margin-top:14px; }
   .history-list { display:grid; gap:10px; }
   .history-item { padding:14px; border:1px solid var(--border); border-radius:16px; background:#fff; }
   .history-item strong { color:var(--navy); }
@@ -18,6 +21,14 @@
   .return-title { font-size:13px; font-weight:800; color:var(--navy); }
   .return-meta { font-size:11.5px; color:var(--text3); line-height:1.45; }
   .return-fields { display:grid; grid-template-columns:120px minmax(0, 1fr); gap:10px; }
+  .status-form,
+  .upload-form { display:grid; gap:10px; }
+  .status-form .form-control,
+  .upload-form .form-control { margin-bottom:0; }
+  .upload-form .form-control[type="file"] { padding:9px 10px; }
+  .detail-upload-state { margin-bottom:12px; }
+  .detail-block-note { font-size:11.5px; color:var(--text3); line-height:1.5; }
+  .detail-action-wide { width:100%; justify-content:center; }
   @media (max-width: 980px) {
     .assignment-detail-grid,
     .summary-grid,
@@ -36,10 +47,16 @@
             <span>{{ assignment.assignment_date.strftime('%d.%m.%Y') if assignment.assignment_date else '-' }}</span>
         </div>
     </div>
-    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+    <div class="assignment-detail-header-actions">
         <span class="status-pill {% if assignment.status == 'returned' %}status-aktif{% elif assignment.status == 'cancelled' %}status-pasif{% else %}status-bakim{% endif %}">{{ assignment_status_label(assignment.status) }}</span>
         {% if can_download_assignment_pdf %}
         <a href="{{ url_for('inventory.zimmet_pdf', assignment_id=assignment.id) }}" class="btn btn-secondary">PDF İndir</a>
+        {% endif %}
+        {% if can_delete_assignment %}
+        <form method="POST" action="{{ url_for('inventory.zimmet_sil', assignment_id=assignment.id) }}" onsubmit="return confirm('Bu zimmet kaydı arşive taşınacak. Devam edilsin mi?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-danger">Zimmeti Sil</button>
+        </form>
         {% endif %}
         <a href="{{ url_for('inventory.zimmetler') }}" class="btn btn-secondary">Listeye Dön</a>
     </div>
@@ -66,7 +83,7 @@
             </div>
         </div>
         {% if assignment.note %}
-        <div style="margin-top:16px;">
+        <div class="detail-note-block">
             <div class="summary-label">Açıklama / Not</div>
             <div style="margin-top:8px; color:var(--text2); line-height:1.65;">{{ assignment.note }}</div>
         </div>
@@ -75,7 +92,7 @@
 </div>
 
 <div class="assignment-detail-grid">
-    <div style="display:grid; gap:20px;">
+    <div class="assignment-detail-column">
         <div class="panel">
             <div class="panel-header">
                 <div>
@@ -100,11 +117,11 @@
                                 <div style="font-weight:800; color:var(--navy);">{{ item.item_name }}</div>
                                 <div style="font-size:11.5px; color:var(--text3); margin-top:4px;">{{ item.note or 'Kalem notu yok' }}</div>
                             </td>
-                            <td>{{ item.quantity }} {{ item.unit or 'adet' }}</td>
-                            <td>{{ item.remaining_quantity }} {{ item.unit or 'adet' }}</td>
+                            <td>{{ format_assignment_qty(item.quantity) }} {{ item.unit or 'adet' }}</td>
+                            <td>{{ format_assignment_qty(item.remaining_quantity) }} {{ item.unit or 'adet' }}</td>
                             <td>
                                 {% if item.returned_quantity %}
-                                <div>{{ item.returned_quantity }} {{ item.unit or 'adet' }} iade</div>
+                                <div>{{ format_assignment_qty(item.returned_quantity) }} {{ item.unit or 'adet' }} iade</div>
                                 <div style="font-size:11.5px; color:var(--text3); margin-top:4px;">{{ item.returned_at.strftime('%d.%m.%Y %H:%M') if item.returned_at else '-' }} • {{ item.returned_by.tam_ad if item.returned_by else '-' }}</div>
                                 {% if item.return_note %}
                                 <div style="font-size:11.5px; color:var(--text3); margin-top:4px;">{{ item.return_note }}</div>
@@ -136,7 +153,7 @@
                         <div class="return-head">
                             <div>
                                 <div class="return-title">{{ item.item_name }}</div>
-                                <div class="return-meta">Toplam: {{ item.quantity }} {{ item.unit or 'adet' }} • Kalan: {{ item.remaining_quantity }} {{ item.unit or 'adet' }}</div>
+                                <div class="return-meta">Toplam: {{ format_assignment_qty(item.quantity) }} {{ item.unit or 'adet' }} • Kalan: {{ format_assignment_qty(item.remaining_quantity) }} {{ item.unit or 'adet' }}</div>
                             </div>
                             {% if item.remaining_quantity <= 0 %}
                             <span class="status-pill status-aktif">İade tamamlandı</span>
@@ -157,7 +174,7 @@
         {% endif %}
     </div>
 
-    <div style="display:grid; gap:20px;">
+    <div class="assignment-detail-column">
         {% if can_manage_assignment %}
         <div class="panel">
             <div class="panel-header">
@@ -167,7 +184,7 @@
                 </div>
             </div>
             <div class="panel-body">
-                <form method="POST" action="{{ url_for('inventory.zimmet_durum_guncelle', assignment_id=assignment.id) }}">
+                <form method="POST" action="{{ url_for('inventory.zimmet_durum_guncelle', assignment_id=assignment.id) }}" class="status-form">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <label>Zimmet Durumu</label>
                     <select name="status" class="form-control">
@@ -175,7 +192,7 @@
                         <option value="{{ status_key }}" {% if assignment.status == status_key %}selected{% endif %}>{{ assignment_status_label(status_key) }}</option>
                         {% endfor %}
                     </select>
-                    <button type="submit" class="btn btn-navy" style="width:100%; justify-content:center;">Durumu Kaydet</button>
+                    <button type="submit" class="btn btn-navy detail-action-wide">Durumu Kaydet</button>
                 </form>
             </div>
         </div>
@@ -190,7 +207,7 @@
             </div>
             <div class="panel-body">
                 {% if assignment.signed_document_url %}
-                <div class="summary-card" style="margin-bottom:16px;">
+                <div class="summary-card detail-upload-state">
                     <div class="summary-label">Yüklü Belge</div>
                     <div class="summary-value">{{ assignment.signed_document_name or 'İmzalı belge' }}</div>
                     <div style="margin-top:12px;">
@@ -198,21 +215,21 @@
                     </div>
                 </div>
                 {% else %}
-                <div class="assignment-empty" style="margin-bottom:16px;">
+                <div class="assignment-empty detail-upload-state">
                     <strong>Henüz imzalı belge yüklenmedi</strong>
                     Zimmet formunun imzalı hali hazır olduğunda bu kayda eklenebilir.
                 </div>
                 {% endif %}
 
                 {% if can_upload_assignment_document %}
-                <form method="POST" action="{{ url_for('inventory.zimmet_imzali_belge_yukle', assignment_id=assignment.id) }}" enctype="multipart/form-data">
+                <form method="POST" action="{{ url_for('inventory.zimmet_imzali_belge_yukle', assignment_id=assignment.id) }}" enctype="multipart/form-data" class="upload-form">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <label>İmzalı Belge</label>
                     <input type="file" name="signed_document" class="form-control" accept=".pdf,.png,.jpg,.jpeg,.webp" required>
-                    <div style="margin-top:8px; font-size:11.5px; color:var(--text3); line-height:1.5;">
+                    <div class="detail-block-note">
                         Desteklenen dosya türleri: PDF, PNG, JPG, JPEG ve WEBP. En fazla {{ (config.MAX_CONTENT_LENGTH / (1024 * 1024))|round(0, 'floor')|int }} MB yükleyebilirsiniz.
                     </div>
-                    <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">Belgeyi Yükle</button>
+                    <button type="submit" class="btn btn-primary detail-action-wide">Belgeyi Yükle</button>
                 </form>
                 {% endif %}
             </div>
@@ -243,4 +260,30 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+{% if can_download_assignment_pdf and request.args.get('auto_pdf') == '1' %}
+<script>
+  (function () {
+    const pdfUrl = {{ url_for('inventory.zimmet_pdf', assignment_id=assignment.id)|tojson }};
+    if (!pdfUrl) return;
+
+    const frame = document.createElement('iframe');
+    frame.style.display = 'none';
+    frame.src = pdfUrl;
+    document.body.appendChild(frame);
+    window.setTimeout(function () {
+      if (frame && frame.parentNode) {
+        frame.parentNode.removeChild(frame);
+      }
+    }, 8000);
+
+    if (window.history && typeof window.history.replaceState === 'function') {
+      const cleanUrl = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, document.title, cleanUrl);
+    }
+  })();
+</script>
+{% endif %}
 {% endblock %}

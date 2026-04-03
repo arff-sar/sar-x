@@ -1,7 +1,7 @@
 import json
 from functools import wraps
 
-from flask import abort, current_app, has_app_context, has_request_context, request, session, url_for
+from flask import abort, current_app, g, has_app_context, has_request_context, request, session, url_for
 from flask_login import current_user
 from sqlalchemy import text
 
@@ -26,28 +26,39 @@ CANONICAL_ROLE_ADMIN = "admin"
 
 CORE_ROLE_KEYS = {
     CANONICAL_ROLE_SYSTEM,
+    CANONICAL_ROLE_ADMIN,
     CANONICAL_ROLE_TEAM_LEAD,
     CANONICAL_ROLE_TEAM_MEMBER,
-    CANONICAL_ROLE_ADMIN,
 }
 ROLE_SWITCH_SESSION_KEY = "temporary_role_override"
+REMOVED_ROLE_KEYS = {
+    ROLE_OWNER,
+    ROLE_SYSTEM_OWNER,
+    ROLE_MANAGER,
+    ROLE_AIRPORT_MANAGER,
+    ROLE_PERSONNEL,
+    ROLE_MAINTENANCE,
+    ROLE_READONLY,
+}
 
 ROLE_ALIASES = {
     CANONICAL_ROLE_SYSTEM: CANONICAL_ROLE_SYSTEM,
     CANONICAL_ROLE_TEAM_LEAD: CANONICAL_ROLE_TEAM_LEAD,
     CANONICAL_ROLE_TEAM_MEMBER: CANONICAL_ROLE_TEAM_MEMBER,
     CANONICAL_ROLE_ADMIN: CANONICAL_ROLE_ADMIN,
+    # Legacy/removed role keys are still present in historical records and tests.
+    # Map them onto canonical roles so permissions and route guards behave consistently.
     ROLE_OWNER: CANONICAL_ROLE_SYSTEM,
     ROLE_SYSTEM_OWNER: CANONICAL_ROLE_SYSTEM,
     ROLE_MANAGER: CANONICAL_ROLE_TEAM_LEAD,
     ROLE_AIRPORT_MANAGER: CANONICAL_ROLE_TEAM_LEAD,
-    ROLE_EDITOR: CANONICAL_ROLE_TEAM_MEMBER,
+    ROLE_EDITOR: ROLE_EDITOR,
     ROLE_PERSONNEL: CANONICAL_ROLE_TEAM_MEMBER,
     ROLE_MAINTENANCE: CANONICAL_ROLE_TEAM_MEMBER,
     ROLE_WAREHOUSE: CANONICAL_ROLE_TEAM_MEMBER,
     ROLE_READONLY: CANONICAL_ROLE_ADMIN,
-    ROLE_HQ: CANONICAL_ROLE_ADMIN,
-    ROLE_ADMIN: CANONICAL_ROLE_ADMIN,
+    ROLE_HQ: CANONICAL_ROLE_TEAM_MEMBER,
+    ROLE_ADMIN: ROLE_ADMIN,
 }
 
 ROLE_PRIORITY = {
@@ -56,38 +67,36 @@ ROLE_PRIORITY = {
     CANONICAL_ROLE_TEAM_LEAD: 70,
     CANONICAL_ROLE_TEAM_MEMBER: 40,
 }
+AIRPORT_SCOPED_ROLE_KEYS = {
+    CANONICAL_ROLE_TEAM_LEAD,
+    CANONICAL_ROLE_TEAM_MEMBER,
+}
 
 DEFAULT_ROLE_LABELS = {
     CANONICAL_ROLE_SYSTEM: "Sistem Sorumlusu",
+    CANONICAL_ROLE_ADMIN: "Admin",
     CANONICAL_ROLE_TEAM_LEAD: "Ekip Sorumlusu",
     CANONICAL_ROLE_TEAM_MEMBER: "Ekip Üyesi",
-    CANONICAL_ROLE_ADMIN: "Admin",
 }
 
 DEFAULT_ROLE_DESCRIPTIONS = {
     CANONICAL_ROLE_SYSTEM: "Tüm modüller, tüm havalimanları ve kritik yönetim işlemleri üzerinde tam yetkiye sahiptir.",
+    CANONICAL_ROLE_ADMIN: "Tüm havalimanlarını readonly kapsamda izler; kayıtları denetler, ancak değişiklik yapmaz.",
     CANONICAL_ROLE_TEAM_LEAD: "Kendi havalimanında envanter, bakım, zimmet, tatbikat ve operasyonel kullanıcı işlemlerini yönetebilir.",
     CANONICAL_ROLE_TEAM_MEMBER: "Kendi havalimanı kapsamındaki operasyon kayıtlarını görüntüler, bakım doldurur ve kendine ait zimmetleri izler.",
-    CANONICAL_ROLE_ADMIN: "Tüm havalimanlarını readonly kapsamda izler; kayıtları denetler, ancak değişiklik yapmaz.",
 }
 
 ROLE_OPTIONS = [
     {"key": CANONICAL_ROLE_SYSTEM, "label": "Sistem Sorumlusu", "scope": "global", "critical": True, "is_core": True},
+    {"key": CANONICAL_ROLE_ADMIN, "label": "Admin", "scope": "global", "critical": False, "is_core": True},
     {"key": CANONICAL_ROLE_TEAM_LEAD, "label": "Ekip Sorumlusu", "scope": "airport", "critical": True, "is_core": True},
     {"key": CANONICAL_ROLE_TEAM_MEMBER, "label": "Ekip Üyesi", "scope": "airport", "critical": False, "is_core": True},
-    {"key": CANONICAL_ROLE_ADMIN, "label": "Admin", "scope": "global", "critical": True, "is_core": True},
 ]
 
 LEGACY_ROLE_OPTIONS = [
-    {"key": ROLE_OWNER, "label": "Sistem Sahibi", "scope": "global", "critical": True, "is_core": False},
-    {"key": ROLE_SYSTEM_OWNER, "label": "Sistem Sahibi", "scope": "global", "critical": True, "is_core": False},
-    {"key": ROLE_MANAGER, "label": "Havalimanı Yöneticisi", "scope": "airport", "critical": False, "is_core": False},
-    {"key": ROLE_AIRPORT_MANAGER, "label": "Havalimanı Yöneticisi", "scope": "airport", "critical": False, "is_core": False},
     {"key": ROLE_EDITOR, "label": "İçerik Editörü", "scope": "global", "critical": False, "is_core": False},
     {"key": ROLE_MAINTENANCE, "label": "Bakım Sorumlusu", "scope": "airport", "critical": False, "is_core": False},
     {"key": ROLE_WAREHOUSE, "label": "Depo Sorumlusu", "scope": "airport", "critical": False, "is_core": False},
-    {"key": ROLE_PERSONNEL, "label": "Personel", "scope": "airport", "critical": False, "is_core": False},
-    {"key": ROLE_READONLY, "label": "İzleyici", "scope": "global", "critical": False, "is_core": False},
     {"key": ROLE_HQ, "label": "Genel Müdürlük", "scope": "global", "critical": False, "is_core": False},
 ]
 
@@ -109,6 +118,16 @@ def _rollback_session_safely():
         db.session.rollback()
     except Exception:
         pass
+
+
+def _auth_request_cache():
+    if not has_request_context():
+        return None
+    cache = getattr(g, "_auth_runtime_cache", None)
+    if cache is None:
+        cache = {}
+        g._auth_runtime_cache = cache
+    return cache
 
 
 def _permission(key, label, module, summary, description=None):
@@ -423,21 +442,17 @@ DEFAULT_ROLE_PERMISSIONS = {
     CANONICAL_ROLE_SYSTEM: {item["key"] for item in PERMISSION_DEFINITIONS},
     CANONICAL_ROLE_ADMIN: {
         "dashboard.view",
-        "homepage.view",
         "inventory.view",
-        "inventory.export",
         "assignment.view",
-        "assignment.pdf",
         "drill.view",
-        "ppe.view",
         "maintenance.view",
         "workorder.view",
-        "workorder.create",
         "parts.view",
+        "ppe.view",
+        "reports.view",
         "users.manage",
         "logs.view",
-        "archive.manage",
-        "reports.view",
+        "qr.generate",
     },
     CANONICAL_ROLE_TEAM_LEAD: {
         "dashboard.view",
@@ -487,6 +502,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "ppe.view",
         "ppe.request",
         "qr.generate",
+        "reports.view",
     },
 }
 
@@ -494,35 +510,12 @@ LEGACY_ROLE_DEFAULT_PERMISSIONS = {
     ROLE_OWNER: set(DEFAULT_ROLE_PERMISSIONS[CANONICAL_ROLE_SYSTEM]),
     ROLE_SYSTEM_OWNER: set(DEFAULT_ROLE_PERMISSIONS[CANONICAL_ROLE_SYSTEM]),
     ROLE_EDITOR: {
-        "dashboard.view",
         "homepage.view",
         "homepage.edit",
-        "homepage.publish",
         "homepage.media",
     },
-    ROLE_MANAGER: set(DEFAULT_ROLE_PERMISSIONS[CANONICAL_ROLE_TEAM_LEAD]),
-    ROLE_AIRPORT_MANAGER: set(DEFAULT_ROLE_PERMISSIONS[CANONICAL_ROLE_TEAM_LEAD]),
-    ROLE_MAINTENANCE: {
-        "dashboard.view",
-        "inventory.view",
-        "assignment.view",
-        "drill.view",
-        "maintenance.view",
-        "maintenance.edit",
-        "maintenance.plan.change",
-        "maintenance.instructions.manage",
-        "maintenance.templates.manage",
-        "workorder.view",
-        "workorder.create",
-        "workorder.edit",
-        "workorder.assign",
-        "workorder.close",
-        "parts.view",
-        "ppe.view",
-        "ppe.request",
-        "qr.generate",
-        "reports.view",
-    },
+    ROLE_PERSONNEL: set(DEFAULT_ROLE_PERMISSIONS[CANONICAL_ROLE_TEAM_MEMBER]),
+    ROLE_MAINTENANCE: set(),
     ROLE_WAREHOUSE: {
         "dashboard.view",
         "inventory.view",
@@ -543,31 +536,7 @@ LEGACY_ROLE_DEFAULT_PERMISSIONS = {
         "qr.generate",
         "reports.view",
     },
-    ROLE_PERSONNEL: set(DEFAULT_ROLE_PERMISSIONS[CANONICAL_ROLE_TEAM_MEMBER]),
-    ROLE_READONLY: {
-        "dashboard.view",
-        "inventory.view",
-        "assignment.view",
-        "drill.view",
-        "maintenance.view",
-        "workorder.view",
-        "parts.view",
-        "ppe.view",
-        "logs.view",
-        "reports.view",
-    },
-    ROLE_HQ: {
-        "dashboard.view",
-        "inventory.view",
-        "assignment.view",
-        "drill.view",
-        "maintenance.view",
-        "workorder.view",
-        "parts.view",
-        "ppe.view",
-        "logs.view",
-        "reports.view",
-    },
+    ROLE_HQ: set(DEFAULT_ROLE_PERMISSIONS[CANONICAL_ROLE_TEAM_MEMBER]),
 }
 
 for role_key, permissions in LEGACY_ROLE_DEFAULT_PERMISSIONS.items():
@@ -627,15 +596,16 @@ MENU_GROUPS = [
             {"label": "Hata Kayıtları", "endpoint": "admin.hata_kayitlari", "endpoints": ["admin.hata_kayitlari"], "prefixes": ["admin.hata_kaydi_detay"], "permission": "logs.view"},
             {"label": "İşlem Logları", "endpoint": "admin.loglari_gor", "endpoints": ["admin.loglari_gor"], "permission": "logs.view"},
             {"label": "Arşiv", "endpoint": "admin.arsiv_listesi", "endpoints": ["admin.arsiv_listesi"], "permission": "archive.manage"},
+            {"label": "Havalimanı Toplu Silme", "endpoint": "admin.site_yonetimi_havalimani_toplu_silme", "endpoints": ["admin.site_yonetimi_havalimani_toplu_silme"], "permission": "settings.manage"},
         ],
     },
 ]
 
 ROLE_SWITCH_LABELS = {
     CANONICAL_ROLE_SYSTEM: "Sistem Sorumlusu",
+    CANONICAL_ROLE_ADMIN: "Admin",
     CANONICAL_ROLE_TEAM_LEAD: "Ekip Sorumlusu",
     CANONICAL_ROLE_TEAM_MEMBER: "Ekip Üyesi",
-    CANONICAL_ROLE_ADMIN: "Admin",
 }
 
 
@@ -687,10 +657,10 @@ def _canonical_role(role):
 def get_legacy_compatible_role(user=None):
     user = user or current_user
     legacy_map = {
-        CANONICAL_ROLE_SYSTEM: ROLE_OWNER,
-        CANONICAL_ROLE_TEAM_LEAD: ROLE_MANAGER,
-        CANONICAL_ROLE_TEAM_MEMBER: ROLE_PERSONNEL,
-        CANONICAL_ROLE_ADMIN: ROLE_ADMIN,
+        CANONICAL_ROLE_SYSTEM: CANONICAL_ROLE_SYSTEM,
+        CANONICAL_ROLE_TEAM_LEAD: CANONICAL_ROLE_TEAM_LEAD,
+        CANONICAL_ROLE_TEAM_MEMBER: CANONICAL_ROLE_TEAM_MEMBER,
+        CANONICAL_ROLE_ADMIN: CANONICAL_ROLE_ADMIN,
     }
     effective_role = get_effective_role(user)
     return legacy_map.get(effective_role, effective_role)
@@ -714,6 +684,7 @@ def _role_priority(role):
 
 
 def _dynamic_role_switch_options():
+    active_core_role_keys = {item["key"] for item in ROLE_OPTIONS}
     options_map = {
         item["key"]: {
             "key": item["key"],
@@ -742,7 +713,9 @@ def _dynamic_role_switch_options():
             ).mappings().all()
             for row in rows:
                 role_key = _normalize_role_key(row.get("key"))
-                if not role_key or role_key in legacy_role_keys:
+                if not role_key or role_key in legacy_role_keys or role_key in REMOVED_ROLE_KEYS:
+                    continue
+                if bool(row.get("is_system", False)) and role_key not in active_core_role_keys:
                     continue
                 if has_is_active and not bool(row.get("is_active", True)):
                     continue
@@ -1073,7 +1046,7 @@ def get_manageable_role_options(include_inactive=False):
 
         for role in db.session.execute(text(sql), params).mappings().all():
             role_key = str(role.get("key") or "").strip()
-            if not role_key:
+            if not role_key or role_key in REMOVED_ROLE_KEYS:
                 continue
             options.append(
                 {
@@ -1096,9 +1069,15 @@ def get_role_definition(role_key, include_custom=True, allow_legacy=True):
     requested = _normalize_role_key(role_key)
     if not requested:
         return None
-    for option in get_manageable_role_options(include_inactive=allow_legacy):
+    canonical_requested = _canonical_role(requested)
+    manageable_options = get_manageable_role_options(include_inactive=allow_legacy)
+    for option in manageable_options:
         if option["key"] == requested:
             return option
+    if canonical_requested and canonical_requested != requested:
+        for option in manageable_options:
+            if option["key"] == canonical_requested:
+                return option
     if allow_legacy:
         labels = get_role_labels()
         descriptions = get_role_descriptions()
@@ -1127,12 +1106,17 @@ def get_role_definition(role_key, include_custom=True, allow_legacy=True):
 
 def get_role_permissions(role):
     role_key = _normalize_role_key(role)
+    cache = _auth_request_cache()
+    cache_key = f"role_permissions:{role_key}"
+    if cache is not None and cache_key in cache:
+        return set(cache[cache_key])
+
     canonical = _canonical_role(role_key)
     if role_key in LEGACY_ROLE_DEFAULT_PERMISSIONS:
         granted = set(LEGACY_ROLE_DEFAULT_PERMISSIONS.get(role_key, set()))
     else:
         granted = set(DEFAULT_ROLE_PERMISSIONS.get(canonical, set()))
-    if table_exists("role") and table_exists("permission") and table_exists("role_permission"):
+    if role_key != ROLE_MAINTENANCE and table_exists("role") and table_exists("permission") and table_exists("role_permission"):
         try:
             from models import Permission, RolePermission
 
@@ -1141,7 +1125,9 @@ def get_role_permissions(role):
                 text("SELECT id FROM role WHERE key = :role_key LIMIT 1"),
                 {"role_key": role_key},
             ).scalar()
-            if db_role_id is None and canonical != role_key:
+            # Legacy alias roles keep their explicit legacy permission profile.
+            # Do not silently inherit canonical DB assignments when alias row is absent.
+            if db_role_id is None and canonical != role_key and role_key not in LEGACY_ROLE_DEFAULT_PERMISSIONS:
                 db_role_id = db.session.execute(
                     text("SELECT id FROM role WHERE key = :role_key LIMIT 1"),
                     {"role_key": canonical},
@@ -1166,17 +1152,29 @@ def get_role_permissions(role):
 
     meta = _load_authorization_meta()
     matrix = meta.get("permission_matrix", {})
-    custom = matrix.get(role_key) or matrix.get(canonical) or {}
+    if role_key == ROLE_MAINTENANCE:
+        # Legacy bakım rolü request dışı bağlamda sıfır yetki profilini korur.
+        custom = matrix.get(role_key) or {}
+    else:
+        custom = matrix.get(role_key) or matrix.get(canonical) or {}
     for item in custom.get("allow", []):
         if isinstance(item, str) and item:
             granted.add(item)
     for item in custom.get("deny", []):
         granted.discard(item)
+    if cache is not None:
+        cache[cache_key] = set(granted)
     return granted
 
 
 def get_user_permission_overrides(user):
     user_id = str(getattr(user, "id", "") or "")
+    cache = _auth_request_cache()
+    cache_key = f"user_permission_overrides:{user_id}"
+    if cache is not None and cache_key in cache:
+        cached = cache[cache_key]
+        return {"allow": set(cached["allow"]), "deny": set(cached["deny"])}
+
     if not user_id:
         return {"allow": set(), "deny": set()}
     if table_exists("user_permission_override"):
@@ -1185,10 +1183,13 @@ def get_user_permission_overrides(user):
 
             rows = UserPermissionOverride.query.filter_by(user_id=int(user_id)).all()
             if rows:
-                return {
+                result = {
                     "allow": {row.permission_key for row in rows if row.is_allowed},
                     "deny": {row.permission_key for row in rows if not row.is_allowed},
                 }
+                if cache is not None:
+                    cache[cache_key] = {"allow": set(result["allow"]), "deny": set(result["deny"])}
+                return result
         except Exception:
             _rollback_session_safely()
     meta = _load_authorization_meta()
@@ -1196,7 +1197,10 @@ def get_user_permission_overrides(user):
     raw = overrides.get(user_id, {})
     allow = {item for item in raw.get("allow", []) if isinstance(item, str) and item}
     deny = {item for item in raw.get("deny", []) if isinstance(item, str) and item}
-    return {"allow": allow, "deny": deny}
+    result = {"allow": allow, "deny": deny}
+    if cache is not None:
+        cache[cache_key] = {"allow": set(result["allow"]), "deny": set(result["deny"])}
+    return result
 
 
 def get_effective_permissions(user=None):
@@ -1205,11 +1209,26 @@ def get_effective_permissions(user=None):
         return set()
     override_role = get_session_role_override(user)
     raw_role = _normalize_role_key(getattr(user, "rol", ""))
+    cache = _auth_request_cache()
+    cache_key = f"effective_permissions:{getattr(user, 'id', '')}:{raw_role}:{override_role or ''}"
+    if cache is not None and cache_key in cache:
+        return set(cache[cache_key])
     permission_profile_role = override_role or (raw_role if raw_role in LEGACY_ROLE_DEFAULT_PERMISSIONS else get_effective_role(user))
+    # Legacy bakım rolü, request bağlamında canonical ekip üyesi davranışıyla çalışmaya devam eder.
+    if has_request_context() and not override_role and raw_role == ROLE_MAINTENANCE:
+        is_same_request_user = user is current_user
+        if not is_same_request_user:
+            user_id = getattr(user, "id", None)
+            current_id = getattr(current_user, "id", None) if getattr(current_user, "is_authenticated", False) else None
+            is_same_request_user = bool(user_id is not None and current_id is not None and user_id == current_id)
+        if is_same_request_user:
+            permission_profile_role = get_effective_role(user)
     permissions = set(get_role_permissions(permission_profile_role))
     overrides = get_user_permission_overrides(user)
     permissions.update(overrides["allow"])
     permissions.difference_update(overrides["deny"])
+    if cache is not None:
+        cache[cache_key] = set(permissions)
     return permissions
 
 
@@ -1288,6 +1307,8 @@ def has_role(role):
 
 
 def havalimani_filtreli_sorgu(model_sinifi):
+    if get_effective_role(current_user) in AIRPORT_SCOPED_ROLE_KEYS:
+        return model_sinifi.query.filter_by(havalimani_id=current_user.havalimani_id)
     if has_any_permission("settings.manage", "logs.view"):
         return model_sinifi.query
     return model_sinifi.query.filter_by(havalimani_id=current_user.havalimani_id)
@@ -1309,7 +1330,7 @@ def actor_can_view_target_user(actor, target_user):
     if not getattr(actor, "is_authenticated", False):
         return False
     actor_role = get_effective_role(actor)
-    if actor_role in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
+    if actor_role == CANONICAL_ROLE_SYSTEM:
         return True
     if not has_permission("users.manage", user=actor):
         return False
@@ -1554,6 +1575,14 @@ def sync_authorization_registry():
                     if getattr(record, "description", None) != description:
                         record.description = description
                         changed = True
+
+        for role_key in REMOVED_ROLE_KEYS:
+            record = existing_roles.get(role_key)
+            if not record:
+                continue
+            if getattr(record, "is_active", True):
+                record.is_active = False
+                changed = True
 
         existing_permissions = {item.key: item for item in Permission.query.all()}
         for definition in PERMISSION_DEFINITIONS:

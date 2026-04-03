@@ -13,11 +13,16 @@
   .ppe-user-accordion { border:1px solid var(--border); border-radius:18px; background:#fff; overflow:hidden; }
   .ppe-user-accordion summary { list-style:none; cursor:pointer; padding:16px 18px; display:flex; justify-content:space-between; gap:14px; align-items:flex-start; background:linear-gradient(180deg, rgba(248,250,252,.92) 0%, rgba(255,255,255,.98) 100%); }
   .ppe-user-accordion summary::-webkit-details-marker { display:none; }
+  .ppe-user-accordion summary::after { content:"▾"; font-size:14px; color:var(--text3); line-height:1; margin-left:auto; transition:transform .2s ease, color .2s ease; }
+  .ppe-user-accordion[open] { border-color:var(--border-dark); box-shadow:0 6px 18px rgba(15, 23, 42, .06); }
+  .ppe-user-accordion[open] summary::after { transform:rotate(180deg); color:var(--navy); }
   .ppe-user-main { min-width:0; }
   .ppe-user-title { font-size:15px; font-weight:800; color:var(--navy); }
   .ppe-user-subtitle { margin-top:5px; font-size:12px; color:var(--text3); line-height:1.5; }
   .ppe-user-metrics { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
-  .ppe-user-body { padding:16px 18px 18px; border-top:1px solid var(--border); display:grid; gap:14px; }
+  .ppe-user-body { padding:16px 18px 18px; border-top:1px solid var(--border); gap:14px; }
+  .ppe-user-accordion > .ppe-user-body { display:none; }
+  .ppe-user-accordion[open] > .ppe-user-body { display:grid; }
   .ppe-card { border:1px solid var(--border); border-radius:16px; background:#fff; overflow:hidden; }
   .ppe-card-head { padding:15px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
   .ppe-card-title { font-size:14px; font-weight:800; color:var(--navy); }
@@ -31,6 +36,26 @@
   .ppe-inline-form { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
   .ppe-create-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
   .ppe-create-grid .form-group.full { grid-column:1 / -1; }
+  .ppe-create-accordion { display:grid; gap:12px; }
+  .ppe-create-item { border:1px solid var(--border); border-radius:16px; background:#fff; overflow:hidden; }
+  .ppe-create-item summary { list-style:none; cursor:pointer; padding:15px 16px; display:flex; justify-content:space-between; align-items:flex-start; gap:10px; background:linear-gradient(180deg, rgba(248,250,252,.95) 0%, rgba(255,255,255,1) 100%); }
+  .ppe-create-item summary::-webkit-details-marker { display:none; }
+  .ppe-create-title { font-size:14px; font-weight:800; color:var(--navy); }
+  .ppe-create-subtitle { margin-top:4px; font-size:12px; color:var(--text3); line-height:1.45; }
+  .ppe-create-body { border-top:1px solid var(--border); padding:14px 16px 16px; display:grid; gap:14px; }
+  .ppe-assignment-selection { display:grid; gap:10px; max-height:320px; overflow:auto; padding-right:2px; }
+  .ppe-assignment-card { border:1px solid var(--border); border-radius:14px; padding:12px; background:#fff; display:flex; gap:10px; align-items:flex-start; }
+  .ppe-assignment-card input[type="checkbox"] { margin-top:3px; accent-color:var(--orange); }
+  .ppe-assignment-main { min-width:0; width:100%; display:grid; gap:8px; }
+  .ppe-assignment-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; flex-wrap:wrap; }
+  .ppe-assignment-name { font-size:13px; font-weight:800; color:var(--navy); line-height:1.4; }
+  .ppe-assignment-meta { font-size:11.5px; color:var(--text3); line-height:1.45; }
+  .ppe-assignment-inline { display:grid; grid-template-columns:minmax(0, 1fr) 92px 88px; gap:8px; }
+  .ppe-assignment-inline .form-control { margin-bottom:0; }
+  .ppe-assignment-empty { padding:18px; border:1px dashed var(--border-dark); border-radius:14px; background:var(--surface2); color:var(--text3); text-align:center; line-height:1.5; }
+  .ppe-recent-list { display:grid; gap:10px; }
+  .ppe-recent-item { border:1px solid var(--border); border-radius:14px; padding:12px; background:#fff; display:grid; gap:6px; }
+  .ppe-recent-meta { font-size:11.5px; color:var(--text3); line-height:1.45; }
   .ppe-empty { padding:22px; border:1px dashed var(--border-dark); border-radius:16px; text-align:center; color:var(--text3); background:linear-gradient(180deg, rgba(248,250,252,.92) 0%, rgba(255,255,255,.98) 100%); }
   .ppe-empty strong { display:block; color:var(--navy); margin-bottom:6px; }
   .ppe-import-table { width:100%; min-width:0; border-collapse:collapse; }
@@ -49,7 +74,8 @@
   }
   @media (max-width: 760px) {
     .ppe-create-grid,
-    .ppe-meta-grid { grid-template-columns:1fr; }
+    .ppe-meta-grid,
+    .ppe-assignment-inline { grid-template-columns:1fr; }
     .ppe-filter-actions { flex-direction:column; }
     .ppe-filter-actions .btn { width:100%; }
     .ppe-user-accordion summary { flex-direction:column; }
@@ -169,7 +195,7 @@
             <div class="ppe-card-list">
                 {% if grouped_records %}
                     {% for group in grouped_records %}
-                    <details class="ppe-user-accordion" {% if group.open %}open{% endif %}>
+                    <details class="ppe-user-accordion" data-user-id="{{ group.user.id if group.user.id is defined else '' }}">
                         <summary>
                             <div class="ppe-user-main">
                                 <div class="ppe-user-title">{{ group.user.tam_ad }}</div>
@@ -185,7 +211,7 @@
                                 {% endif %}
                             </div>
                         </summary>
-                        <div class="ppe-user-body">
+                        <div class="ppe-user-body" data-ppe-user-body hidden>
                             {% if group.records %}
                                 {% for record in group.records %}
                                 {% set alert = ppe_alert_state(record) %}
@@ -232,7 +258,7 @@
                                             </div>
                                             <div class="ppe-meta-item">
                                                 <div class="ppe-meta-label">Bağlı Zimmet</div>
-                                                <div class="ppe-meta-value">{% if record.assignment %}{{ record.assignment.assignment_no }}{% else %}-{% endif %}</div>
+                                                <div class="ppe-meta-value">{% if record.ppe_assignment %}{{ record.ppe_assignment.assignment_no }}{% else %}-{% endif %}</div>
                                             </div>
                                         </div>
                                         <div class="ppe-actions">
@@ -315,125 +341,264 @@
         <div class="panel">
             <div class="panel-header">
                 <div>
-                    <div class="panel-title">Yeni KKD Tahsisi</div>
-                    <div class="panel-subtitle">Ayrı KKD havuzuna kayıt açın; gerekiyorsa aktif zimmete bağlayın.</div>
+                    <div class="panel-title">KKD İşlemleri</div>
+                    <div class="panel-subtitle">KKD havuzuna ekleme ve personele tahsis akışları ayrı panellerde yönetilir.</div>
                 </div>
             </div>
             <div class="panel-body">
-                <form method="POST" action="{{ url_for('inventory.kkd_listesi', airport_id=selected_airport or None, user_id=selected_user or None) }}" enctype="multipart/form-data" id="ppeCreateForm">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <div class="ppe-create-grid">
-                        <div class="form-group full">
-                            <label>Personel</label>
-                            <select name="user_id" class="form-control" required>
-                                <option value="">Personel seçin</option>
-                                {% for user in visible_users %}
-                                <option value="{{ user.id }}" {% if selected_user == user.id %}selected{% endif %}>{{ user.tam_ad }}</option>
-                                {% endfor %}
-                            </select>
+                <div class="ppe-create-accordion">
+                    <details class="ppe-create-item">
+                        <summary>
+                            <div>
+                                <div class="ppe-create-title">Yeni KKD Ekle</div>
+                                <div class="ppe-create-subtitle">KKD havuzuna yeni donanım kaydı açın. Bu panel personel tahsisi yapmaz.</div>
+                            </div>
+                            <span class="status-pill status-aktif">Havuz Kaydı</span>
+                        </summary>
+                        <div class="ppe-create-body">
+                            <form method="POST" action="{{ url_for('inventory.kkd_listesi', airport_id=selected_airport or None, user_id=selected_user or None) }}" enctype="multipart/form-data" id="ppeCreateForm">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="airport_id" value="{{ selected_airport or '' }}">
+                                <div class="ppe-create-grid">
+                                    <div class="form-group">
+                                        <label>Kategori</label>
+                                        <select name="category" class="form-control" id="ppeCategorySelect" required>
+                                            <option value="">Kategori seçin</option>
+                                            {% for category in ppe_categories.keys() %}
+                                            <option value="{{ category }}">{{ category }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Alt Tür</label>
+                                        <select name="subcategory" class="form-control" id="ppeSubtypeSelect" required>
+                                            <option value="">Önce kategori seçin</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group full">
+                                        <label>Donanım Adı</label>
+                                        <input type="text" name="item_name" class="form-control" maxlength="160" placeholder="Örn. Operasyon Baret Seti" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Marka</label>
+                                        <input type="text" name="brand" class="form-control" maxlength="120">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Model</label>
+                                        <input type="text" name="model_name" class="form-control" maxlength="120">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Seri Numarası</label>
+                                        <input type="text" name="serial_no" class="form-control" maxlength="120">
+                                    </div>
+                                    <div class="form-group" id="ppeApparelSizeGroup">
+                                        <label>Beden</label>
+                                        <select name="apparel_size" class="form-control" id="ppeApparelSizeSelect">
+                                            <option value="">Beden seçin</option>
+                                            {% for size in ppe_apparel_sizes %}
+                                            <option value="{{ size }}">{{ size }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="form-group" id="ppeShoeSizeGroup">
+                                        <label>Ayakkabı Numarası</label>
+                                        <select name="shoe_size" class="form-control" id="ppeShoeSizeSelect">
+                                            <option value="">Numara seçin</option>
+                                            {% for size in ppe_shoe_sizes %}
+                                            <option value="{{ size }}">{{ size }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Teslim Tarihi</label>
+                                        <input type="date" name="delivered_at" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Üretim Tarihi</label>
+                                        <input type="date" name="production_date" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Son Kullanma Tarihi / Raf Ömrü</label>
+                                        <input type="date" name="expiry_date" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Miktar</label>
+                                        <input type="number" name="quantity" class="form-control" min="1" value="1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Fiziksel Durum</label>
+                                        <select name="physical_condition" class="form-control">
+                                            {% for key, label in ppe_condition_labels.items() %}
+                                            <option value="{{ key }}">{{ label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Aktif / Pasif</label>
+                                        <select name="is_active" class="form-control">
+                                            <option value="1">Aktif</option>
+                                            <option value="0">Pasif</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group full">
+                                        <label>Üretici Sayfası Linki</label>
+                                        <input type="url" name="manufacturer_url" class="form-control" inputmode="url" placeholder="https://...">
+                                    </div>
+                                    <div class="form-group full">
+                                        <label>Bağlı Aktif Zimmet (Opsiyonel)</label>
+                                        <select name="ppe_assignment_id" class="form-control">
+                                            <option value="">Bağlantı yok</option>
+                                            {% for assignment in active_ppe_assignments %}
+                                            <option value="{{ assignment.id }}">
+                                                {{ assignment.assignment_no }} •
+                                                {{ assignment.recipient_user.tam_ad if assignment.recipient_user else '-' }} •
+                                                {{ assignment.assignment_date.strftime('%d.%m.%Y') if assignment.assignment_date else '-' }}
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="form-group full">
+                                        <label>Belge / Fotoğraf (Opsiyonel)</label>
+                                        <input type="file" name="photo_document" class="form-control" accept="application/pdf,image/*">
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary">KKD Kaydını Ekle</button>
+                            </form>
                         </div>
-                        <div class="form-group">
-                            <label>Kategori</label>
-                            <select name="category" class="form-control" id="ppeCategorySelect" required>
-                                <option value="">Kategori seçin</option>
-                                {% for category in ppe_categories.keys() %}
-                                <option value="{{ category }}">{{ category }}</option>
-                                {% endfor %}
-                            </select>
+                    </details>
+
+                    <details class="ppe-create-item">
+                        <summary>
+                            <div>
+                                <div class="ppe-create-title">Yeni KKD Tahsisi</div>
+                                <div class="ppe-create-subtitle">Aktif KKD havuz kayıtlarından seçim yaparak personele teslim kaydı oluşturun.</div>
+                            </div>
+                            <span class="status-pill status-bakim">Tahsis Formu</span>
+                        </summary>
+                        <div class="ppe-create-body">
+                            {% if can_create_ppe_assignment %}
+                            <form method="POST" action="{{ url_for('inventory.kkd_tahsis_olustur') }}" id="ppeAssignmentForm">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="airport_id" value="{{ selected_airport or '' }}">
+                                <div class="ppe-create-grid">
+                                    <div class="form-group">
+                                        <label>Teslim Tarihi</label>
+                                        <input type="date" name="assignment_date" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Teslim Eden</label>
+                                        <input type="text" name="delivered_by_name" class="form-control" value="{{ current_user.tam_ad }}" placeholder="Teslim eden adı soyadı" required>
+                                    </div>
+                                    <div class="form-group full">
+                                        <label>Teslim Alan Personel</label>
+                                        <select name="recipient_user_id" class="form-control" required>
+                                            <option value="">Personel seçin</option>
+                                            {% for user in assignment_recipients %}
+                                            <option value="{{ user.id }}">{{ user.tam_ad }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="form-group full">
+                                        <label>Aktif KKD Kayıtları</label>
+                                        {% if available_ppe_records %}
+                                        <div class="ppe-assignment-selection">
+                                            {% for item in available_ppe_records %}
+                                            {% set record = item.record %}
+                                            <label class="ppe-assignment-card">
+                                                <input type="checkbox" name="ppe_record_ids" value="{{ record.id }}">
+                                                <div class="ppe-assignment-main">
+                                                    <div class="ppe-assignment-head">
+                                                        <div class="ppe-assignment-name">{{ record.item_name }}</div>
+                                                        <span class="status-pill status-aktif">Uygun {{ item.available_quantity }}</span>
+                                                    </div>
+                                                    <div class="ppe-assignment-meta">
+                                                        {{ record.category or '-' }} • {{ record.subcategory or '-' }} • {{ record.airport.ad if record.airport else '-' }}
+                                                        {% if record.serial_no %} • SN: {{ record.serial_no }}{% endif %}
+                                                    </div>
+                                                    <div class="ppe-assignment-inline">
+                                                        <input type="text" class="form-control" name="ppe_note_{{ record.id }}" placeholder="Kalem notu (opsiyonel)">
+                                                        <input type="number" class="form-control" name="ppe_qty_{{ record.id }}" min="0.01" step="0.01" value="1">
+                                                        <input type="text" class="form-control" name="ppe_unit_{{ record.id }}" value="adet">
+                                                    </div>
+                                                </div>
+                                            </label>
+                                            {% endfor %}
+                                        </div>
+                                        {% else %}
+                                        <div class="ppe-assignment-empty">
+                                            Tahsis için uygun aktif KKD kaydı bulunmuyor.
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="form-group full">
+                                        <label>Açıklama / Not</label>
+                                        <textarea name="note" class="form-control" style="height:90px;" placeholder="Teslim açıklaması, vardiya notu veya kullanım şartları"></textarea>
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary">KKD Tahsisini Oluştur</button>
+                            </form>
+                            {% else %}
+                            <div class="ppe-assignment-empty">
+                                KKD tahsisi yalnızca <strong>sistem sorumlusu</strong> ve <strong>ekip sorumlusu</strong> rolüyle oluşturulabilir.
+                            </div>
+                            {% endif %}
                         </div>
-                        <div class="form-group">
-                            <label>Alt Tür</label>
-                            <select name="subcategory" class="form-control" id="ppeSubtypeSelect" required>
-                                <option value="">Önce kategori seçin</option>
-                            </select>
-                        </div>
-                        <div class="form-group full">
-                            <label>Donanım Adı</label>
-                            <input type="text" name="item_name" class="form-control" maxlength="160" placeholder="Örn. Operasyon Baret Seti" required>
-                        </div>
-                        <div class="form-group">
-                            <label>Marka</label>
-                            <input type="text" name="brand" class="form-control" maxlength="120">
-                        </div>
-                        <div class="form-group">
-                            <label>Model</label>
-                            <input type="text" name="model_name" class="form-control" maxlength="120">
-                        </div>
-                        <div class="form-group">
-                            <label>Seri Numarası</label>
-                            <input type="text" name="serial_no" class="form-control" maxlength="120">
-                        </div>
-                        <div class="form-group" id="ppeApparelSizeGroup">
-                            <label>Beden</label>
-                            <select name="apparel_size" class="form-control" id="ppeApparelSizeSelect">
-                                <option value="">Beden seçin</option>
-                                {% for size in ppe_apparel_sizes %}
-                                <option value="{{ size }}">{{ size }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="form-group" id="ppeShoeSizeGroup">
-                            <label>Ayakkabı Numarası</label>
-                            <select name="shoe_size" class="form-control" id="ppeShoeSizeSelect">
-                                <option value="">Numara seçin</option>
-                                {% for size in ppe_shoe_sizes %}
-                                <option value="{{ size }}">{{ size }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Teslim Tarihi</label>
-                            <input type="date" name="delivered_at" class="form-control">
-                        </div>
-                        <div class="form-group">
-                            <label>Üretim Tarihi</label>
-                            <input type="date" name="production_date" class="form-control">
-                        </div>
-                        <div class="form-group">
-                            <label>Son Kullanma Tarihi / Raf Ömrü</label>
-                            <input type="date" name="expiry_date" class="form-control">
-                        </div>
-                        <div class="form-group">
-                            <label>Miktar</label>
-                            <input type="number" name="quantity" class="form-control" min="1" value="1">
-                        </div>
-                        <div class="form-group">
-                            <label>Fiziksel Durum</label>
-                            <select name="physical_condition" class="form-control">
-                                {% for key, label in ppe_condition_labels.items() %}
-                                <option value="{{ key }}">{{ label }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Aktif / Pasif</label>
-                            <select name="is_active" class="form-control">
-                                <option value="1">Aktif</option>
-                                <option value="0">Pasif</option>
-                            </select>
-                        </div>
-                        <div class="form-group full">
-                            <label>Üretici Sayfası Linki</label>
-                            <input type="url" name="manufacturer_url" class="form-control" inputmode="url" placeholder="https://...">
-                        </div>
-                        <div class="form-group full">
-                            <label>Bağlı Aktif Zimmet (Opsiyonel)</label>
-                            <select name="assignment_id" class="form-control">
-                                <option value="">Bağlantı yok</option>
-                                {% for assignment in active_assignments %}
-                                <option value="{{ assignment.id }}">{{ assignment.assignment_no }} • {{ assignment.assignment_date.strftime('%d.%m.%Y') if assignment.assignment_date else '-' }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="form-group full">
-                            <label>Belge / Fotoğraf (Opsiyonel)</label>
-                            <input type="file" name="photo_document" class="form-control" accept="application/pdf,image/*">
-                        </div>
-                    </div>
-                    <button type="submit" class="btn btn-primary">KKD Tahsisini Kaydet</button>
-                </form>
+                    </details>
+                </div>
             </div>
         </div>
+
+        {% if ppe_assignments %}
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <div class="panel-title">Son KKD Tahsisleri</div>
+                    <div class="panel-subtitle">Oluşturulan son tahsis kayıtları ve PDF erişimi.</div>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="ppe-recent-list">
+                    {% for assignment in ppe_assignments %}
+                    <div class="ppe-recent-item">
+                        <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start; flex-wrap:wrap;">
+                            <div>
+                                <div style="font-weight:800; color:var(--navy);">{{ assignment.assignment_no }}</div>
+                                <div class="ppe-recent-meta">
+                                    {{ assignment.assignment_date.strftime('%d.%m.%Y') if assignment.assignment_date else '-' }}
+                                    • {{ assignment.airport.ad if assignment.airport else '-' }}
+                                </div>
+                                <div class="ppe-recent-meta">
+                                    Teslim Alan: {{ ppe_assignment_display_name(assignment.recipient_user.tam_ad if assignment.recipient_user else '-') }}
+                                    • Teslim Eden: {{ ppe_assignment_display_name(assignment.delivered_by_name) }}
+                                </div>
+                            </div>
+                            <span class="status-pill {% if assignment.status == 'active' %}status-aktif{% else %}status-pasif{% endif %}">
+                                {{ ppe_assignment_status_label(assignment.status) }}
+                            </span>
+                        </div>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                            <a href="{{ url_for('inventory.kkd_tahsis_detay', assignment_id=assignment.id) }}" class="row-btn">Detay</a>
+                            <a href="{{ url_for('inventory.kkd_tahsis_pdf', assignment_id=assignment.id) }}" class="row-btn">PDF</a>
+                            {% if can_create_ppe_assignment and assignment.status == 'active' %}
+                            <form method="POST" action="{{ url_for('inventory.kkd_tahsis_iade', assignment_id=assignment.id) }}" style="display:inline-flex;" onsubmit="return confirm('Bu KKD tahsisi iade olarak kaydedilecek. Devam edilsin mi?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="return_note" value="">
+                                <button type="submit" class="row-btn">İade Al</button>
+                            </form>
+                            {% endif %}
+                            {% if can_create_ppe_assignment and assignment.status != 'active' %}
+                            <form method="POST" action="{{ url_for('inventory.kkd_tahsis_sil', assignment_id=assignment.id) }}" style="display:inline-flex;" onsubmit="return confirm('Bu KKD tahsis kaydı arşive taşınacak. Devam edilsin mi?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="row-btn">Sil</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
         {% endif %}
     </div>
 </div>
@@ -442,63 +607,204 @@
 {% block extra_js %}
 <script>
 (function () {
-    const catalog = {{ ppe_catalog_json|safe }};
-    const categorySelect = document.getElementById('ppeCategorySelect');
-    const subtypeSelect = document.getElementById('ppeSubtypeSelect');
-    const apparelGroup = document.getElementById('ppeApparelSizeGroup');
-    const apparelSelect = document.getElementById('ppeApparelSizeSelect');
-    const shoeGroup = document.getElementById('ppeShoeSizeGroup');
-    const shoeSelect = document.getElementById('ppeShoeSizeSelect');
-    if (!categorySelect || !subtypeSelect) {
-        return;
+  const getUserAccordionBody = function (item) {
+    return item.querySelector('[data-ppe-user-body]');
+  };
+
+  const syncUserAccordionBody = function (item, shouldOpen) {
+    const body = getUserAccordionBody(item);
+    if (!body) {
+      return;
+    }
+    body.hidden = !shouldOpen;
+    body.style.display = shouldOpen ? 'grid' : 'none';
+  };
+
+  const closeUserAccordion = function (item) {
+    item.removeAttribute('open');
+    item.open = false;
+    item.classList.remove('is-open');
+    syncUserAccordionBody(item, false);
+  };
+
+  const initUserAccordions = function () {
+    const userAccordions = Array.from(document.querySelectorAll('.ppe-user-accordion'));
+    if (!userAccordions.length) {
+      return;
     }
 
+    userAccordions.forEach(closeUserAccordion);
+
+    const isInteractiveTarget = function (target) {
+      return Boolean(target && target.closest('a, button, input, select, textarea, label'));
+    };
+
+    let isManagedToggle = false;
+    const setUserAccordionState = function (item, shouldOpen) {
+      isManagedToggle = true;
+      if (shouldOpen) {
+        item.setAttribute('open', 'open');
+        item.open = true;
+        syncUserAccordionBody(item, true);
+      } else {
+        closeUserAccordion(item);
+      }
+      item.classList.toggle('is-open', shouldOpen);
+      isManagedToggle = false;
+    };
+
+    const toggleUserAccordion = function (item) {
+      const shouldOpen = !item.open;
+      userAccordions.forEach(function (other) {
+        setUserAccordionState(other, false);
+      });
+      if (shouldOpen) {
+        setUserAccordionState(item, true);
+      }
+    };
+
+    userAccordions.forEach(function (item) {
+      const summary = item.querySelector('summary');
+      if (!summary) {
+        return;
+      }
+      if (summary.dataset.ppeAccordionBound === '1') {
+        return;
+      }
+      summary.dataset.ppeAccordionBound = '1';
+
+      summary.addEventListener('click', function (event) {
+        if (isInteractiveTarget(event.target)) {
+          event.stopPropagation();
+          return;
+        }
+        event.preventDefault();
+        toggleUserAccordion(item);
+      });
+      summary.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+          return;
+        }
+        event.preventDefault();
+        toggleUserAccordion(item);
+      });
+
+      item.addEventListener('toggle', function () {
+        if (isManagedToggle) {
+          return;
+        }
+        if (!item.open) {
+          closeUserAccordion(item);
+          return;
+        }
+        syncUserAccordionBody(item, true);
+        userAccordions.forEach(function (other) {
+          if (other !== item) {
+            closeUserAccordion(other);
+          }
+        });
+      });
+    });
+  };
+
+  initUserAccordions();
+  window.addEventListener('pageshow', initUserAccordions);
+
+  const initCreateAccordions = function () {
+    const createAccordions = Array.from(document.querySelectorAll('.ppe-create-item'));
+    createAccordions.forEach(function (item) {
+      item.removeAttribute('open');
+      item.open = false;
+    });
+  };
+
+  initCreateAccordions();
+  window.addEventListener('pageshow', initCreateAccordions);
+
+  const catalog = {{ ppe_catalog_json|safe }};
+  const categorySelect = document.getElementById('ppeCategorySelect');
+  const subtypeSelect = document.getElementById('ppeSubtypeSelect');
+  const apparelGroup = document.getElementById('ppeApparelSizeGroup');
+  const apparelSelect = document.getElementById('ppeApparelSizeSelect');
+  const shoeGroup = document.getElementById('ppeShoeSizeGroup');
+  const shoeSelect = document.getElementById('ppeShoeSizeSelect');
+
+  if (categorySelect && subtypeSelect && apparelGroup && apparelSelect && shoeGroup && shoeSelect) {
     const apparelCategories = new Set(['Vücut Koruması', 'El Koruması']);
     const shoeCategories = new Set(['Ayak Koruması']);
 
     const syncSubtypeOptions = function () {
-        const category = categorySelect.value || '';
-        const currentSubtype = subtypeSelect.value || '';
-        const options = catalog[category] || [];
-        subtypeSelect.innerHTML = '';
-        const placeholder = document.createElement('option');
-        placeholder.value = '';
-        placeholder.textContent = category ? 'Alt tür seçin' : 'Önce kategori seçin';
-        subtypeSelect.appendChild(placeholder);
-        options.forEach(function (item) {
-            const option = document.createElement('option');
-            option.value = item;
-            option.textContent = item;
-            if (item === currentSubtype) {
-                option.selected = true;
-            }
-            subtypeSelect.appendChild(option);
-        });
-        if (!options.includes(currentSubtype)) {
-            subtypeSelect.value = '';
+      const category = categorySelect.value || '';
+      const currentSubtype = subtypeSelect.value || '';
+      const options = catalog[category] || [];
+      subtypeSelect.innerHTML = '';
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = category ? 'Alt tür seçin' : 'Önce kategori seçin';
+      subtypeSelect.appendChild(placeholder);
+      options.forEach(function (item) {
+        const option = document.createElement('option');
+        option.value = item;
+        option.textContent = item;
+        if (item === currentSubtype) {
+          option.selected = true;
         }
-        syncSizeFields();
+        subtypeSelect.appendChild(option);
+      });
+      if (!options.includes(currentSubtype)) {
+        subtypeSelect.value = '';
+      }
+      syncSizeFields();
     };
 
     const syncSizeFields = function () {
-        const category = categorySelect.value || '';
-        const requiresApparel = apparelCategories.has(category);
-        const requiresShoe = shoeCategories.has(category);
-        apparelGroup.classList.toggle('ppe-hidden', !requiresApparel);
-        shoeGroup.classList.toggle('ppe-hidden', !requiresShoe);
-        apparelSelect.disabled = !requiresApparel;
-        shoeSelect.disabled = !requiresShoe;
-        if (!requiresApparel) {
-            apparelSelect.value = '';
-        }
-        if (!requiresShoe) {
-            shoeSelect.value = '';
-        }
+      const category = categorySelect.value || '';
+      const requiresApparel = apparelCategories.has(category);
+      const requiresShoe = shoeCategories.has(category);
+      apparelGroup.classList.toggle('ppe-hidden', !requiresApparel);
+      shoeGroup.classList.toggle('ppe-hidden', !requiresShoe);
+      apparelSelect.disabled = !requiresApparel;
+      shoeSelect.disabled = !requiresShoe;
+      if (!requiresApparel) {
+        apparelSelect.value = '';
+      }
+      if (!requiresShoe) {
+        shoeSelect.value = '';
+      }
     };
 
     categorySelect.addEventListener('change', syncSubtypeOptions);
     subtypeSelect.addEventListener('change', syncSizeFields);
     syncSubtypeOptions();
+  }
+
+  const assignmentForm = document.getElementById('ppeAssignmentForm');
+  if (assignmentForm) {
+    const cards = Array.from(assignmentForm.querySelectorAll('.ppe-assignment-card'));
+    cards.forEach(function (card) {
+      const checkbox = card.querySelector('input[type="checkbox"][name="ppe_record_ids"]');
+      const qty = card.querySelector('input[name^="ppe_qty_"]');
+      const unit = card.querySelector('input[name^="ppe_unit_"]');
+      const note = card.querySelector('input[name^="ppe_note_"]');
+      if (!checkbox || !qty || !unit || !note) {
+        return;
+      }
+      const sync = function () {
+        const active = checkbox.checked;
+        qty.disabled = !active;
+        unit.disabled = !active;
+        note.disabled = !active;
+      };
+      checkbox.addEventListener('change', sync);
+      qty.addEventListener('focus', function () {
+        if (!checkbox.checked) {
+          checkbox.checked = true;
+          sync();
+        }
+      });
+      sync();
+    });
+  }
 })();
 </script>
 {% endblock %}

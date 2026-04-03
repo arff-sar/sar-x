@@ -61,6 +61,35 @@ def test_ready_endpoint_reports_missing_seed_record(client, monkeypatch):
     assert payload["seed_ready"] is False
 
 
+def test_ready_endpoint_reports_migration_mismatch_in_production(client, app, monkeypatch):
+    import app as app_module
+
+    app.config["ENV"] = "production"
+
+    monkeypatch.setattr(
+        app_module,
+        "_production_release_readiness_state",
+        lambda _app: {
+            "missing_tables": [],
+            "missing_columns": [],
+            "seed_ready": True,
+            "migration_status": "behind",
+            "expected_heads": ["head-expected"],
+            "current_versions": ["head-current"],
+        },
+    )
+
+    response = client.get("/ready")
+    payload = response.get_json()
+
+    assert response.status_code == 503
+    assert payload["status"] == "degraded"
+    assert payload["database"] == "schema_incomplete"
+    assert payload["migration_status"] == "behind"
+    assert payload["migration_expected_heads"] == ["head-expected"]
+    assert payload["migration_current_versions"] == ["head-current"]
+
+
 def test_anonymous_user_cannot_access_admin_management(client):
     response = client.get("/kullanicilar")
     assert response.status_code in [302, 403]

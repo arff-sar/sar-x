@@ -300,6 +300,15 @@
                 </svg>
                 Geri Git
             </button>
+            {% if current_user.is_authenticated and error_code %}
+            <form method="POST" action="{{ url_for('auth.hata_bildir') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="error_code" value="{{ error_code }}">
+                <input type="hidden" name="request_id" value="{{ request_id or '' }}">
+                <input type="hidden" name="path" value="{{ error_report_path or request.path }}">
+                <button type="submit" class="btn btn-secondary">Sistem yöneticisine bildir</button>
+            </form>
+            {% endif %}
         </div>
 
     </div>

@@ -44,13 +44,13 @@ Zorunlu:
 - `PUBLIC_BASE_URL`
 - `MAIL_USERNAME`
 - `MAIL_FROM_EMAIL`
+- `RATELIMIT_STORAGE_URI` (production’da `memory://` olamaz; merkezi backend olmalıdır, örn: `redis://...`)
 
 Opsiyonel ama önerilen:
 - `GCS_PROJECT_ID`
 - `GCS_UPLOAD_PREFIX`
 - `GCS_PUBLIC_BASE_URL`
 - `GCS_CACHE_CONTROL`
-- `REDIS_URL`
 - `MAIL_HOST`
 - `MAIL_PORT`
 - `MAIL_USE_TLS`
@@ -129,7 +129,7 @@ gh variable set SMTP_PASSWORD_SECRET_VERSION --repo arff-sar/sar-x --env product
 - `roles/cloudsql.client`
 - `roles/storage.objectAdmin` veya daha dar uygun storage rolü
 
-Redis kullanılıyorsa ilgili ağ / erişim yetkileri ayrıca verilmelidir.
+Rate-limit backend olarak Redis/Memorystore kullanılıyorsa ilgili ağ (VPC connector vb.) ve erişim yetkileri ayrıca doğrulanmalıdır.
 
 ## 6) Workflow Akışı
 Deploy workflow:
@@ -143,15 +143,16 @@ Akış sırası:
 3. Secret Manager payload’ları (SECRET_KEY, DATABASE_URL, SMTP_PASSWORD) erişilebilirlik ve format açısından doğrulanır
    - boş payload kontrolü
    - `DATABASE_URL` için beklenen kullanıcı, beklenen db adı, unix socket host ve placeholder kontrolü
-4. image Cloud Build ile Artifact Registry’ye build edilir
-5. build edilen image ile Cloud Run Job üzerinden migration (`flask --app app:create_app db upgrade`) çalıştırılır
-6. Cloud Run service manifesti repo içindeki şablondan üretilir
-7. `gcloud run services replace` ile service tam konfigürasyonla güncellenir
-8. deploy sonrası env/secrets/cloudsql bağlantısı ve secret ad+sürüm eşleşmesi doğrulanır
-9. aktif revision `Ready=True` doğrulanır
-10. runtime `/health`, `/ready` ve `/login` endpoint’leri doğrulanır
-11. `/login` için challenge token rotasyonu smoke-check yapılır (ardışık iki GET isteğinde token farklı olmalı)
-12. yalnızca deploy edilen revision loglarında kritik kalıplar taranır (`Güçlü bir SECRET_KEY zorunludur`, `Worker failed to boot`, `password authentication failed`, `OperationalError`, `RuntimeError`)
+4. `RATELIMIT_STORAGE_URI` değeri doğrulanır (`memory://` kabul edilmez)
+5. image Cloud Build ile Artifact Registry’ye build edilir
+6. build edilen image ile Cloud Run Job üzerinden migration (`flask --app app:create_app db upgrade`) çalıştırılır
+7. Cloud Run service manifesti repo içindeki şablondan üretilir
+8. `gcloud run services replace` ile service tam konfigürasyonla güncellenir
+9. deploy sonrası env/secrets/cloudsql bağlantısı ve secret ad+sürüm eşleşmesi doğrulanır
+10. aktif revision `Ready=True` doğrulanır
+11. runtime `/health`, `/ready` ve `/login` endpoint’leri doğrulanır
+12. `/login` için challenge token rotasyonu smoke-check yapılır (ardışık iki GET isteğinde token farklı olmalı)
+13. yalnızca deploy edilen revision loglarında kritik kalıplar taranır (`Güçlü bir SECRET_KEY zorunludur`, `Worker failed to boot`, `password authentication failed`, `OperationalError`, `RuntimeError`)
 
 ## 7) Migration
 Production’da `db.create_all()` kapalı kalmalıdır.
@@ -287,3 +288,31 @@ if grep -Ein "Güçlü bir SECRET_KEY zorunludur|Worker failed to boot|password 
   exit 1
 fi
 ```
+
+## 13) Kısa Go-Live Preflight
+Deploy öncesi repo içinde en az şu kontrolleri çalıştırın:
+
+1. Zorunlu env + yasak tracked dosya kontrolü
+```bash
+python scripts/deploy_preflight.py --env production
+```
+
+2. Referanssız medya dry-run raporu (silme yapmaz)
+```bash
+python scripts/media_audit.py --env development --json-out docs/reports/media-audit.json
+```
+
+3. Migration head doğrulama
+```bash
+flask --app app:create_app db heads
+flask --app app:create_app db current
+```
+
+4. Deploy smoke
+```bash
+pytest -q tests/test_auth.py tests/test_security_headers.py tests/test_config_production.py tests/test_inventory.py tests/test_notifications.py tests/test_drill_documents.py tests/test_public_homepage_render.py tests/test_admin_settings.py tests/test_homepage_content.py tests/test_homepage_publish_workflow.py
+```
+
+5. Rollback önkoşulu
+- Son başarılı Cloud Run revision adı ve image digest deploy başlamadan not alınmalı.
+- Rollback komutu için ilgili revision trafiği geri alacak yetki/komut erişimi hazır olmalı.

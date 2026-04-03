@@ -102,7 +102,7 @@
                         <select name="durum" class="form-control">
                             <option value="">Tümü</option>
                             {% for status in statuses %}
-                            <option value="{{ status }}" {% if selected_status == status %}selected{% endif %}>{{ tr_upper(status|replace('_',' ')) }}</option>
+                            <option value="{{ status }}" {% if selected_status == status %}selected{% endif %}>{{ status_label(status) }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -168,7 +168,7 @@
                     <td>{{ order.asset.equipment_template.name if order.asset and order.asset.equipment_template else '-' }}</td>
                     <td>{{ tr_upper(order.maintenance_type|replace('_',' ')) }}</td>
                     <td>{{ work_order_type_labels.get(order.work_order_type, order.work_order_type|replace('_',' ')) }}</td>
-                    <td>{{ tr_upper(status_label(order.status)) }}</td>
+                    <td>{{ status_label(order.status) }}</td>
                     <td>{{ tr_upper(order.priority) }}</td>
                     <td>{{ order.target_date.strftime('%d.%m.%Y') if order.target_date else '-' }}</td>
                     <td>{{ order.assigned_user.tam_ad if order.assigned_user else '-' }}</td>

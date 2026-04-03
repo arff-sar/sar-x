@@ -1,6 +1,9 @@
 import io
+import json
+import re
 from datetime import datetime
 from types import SimpleNamespace
+from urllib.parse import urlsplit
 
 import pandas as pd
 from flask import abort, current_app, flash, redirect, render_template, request, send_file, url_for
@@ -10,8 +13,8 @@ from sqlalchemy.orm import joinedload
 
 from decorators import permission_required
 from error_handling import get_error_spec, mask_sensitive_text
-from extensions import TR_TZ, column_exists, db, log_kaydet
-from models import IslemLog, Kullanici
+from extensions import TR_TZ, column_exists, db, log_kaydet, table_exists
+from models import ErrorReport, IslemLog, IslemLogArchive, Kullanici
 from . import admin_bp
 
 
@@ -28,6 +31,8 @@ ERROR_EXPORT_COLUMNS = [
     "Sayfa",
     "Request ID",
 ]
+DEFAULT_ERROR_CODE = "SAR-X-SYSTEM-5101"
+ERROR_CODE_RE = re.compile(r"^SAR-X-([A-Z0-9_]+)-(\d{4})$")
 
 EVENT_TYPE_LABELS = {
     "Giriş": "Giriş",
@@ -170,6 +175,74 @@ def _sentence(text, fallback=""):
     return value
 
 
+def _clean_error_code(value):
+    return str(value or "").strip().upper()
+
+
+def _extract_error_module_from_code(error_code):
+    match = ERROR_CODE_RE.match(_clean_error_code(error_code))
+    if not match:
+        return ""
+    return str(match.group(1) or "").strip().upper()
+
+
+def _resolve_error_identity(log):
+    raw_code = _clean_error_code(getattr(log, "error_code", None))
+    spec = get_error_spec(raw_code or DEFAULT_ERROR_CODE)
+    resolved_code = raw_code or _clean_error_code(spec.error_code) or DEFAULT_ERROR_CODE
+    is_fallback = bool(raw_code) and resolved_code != _clean_error_code(spec.error_code)
+
+    module = str(getattr(log, "module", None) or "").strip().upper()
+    if not module:
+        module = _extract_error_module_from_code(resolved_code) or str(spec.module or "SYSTEM").strip().upper() or "SYSTEM"
+
+    severity = str(getattr(log, "severity", None) or spec.severity or "error").strip().lower() or "error"
+    return SimpleNamespace(code=resolved_code, spec=spec, module=module, severity=severity, is_fallback=is_fallback)
+
+
+def _normalize_http_method(value):
+    cleaned = str(value or "").replace("\x00", "").strip().upper()
+    if not cleaned or cleaned == "-":
+        return "-"
+    return cleaned[:12]
+
+
+def _normalize_error_route(value):
+    cleaned = str(value or "").replace("\x00", "").strip()
+    if not cleaned or cleaned == "-":
+        return "-"
+    cleaned = " ".join(cleaned.split())
+    if "://" in cleaned:
+        try:
+            parsed = urlsplit(cleaned)
+            cleaned = parsed.path or "/"
+        except Exception:
+            pass
+    if cleaned.startswith("/"):
+        cleaned = cleaned.split("?", 1)[0].split("#", 1)[0] or "/"
+    if len(cleaned) > 180:
+        cleaned = f"{cleaned[:177]}..."
+    return cleaned or "-"
+
+
+def _normalize_request_id(value):
+    cleaned = str(value or "").replace("\x00", "")
+    cleaned = " ".join(cleaned.split())
+    if not cleaned or cleaned == "-":
+        return "-"
+    return cleaned[:64]
+
+
+def _compose_error_page_label(method, route):
+    if method == "-" and route == "-":
+        return "Sistem içi işlem"
+    if route == "-":
+        return f"{method} (rota bilgisi yok)" if method != "-" else "Sistem içi işlem"
+    if method == "-":
+        return route
+    return f"{method} {route}"
+
+
 def _normalize_datetime(value):
     if value is None:
         return None
@@ -261,7 +334,10 @@ def _build_error_summary(log, spec):
         role_prefix = f"{_label_role(actor.rol)} hesabında "
 
     route = str(getattr(log, "route", None) or "").strip().lower()
-    module = str(getattr(log, "module", None) or spec.module or "SYSTEM").strip().upper()
+    error_code = _clean_error_code(getattr(log, "error_code", None)) or _clean_error_code(spec.error_code)
+    module = str(getattr(log, "module", None) or "").strip().upper()
+    if not module:
+        module = _extract_error_module_from_code(error_code) or str(spec.module or "SYSTEM").strip().upper()
     safe_message = _sentence(getattr(log, "user_message", None) or spec.user_message or spec.title or "İşlem tamamlanamadı")
 
     summary_prefix = {
@@ -275,7 +351,6 @@ def _build_error_summary(log, spec):
         "SYSTEM": "sistem işlemi beklenen şekilde tamamlanamadı",
     }.get(module, "ilgili işlem tamamlanamadı")
 
-    error_code = str(getattr(log, "error_code", None) or spec.error_code or "").strip()
     if error_code == "SAR-X-SYSTEM-5103":
         summary_prefix = "istek güvenlik sınırına takıldı"
     elif route.startswith("/login/passkey") or "passkey" in route:
@@ -323,11 +398,27 @@ def _serialize_log_row(log):
 
 
 def _serialize_error_row(log):
-    request_id = str(getattr(log, "request_id", "") or "").strip()
+    identity = _resolve_error_identity(log)
+    spec = identity.spec
+    request_id = _normalize_request_id(getattr(log, "request_id", ""))
     user_email = str(getattr(log, "user_email", "") or "").strip()
-    spec = get_error_spec(str(getattr(log, "error_code", "") or "SAR-X-SYSTEM-5101"))
-    severity = str(getattr(log, "severity", None) or spec.severity or "error").strip().lower()
-    module = str(getattr(log, "module", None) or spec.module or "SYSTEM").strip().upper()
+    method = _normalize_http_method(getattr(log, "method", None))
+    route = _normalize_error_route(getattr(log, "route", None))
+    title = str(getattr(log, "title", None) or "").strip()
+    if not title:
+        title = "Tanımsız Hata Kaydı" if identity.is_fallback else str(spec.title or "Hata kaydı").strip()
+    owner_message = str(getattr(log, "owner_message", None) or "").strip()
+    if not owner_message:
+        owner_message = (
+            "Bu hata kodu için merkezi açıklama şablonu bulunamadı; ham kayıt bilgisi gösteriliyor."
+            if identity.is_fallback
+            else str(spec.owner_message or "").strip()
+        )
+    possible_cause = (
+        "Hata kodu merkezi şablon dışında üretildi. İlgili akış için kod sözlüğü güncellenmelidir."
+        if identity.is_fallback
+        else spec.possible_cause
+    )
     return SimpleNamespace(
         id=log.id,
         created_at=getattr(log, "created_at", None) or getattr(log, "zaman", None),
@@ -337,22 +428,39 @@ def _serialize_error_row(log):
         ),
         status_label="Çözüldü" if getattr(log, "resolved", False) else "Açık",
         status_class="status-aktif" if getattr(log, "resolved", False) else "status-ariza",
-        module=_label_error_module(module),
-        error_code=spec.error_code,
-        title=str(getattr(log, "title", None) or spec.title or "Hata kaydı").strip(),
+        module=_label_error_module(identity.module),
+        error_code=identity.code,
+        title=title,
         user_message=spec.user_message if not getattr(log, "user_message", None) else str(log.user_message).strip(),
-        owner_message=str(getattr(log, "owner_message", None) or spec.owner_message or "").strip(),
-        possible_cause=spec.possible_cause,
-        severity=severity,
-        severity_label=_label_error_severity(severity),
+        owner_message=owner_message,
+        possible_cause=possible_cause,
+        severity=identity.severity,
+        severity_label=_label_error_severity(identity.severity),
         user_label=_resolve_actor_label(log),
         user_email=user_email,
-        route=str(getattr(log, "route", None) or "-").strip() or "-",
-        method=str(getattr(log, "method", None) or "-").strip() or "-",
-        request_id=request_id or "-",
+        route=route,
+        method=method,
+        page_label=_compose_error_page_label(method, route),
+        request_id=request_id,
         summary=_build_error_summary(log, spec),
         can_view_detail=bool(current_user.is_authenticated and current_user.is_sahip),
         detail_url=url_for("admin.hata_kaydi_detay", log_id=log.id),
+    )
+
+
+def _serialize_error_report_row(report):
+    actor = getattr(report, "user", None)
+    airport = getattr(report, "havalimani", None)
+    return SimpleNamespace(
+        id=report.id,
+        created_at_label=_format_timestamp_label(getattr(report, "created_at", None), empty_label="Tarih bilgisi yok"),
+        user_label=getattr(actor, "tam_ad", None) or getattr(actor, "kullanici_adi", None) or "Bilinmiyor",
+        role_label=_label_role(getattr(report, "role_key", None)),
+        airport_label=getattr(airport, "ad", None) or "Tanımsız",
+        path=str(getattr(report, "path", None) or "-").strip() or "-",
+        error_code=str(getattr(report, "error_code", None) or "-").strip() or "-",
+        request_id=str(getattr(report, "request_id", None) or "-").strip() or "-",
+        summary=str(getattr(report, "error_summary", None) or "Hata bildirimi").strip(),
     )
 
 
@@ -378,7 +486,7 @@ def _serialize_error_export_row(log):
         "Başlık": row.title,
         "Kısa Açıklama": row.summary,
         "Kullanıcı": row.user_label,
-        "Sayfa": f"{row.method} {row.route}",
+        "Sayfa": row.page_label,
         "Request ID": row.request_id,
     }
 
@@ -691,6 +799,107 @@ def _prepare_error_log_listing():
     )
 
 
+def _prepare_error_report_listing():
+    if not table_exists("error_report"):
+        return SimpleNamespace(rows=[], pagination=_build_pagination("admin.hata_kayitlari", 1, 1, _query_args_without("report_page")))
+
+    report_page = _parse_page_arg(request.args.get("report_page"))
+    query = (
+        ErrorReport.query.options(joinedload(ErrorReport.user), joinedload(ErrorReport.havalimani))
+        .order_by(ErrorReport.created_at.desc(), ErrorReport.id.desc())
+    )
+    rows, _, page, total_pages = _paginate_query(query, report_page)
+    pagination = _build_pagination("admin.hata_kayitlari", page, total_pages, _query_args_without("report_page"))
+    return SimpleNamespace(rows=[_serialize_error_report_row(row) for row in rows], pagination=pagination)
+
+
+def _archive_payload(log):
+    return {
+        "source_log_id": log.id,
+        "kullanici_id": log.kullanici_id,
+        "havalimani_id": log.havalimani_id,
+        "islem_tipi": log.islem_tipi,
+        "event_key": getattr(log, "event_key", None),
+        "detay": log.detay,
+        "target_model": getattr(log, "target_model", None),
+        "target_id": getattr(log, "target_id", None),
+        "outcome": getattr(log, "outcome", None),
+        "error_code": getattr(log, "error_code", None),
+        "title": getattr(log, "title", None),
+        "user_message": getattr(log, "user_message", None),
+        "owner_message": getattr(log, "owner_message", None),
+        "module": getattr(log, "module", None),
+        "severity": getattr(log, "severity", None),
+        "exception_type": getattr(log, "exception_type", None),
+        "exception_message": getattr(log, "exception_message", None),
+        "traceback_summary": getattr(log, "traceback_summary", None),
+        "route": getattr(log, "route", None),
+        "method": getattr(log, "method", None),
+        "request_id": getattr(log, "request_id", None),
+        "user_email": getattr(log, "user_email", None),
+        "resolved": getattr(log, "resolved", False),
+        "resolution_note": getattr(log, "resolution_note", None),
+        "ip_adresi": getattr(log, "ip_adresi", None),
+        "user_agent": getattr(log, "user_agent", None),
+        "ip_address": getattr(log, "ip_address", None),
+        "zaman": _format_timestamp_label(getattr(log, "zaman", None)),
+    }
+
+
+def _archive_and_delete_logs(scope):
+    if not current_user.is_sahip:
+        abort(403)
+    if not table_exists("islem_log_archive"):
+        flash("Arşiv tablosu hazır olmadığı için temizlik yapılamadı.", "danger")
+        return False
+
+    confirmation = (request.form.get("cleanup_confirmation") or "").strip().upper()
+    if confirmation != "ONAYLA":
+        flash("Temizlik için onay alanına ONAYLA yazın.", "warning")
+        return False
+
+    query = IslemLog.query
+    if scope == "audit":
+        query = query.filter(IslemLog.error_code.is_(None))
+    else:
+        query = query.filter(IslemLog.error_code.isnot(None))
+
+    rows = query.order_by(IslemLog.id.asc()).all()
+    if not rows:
+        flash("Temizlenecek kayıt bulunamadı.", "info")
+        return False
+
+    archive_rows = [
+        IslemLogArchive(
+            source_log_id=row.id,
+            archive_scope=scope,
+            payload_json=json.dumps(_archive_payload(row), ensure_ascii=False),
+            archived_by_user_id=current_user.id,
+        )
+        for row in rows
+    ]
+    try:
+        db.session.add_all(archive_rows)
+        for row in rows:
+            db.session.delete(row)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        flash("Kayıtlar yedeklenemediği için silme yapılmadı.", "danger")
+        return False
+
+    cleaned_label = "işlem kayıtları" if scope == "audit" else "hata kayıtları"
+    log_kaydet(
+        "Arşiv",
+        f"{len(rows)} {cleaned_label} yedeklenip temizlendi.",
+        event_key=f"logs.{scope}.archive_cleanup",
+        target_model="IslemLog",
+        outcome="success",
+    )
+    flash(f"{len(rows)} {cleaned_label} yedeklenip temizlendi.", "success")
+    return True
+
+
 def _write_excel_response(rows, columns, filename_prefix):
     frame = pd.DataFrame(rows, columns=columns)
     payload = io.BytesIO()
@@ -753,6 +962,7 @@ def loglari_gor():
         pagination=pagination,
         export_query=state.export_query,
         clear_url=state.clear_url,
+        can_cleanup=current_user.is_sahip,
     )
 
 
@@ -798,11 +1008,14 @@ def hata_kayitlari():
 
     try:
         state = _prepare_error_log_listing()
+        report_state = _prepare_error_report_listing()
         if not state.has_schema_support:
             pagination = _build_pagination("admin.hata_kayitlari", 1, 1, {})
             return render_template(
                 "admin/hata_kayitlari.html",
                 hata_kayitlari=[],
+                error_reports=report_state.rows,
+                report_pagination=report_state.pagination,
                 module_options=[],
                 severity_options=[],
                 selected_module="",
@@ -814,6 +1027,7 @@ def hata_kayitlari():
                 pagination=pagination,
                 export_query={},
                 clear_url=url_for("admin.hata_kayitlari"),
+                can_cleanup=current_user.is_sahip,
             )
 
         raw_logs, _, page, total_pages = _paginate_query(state.query, state.page)
@@ -834,10 +1048,13 @@ def hata_kayitlari():
         )
         raw_logs = []
         pagination = _build_pagination("admin.hata_kayitlari", 1, 1, {})
+        report_state = SimpleNamespace(rows=[], pagination=_build_pagination("admin.hata_kayitlari", 1, 1, {}))
 
     return render_template(
         "admin/hata_kayitlari.html",
         hata_kayitlari=[_serialize_error_row(log) for log in raw_logs],
+        error_reports=report_state.rows,
+        report_pagination=report_state.pagination,
         module_options=state.module_options,
         severity_options=state.severity_options,
         selected_module=state.selected_module,
@@ -849,6 +1066,7 @@ def hata_kayitlari():
         pagination=pagination,
         export_query=state.export_query,
         clear_url=state.clear_url,
+        can_cleanup=current_user.is_sahip,
     )
 
 
@@ -885,21 +1103,29 @@ def hata_kaydi_detay(log_id):
     if not getattr(log, "error_code", None):
         abort(404)
 
-    spec = get_error_spec(str(log.error_code))
+    identity = _resolve_error_identity(log)
+    spec = identity.spec
+    method = _normalize_http_method(getattr(log, "method", None))
+    route = _normalize_error_route(getattr(log, "route", None))
+    request_id = _normalize_request_id(getattr(log, "request_id", None))
+    title = str(getattr(log, "title", None) or "").strip()
+    if not title:
+        title = "Tanımsız Hata Kaydı" if identity.is_fallback else str(spec.title or "").strip()
     detail = SimpleNamespace(
         id=log.id,
-        error_code=spec.error_code,
-        title=str(getattr(log, "title", None) or spec.title or "").strip(),
+        error_code=identity.code,
+        title=title,
         user_message=str(getattr(log, "user_message", None) or spec.user_message or "").strip(),
         owner_message=str(getattr(log, "owner_message", None) or spec.owner_message or "").strip(),
-        module=_label_error_module(getattr(log, "module", None) or spec.module or ""),
-        severity=_label_error_severity(getattr(log, "severity", None) or spec.severity or ""),
+        module=_label_error_module(identity.module),
+        severity=_label_error_severity(identity.severity),
         exception_type=str(getattr(log, "exception_type", None) or "-").strip() or "-",
         exception_message=mask_sensitive_text(getattr(log, "exception_message", None) or "-", limit=2400),
         traceback_summary=mask_sensitive_text(getattr(log, "traceback_summary", None) or "-", limit=5000),
-        route=str(getattr(log, "route", None) or "-").strip() or "-",
-        method=str(getattr(log, "method", None) or "-").strip() or "-",
-        request_id=str(getattr(log, "request_id", None) or "-").strip() or "-",
+        route=route,
+        method=method,
+        page_label=_compose_error_page_label(method, route),
+        request_id=request_id,
         user_id=getattr(log, "kullanici_id", None),
         user_label=(getattr(log, "yapan_kullanici", None).tam_ad if getattr(log, "yapan_kullanici", None) else "-"),
         user_email=str(getattr(log, "user_email", None) or "-").strip() or "-",
@@ -932,3 +1158,19 @@ def hata_kaydi_durum(log_id):
     db.session.commit()
     flash("Hata kaydı güncellendi.", "success")
     return redirect(url_for("admin.hata_kaydi_detay", log_id=log.id))
+
+
+@admin_bp.route('/islem-loglari/arsivle-temizle', methods=['POST'])
+@login_required
+@permission_required('logs.view')
+def loglari_arsivle_temizle():
+    _archive_and_delete_logs("audit")
+    return redirect(url_for("admin.loglari_gor"))
+
+
+@admin_bp.route('/hata-kayitlari/arsivle-temizle', methods=['POST'])
+@login_required
+@permission_required('logs.view')
+def hata_kayitlarini_arsivle_temizle():
+    _archive_and_delete_logs("error")
+    return redirect(url_for("admin.hata_kayitlari"))

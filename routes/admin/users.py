@@ -6,6 +6,9 @@ import pandas as pd
 from flask import current_app, render_template, request, redirect, send_file, session, url_for, flash, abort
 from flask_login import login_required, current_user
 from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
 from sqlalchemy import func
 
 from extensions import (
@@ -44,7 +47,7 @@ from decorators import (
 from services.text_normalization_service import normalize_lookup_key, turkish_contains_all
 
 
-GLOBAL_ROLES = {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}
+GLOBAL_ROLES = {CANONICAL_ROLE_SYSTEM}
 AIRPORT_ROLES = {CANONICAL_ROLE_TEAM_LEAD, CANONICAL_ROLE_TEAM_MEMBER}
 STATUS_OPTIONS = [
     {"key": "active", "label": "Aktif kayıtlar"},
@@ -62,6 +65,16 @@ BULK_IMPORT_COLUMNS = [
     "not",
     "gecici_sifre",
 ]
+BULK_IMPORT_OPTIONAL_COLUMNS = [
+    "kan_grubu_harf",
+    "kan_grubu_rh",
+    "boy_cm",
+    "kilo_kg",
+    "ayak_numarasi",
+    "ust_beden",
+    "alt_beden",
+]
+BULK_IMPORT_TEMPLATE_COLUMNS = BULK_IMPORT_COLUMNS + BULK_IMPORT_OPTIONAL_COLUMNS
 EMAIL_PATTERN = re.compile(
     r"^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@"
     r"[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?"
@@ -220,7 +233,9 @@ def _normalize_shoe_size(raw_value):
 def _collect_user_profile_fields(form):
     blood_letter = guvenli_metin(form.get("kan_grubu_harf") or "").strip()
     rh_factor = guvenli_metin(form.get("kan_grubu_rh") or "").strip()
-    body_size = guvenli_metin(form.get("beden") or "").strip().upper()
+    legacy_body_size = guvenli_metin(form.get("beden") or "").strip().upper()
+    upper_body_size = guvenli_metin(form.get("ust_beden") or "").strip().upper()
+    lower_body_size = guvenli_metin(form.get("alt_beden") or "").strip().upper()
 
     if rh_factor == "Rh+":
         rh_factor = "+"
@@ -233,8 +248,15 @@ def _collect_user_profile_fields(form):
         return None, "Rh alanı listeden seçilmelidir."
     if bool(blood_letter) != bool(rh_factor):
         return None, "Kan grubu için harf ve Rh alanlarını birlikte seçin."
-    if body_size and body_size not in BODY_SIZE_OPTIONS:
+    if legacy_body_size and legacy_body_size not in BODY_SIZE_OPTIONS:
         return None, "Beden alanı listeden seçilmelidir."
+    if upper_body_size and upper_body_size not in BODY_SIZE_OPTIONS:
+        return None, "Üst beden alanı listeden seçilmelidir."
+    if lower_body_size and lower_body_size not in BODY_SIZE_OPTIONS:
+        return None, "Alt beden alanı listeden seçilmelidir."
+
+    if not upper_body_size and not lower_body_size and legacy_body_size:
+        upper_body_size = legacy_body_size
 
     boy_cm, error = _normalize_optional_positive_int(form.get("boy_cm"), "Boy", min_value=90, max_value=260)
     if error:
@@ -252,7 +274,9 @@ def _collect_user_profile_fields(form):
         "boy_cm": boy_cm,
         "kilo_kg": kilo_kg,
         "ayak_numarasi": ayak_numarasi,
-        "beden": body_size or None,
+        "ust_beden": upper_body_size or None,
+        "alt_beden": lower_body_size or None,
+        "beden": upper_body_size or lower_body_size or legacy_body_size or None,
     }, None
 
 
@@ -340,6 +364,23 @@ def _build_user_import_preview(actor, frame, role_options, visible_airports):
             errors.append({"row": row_number, "reason": phone_error})
             continue
 
+        profile_payload = {}
+        for column in BULK_IMPORT_OPTIONAL_COLUMNS:
+            column_key = lower_columns.get(column)
+            if not column_key:
+                continue
+            raw_value = row[column_key]
+            if raw_value in (None, ""):
+                profile_payload[column] = ""
+            elif isinstance(raw_value, float) and raw_value.is_integer():
+                profile_payload[column] = str(int(raw_value))
+            else:
+                profile_payload[column] = str(raw_value).strip()
+        profile_fields, profile_error = _collect_user_profile_fields(profile_payload)
+        if profile_error:
+            errors.append({"row": row_number, "reason": profile_error})
+            continue
+
         active_text = guvenli_metin(row[lower_columns["aktif/pasif"]]).strip().lower()
         is_deleted = active_text in {"pasif", "arsiv", "archived", "0", "hayir", "false"}
         temp_password = guvenli_metin(row[lower_columns["gecici_sifre"]]).strip() or _default_import_password()
@@ -355,6 +396,7 @@ def _build_user_import_preview(actor, frame, role_options, visible_airports):
                 "is_deleted": is_deleted,
                 "gecici_sifre": temp_password,
                 "not": guvenli_metin(row[lower_columns["not"]]).strip(),
+                "profile_fields": profile_fields,
             }
         )
         seen_emails.add(email)
@@ -633,7 +675,7 @@ def kullanici_import_sablonu():
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Kullanicilar"
-    sheet.append(BULK_IMPORT_COLUMNS)
+    sheet.append(BULK_IMPORT_TEMPLATE_COLUMNS)
     sheet.append([
         "Ayse",
         "Yilmaz",
@@ -644,14 +686,105 @@ def kullanici_import_sablonu():
         "aktif",
         "ARFF vardiya personeli",
         "Gecici@123",
+        "A",
+        "+",
+        "168",
+        "62",
+        "39",
+        "M",
+        "M",
     ])
+
+    header_fill = PatternFill(fill_type="solid", fgColor="0F2D4A")
+    required_fill = PatternFill(fill_type="solid", fgColor="1E4D78")
+    header_font = Font(color="FFFFFF", bold=True, size=11)
+    center_alignment = Alignment(vertical="center")
+
+    for idx, header in enumerate(BULK_IMPORT_TEMPLATE_COLUMNS, start=1):
+        cell = sheet.cell(row=1, column=idx)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = center_alignment
+        if header in BULK_IMPORT_COLUMNS:
+            cell.fill = required_fill
+
+    width_map = {
+        "A": 16,
+        "B": 16,
+        "C": 30,
+        "D": 20,
+        "E": 20,
+        "F": 26,
+        "G": 14,
+        "H": 30,
+        "I": 20,
+        "J": 15,
+        "K": 12,
+        "L": 10,
+        "M": 10,
+        "N": 16,
+        "O": 12,
+        "P": 12,
+        "Q": 12,
+    }
+    for col, width in width_map.items():
+        sheet.column_dimensions[col].width = width
+    sheet.auto_filter.ref = f"A1:{get_column_letter(len(BULK_IMPORT_TEMPLATE_COLUMNS))}1"
+    sheet.freeze_panes = "A2"
+
+    lists = workbook.create_sheet("Listeler")
+    lists.append(["rol", "aktif_pasit", "kan_grubu_harf", "kan_grubu_rh", "ayak_numarasi", "ust_beden", "alt_beden"])
+    role_values = sorted({item["key"] for item in get_role_options()})
+    max_len = max(
+        len(role_values),
+        2,
+        len(BLOOD_TYPE_LETTER_OPTIONS),
+        len(RH_FACTOR_OPTIONS),
+        len(SHOE_SIZE_OPTIONS),
+        len(BODY_SIZE_OPTIONS),
+    )
+    for idx in range(max_len):
+        lists.append(
+            [
+                role_values[idx] if idx < len(role_values) else "",
+                ["aktif", "pasif"][idx] if idx < 2 else "",
+                BLOOD_TYPE_LETTER_OPTIONS[idx] if idx < len(BLOOD_TYPE_LETTER_OPTIONS) else "",
+                RH_FACTOR_OPTIONS[idx] if idx < len(RH_FACTOR_OPTIONS) else "",
+                SHOE_SIZE_OPTIONS[idx] if idx < len(SHOE_SIZE_OPTIONS) else "",
+                BODY_SIZE_OPTIONS[idx] if idx < len(BODY_SIZE_OPTIONS) else "",
+                BODY_SIZE_OPTIONS[idx] if idx < len(BODY_SIZE_OPTIONS) else "",
+            ]
+        )
+
+    def _add_dropdown(column_letter, formula):
+        validation = DataValidation(type="list", formula1=formula, allow_blank=True, showDropDown=True)
+        sheet.add_data_validation(validation)
+        validation.add(f"{column_letter}2:{column_letter}5000")
+
+    _add_dropdown("E", "'Listeler'!$A$2:$A$5000")
+    _add_dropdown("G", "'Listeler'!$B$2:$B$3")
+    _add_dropdown("J", "'Listeler'!$C$2:$C$5")
+    _add_dropdown("K", "'Listeler'!$D$2:$D$3")
+    _add_dropdown("N", "'Listeler'!$E$2:$E$5000")
+    _add_dropdown("O", "'Listeler'!$F$2:$F$5000")
+    _add_dropdown("P", "'Listeler'!$G$2:$G$5000")
+    _add_dropdown("Q", "'Listeler'!$G$2:$G$5000")
+    lists.sheet_state = "hidden"
 
     notes = workbook.create_sheet("Aciklamalar")
     notes.append(["Alan", "Açıklama"])
-    notes.append(["rol", "Sistemde tanımlı rol anahtarı kullanılmalıdır. Örn: ekip_uyesi, ekip_sorumlusu, admin"])
+    notes.append(["rol", "Sistemde tanımlı rol anahtarı kullanılmalıdır. Örn: ekip_uyesi, ekip_sorumlusu, sistem_sorumlusu"])
     notes.append(["havalimani", "Kod, ad veya görünür havalimanı ID değeri kullanılabilir. Global roller için boş bırakılabilir."])
     notes.append(["aktif/pasif", "aktif veya pasif değerlerinden biri kullanılmalıdır."])
     notes.append(["telefon", "Telefon yalnızca site sahibi içe aktarıyorsa kaydedilir."])
+    notes.append(["kan_grubu_harf", "A, B, AB veya 0 değerlerinden biri seçilebilir."])
+    notes.append(["kan_grubu_rh", "+ veya - seçilmelidir; harf doluysa bu alan da doldurulmalıdır."])
+    notes.append(["boy_cm / kilo_kg", "Boy 90-260 cm, kilo 30-250 kg aralığında olmalıdır."])
+    notes.append(["ayak_numarasi", "Listeden seçilmelidir."])
+    notes.append(["ust_beden / alt_beden", "XS, S, M, L, XL, XXL, 3XL seçenekleri kullanılmalıdır."])
+    notes.append(["Not", "Lacivert başlıklar zorunlu sütunları gösterir."])
+    notes.column_dimensions["A"].width = 24
+    notes.column_dimensions["B"].width = 96
 
     output = io.BytesIO()
     workbook.save(output)
@@ -723,6 +856,7 @@ def kullanici_import_commit():
             is_deleted=bool(row["is_deleted"]),
         )
         user.sifre_set(row["gecici_sifre"] or _default_import_password())
+        _apply_user_profile_fields(user, row.get("profile_fields"))
         db.session.add(user)
         created_count += 1
 

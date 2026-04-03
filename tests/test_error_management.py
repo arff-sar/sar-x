@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 from io import BytesIO
+from pathlib import Path
+import re
 from unittest.mock import patch
 
 from openpyxl import load_workbook
@@ -210,6 +212,41 @@ def test_db_connection_error_returns_safe_message(client, app):
     assert "postgres://" not in html
 
 
+def test_authenticated_schema_mismatch_error_shows_manual_report_button(client, app):
+    app.config["PROPAGATE_EXCEPTIONS"] = False
+
+    with app.app_context():
+        airport = HavalimaniFactory(ad="İzmir Adnan Menderes Havalimanı", kodu="ADB")
+        owner = KullaniciFactory(rol="sahip", kullanici_adi="owner-db-schema@sarx.com", is_deleted=False, havalimani=airport)
+        db.session.add_all([airport, owner])
+        db.session.commit()
+        owner_id = owner.id
+
+    def boom_db_schema():
+        raise OperationalError(
+            "SELECT 1",
+            {},
+            Exception("no such column: kullanici.kan_grubu_harf"),
+        )
+
+    app.add_url_rule("/__test-db-schema-boom", "test_db_schema_boom", boom_db_schema)
+    _login(client, owner_id)
+    response = client.get("/__test-db-schema-boom")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 503
+    assert "SAR-X-DB-2103" in html
+    assert "Sistem yöneticisine bildir" in html
+
+    with client.session_transaction() as session:
+        pending = session.get("pending_error_report")
+
+    assert pending is not None
+    assert pending["error_code"] == "SAR-X-DB-2103"
+    assert pending["path"] == "/__test-db-schema-boom"
+    assert pending["request_id"]
+
+
 def test_error_listing_uses_tr_module_labels_summary_and_timezone(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Adana Havalimanı", kodu="ADA")
@@ -318,3 +355,97 @@ def test_error_logs_pagination_and_excel_export_preserve_filters(client, app):
     assert headers == ["Durum", "Tarih", "Modül", "Hata Kodu", "Başlık", "Kısa Açıklama", "Kullanıcı", "Sayfa", "Request ID"]
     assert len(rows) == 25
     assert all(row[2] == "Kimlik Doğrulama" for row in rows)
+
+
+def test_error_listing_preserves_custom_error_code_and_normalizes_page_and_request_id(client, app):
+    with app.app_context():
+        owner = KullaniciFactory(rol="sahip", kullanici_adi="owner-errors-custom@sarx.com", is_deleted=False)
+        db.session.add(owner)
+        db.session.flush()
+        db.session.add(
+            IslemLog(
+                kullanici_id=owner.id,
+                islem_tipi="Sistem",
+                detay="Özel kodlu hata kaydı.",
+                outcome="failed",
+                error_code="SAR-X-TEST-0001",
+                title="Özel Hata",
+                user_message="İşlem sırasında özel hata oluştu.",
+                route="https://example.local/admin/hata-kayitlari?q=secret",
+                method=" post ",
+                request_id="  req-id-123   extra  ",
+            )
+        )
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+    response = client.get("/hata-kayitlari")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "SAR-X-TEST-0001" in html
+    assert "Test" in html
+    assert "POST /admin/hata-kayitlari" in html
+    assert "<code>req-id-123 extra</code>" in html
+
+
+def test_error_listing_uses_safe_fallbacks_for_missing_page_and_request_id(client, app):
+    with app.app_context():
+        owner = KullaniciFactory(rol="sahip", kullanici_adi="owner-errors-fallback@sarx.com", is_deleted=False)
+        db.session.add(owner)
+        db.session.flush()
+        db.session.add(
+            IslemLog(
+                kullanici_id=owner.id,
+                islem_tipi="Sistem",
+                detay="Route ve request id eksik kayıt.",
+                outcome="failed",
+                error_code="SAR-X-SYSTEM-5101",
+                title="Eksik metadata",
+                user_message="Beklenmeyen hata kaydı.",
+                route=None,
+                method=None,
+                request_id=None,
+            )
+        )
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+    listing = client.get("/hata-kayitlari")
+    listing_html = listing.data.decode("utf-8")
+
+    assert listing.status_code == 200
+    assert "Sistem içi işlem" in listing_html
+    assert "<code>-</code>" in listing_html
+
+    export = client.get("/hata-kayitlari/excel")
+    workbook = load_workbook(filename=BytesIO(export.data))
+    sheet = workbook.active
+    rows = list(sheet.iter_rows(min_row=2, values_only=True))
+
+    assert export.status_code == 200
+    assert rows[0][7] == "Sistem içi işlem"
+    assert rows[0][8] == "-"
+
+
+def test_error_registry_covers_runtime_error_codes():
+    project_root = Path(__file__).resolve().parents[1]
+    pattern = re.compile(r"SAR-X-[A-Z]+-[0-9]{4}")
+    registry_text = (project_root / "error_handling.py").read_text(encoding="utf-8")
+    registry_codes = set(re.findall(r'"(SAR-X-[A-Z]+-[0-9]{4})"\s*:\s*ErrorSpec', registry_text))
+
+    runtime_sources = [
+        project_root / "app.py",
+        project_root / "routes" / "auth.py",
+        project_root / "error_handling.py",
+    ]
+    used_codes = set()
+    for path in runtime_sources:
+        used_codes.update(pattern.findall(path.read_text(encoding="utf-8")))
+
+    # Test-only sentetik kodlar runtime registry kapsamı dışında olabilir.
+    ignored = {"SAR-X-TEST-0001"}
+    missing = sorted(code for code in (used_codes - ignored) if code not in registry_codes)
+    assert missing == []

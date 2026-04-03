@@ -41,6 +41,10 @@
   .logs-pagination { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:18px 22px 22px; flex-wrap:wrap; }
   .logs-pagination-pages { display:flex; gap:8px; flex-wrap:wrap; }
   .logs-pagination .row-btn[aria-current="page"] { background:var(--navy); border-color:var(--navy); color:#fff; }
+  .logs-cleanup-panel { border:1px solid rgba(220,38,38,.16); background:linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(254,242,242,.96) 100%); border-radius:18px; padding:18px; display:grid; gap:14px; }
+  .logs-cleanup-panel h3 { font-size:16px; color:var(--navy); }
+  .logs-cleanup-panel p { font-size:12.5px; color:var(--text3); line-height:1.6; }
+  .logs-cleanup-form { display:grid; gap:12px; max-width:420px; }
 
   @media (max-width: 900px) {
     .logs-summary-head { display:grid; grid-template-columns:1fr; }
@@ -246,6 +250,18 @@
         </div>
         {% endif %}
     </div>
+
+    {% if can_cleanup %}
+    <div class="logs-cleanup-panel">
+        <h3>İşlem geçmişini yedekleyip temizle</h3>
+        <p>Bu işlem önce işlem geçmişini arşiv tablosuna taşır, yedekleme başarılı olursa canlı listedeki işlem kayıtlarını siler. Devam etmek için onay alanına <strong>ONAYLA</strong> yazın.</p>
+        <form method="POST" action="{{ url_for('admin.loglari_arsivle_temizle') }}" class="logs-cleanup-form" onsubmit="return confirm('İşlem kayıtları önce yedeklenip ardından temizlenecek. Devam edilsin mi?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="text" name="cleanup_confirmation" class="form-control" placeholder="ONAYLA" autocomplete="off">
+            <button type="submit" class="btn btn-danger">İşlem kayıtlarını yedekleyip temizle</button>
+        </form>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
 

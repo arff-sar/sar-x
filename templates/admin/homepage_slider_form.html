@@ -6,24 +6,18 @@
     <div class="panel-title">{{ 'Slider Düzenle' if slider else 'Yeni Slider Ekle' }}</div>
   </div>
   <div class="panel-body">
-    <div class="hp-preview-note">Hero alanı artık daha sade çalışır. Kısa başlıklar, kısa üst etiketler ve tek CTA en temiz sonucu verir.</div>
+    <div class="hp-preview-note">Slider alanında yalnızca görsel yönetilir. Anasayfadaki üst metin sabit olarak korunur.</div>
     <form method="POST" action="{% if slider %}{{ url_for('content.homepage_slider_edit', slider_id=slider.id) }}{% else %}{{ url_for('content.homepage_slider_create') }}{% endif %}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <label>Ana Başlık</label>
-      <input type="text" name="title" class="form-control" required value="{{ slider.title if slider else '' }}">
-      <label>Kısa Üst Etiket</label>
-      <input type="text" name="subtitle" class="form-control" value="{{ slider.subtitle if slider else '' }}">
-      <label>Kısa Destek Metni</label>
-      <textarea name="description" class="form-control" style="height:90px;">{{ slider.description if slider else '' }}</textarea>
       <label>Görsel Yolu / URL</label>
-      <input type="text" name="image_path" class="form-control" value="{{ slider.image_path if slider else '' }}">
+      <input type="text" id="sliderImagePath" name="image_path" class="form-control" required value="{{ slider.image_path if slider else '' }}">
       <div style="margin-top:-8px; margin-bottom:10px;">
-        <a href="{{ url_for('content.media_library') }}" class="row-btn" target="_blank">Medya Kütüphanesi Aç</a>
+        {% if can_use_media_picker %}
+          <button type="button" class="row-btn" id="openMediaPickerModal">Medya Kütüphanesinden Seç</button>
+        {% else %}
+          <span style="font-size:12px; color:var(--text3);">Medya seçimi için ek medya yetkisi gerekir.</span>
+        {% endif %}
       </div>
-      <label>Buton Metni</label>
-      <input type="text" name="button_text" class="form-control" value="{{ slider.button_text if slider else 'Detay için tıklayınız' }}">
-      <label>Buton Linki</label>
-      <input type="text" name="button_link" class="form-control" value="{{ slider.button_link if slider else '#faaliyetlerimiz' }}">
       <label>Sıralama</label>
       <input type="number" name="order_index" class="form-control" value="{{ slider.order_index if slider else 0 }}">
       <label>Workflow Durumu</label>
@@ -41,7 +35,13 @@
       {% if slider and slider.image_path %}
         <div style="margin-top:12px; padding:12px; border:1px solid var(--border); border-radius:12px; background:var(--surface2);">
           <div style="font-size:12px; color:var(--text3); margin-bottom:8px; font-weight:700;">Mevcut Önizleme</div>
-          <img src="{{ slider.image_path }}" alt="{{ slider.title }}" style="width:100%; max-height:220px; object-fit:cover; border-radius:10px; border:1px solid var(--border);">
+          <img id="sliderImagePreview" src="{{ slider.image_path }}" alt="Slider görsel önizleme" style="width:100%; max-height:220px; object-fit:cover; border-radius:10px; border:1px solid var(--border);">
+        </div>
+      {% else %}
+        <div style="margin-top:12px; padding:12px; border:1px solid var(--border); border-radius:12px; background:var(--surface2);">
+          <div style="font-size:12px; color:var(--text3); margin-bottom:8px; font-weight:700;">Önizleme</div>
+          <img id="sliderImagePreview" src="" alt="Slider görsel önizleme" style="display:none; width:100%; max-height:220px; object-fit:cover; border-radius:10px; border:1px solid var(--border);">
+          <div id="sliderImagePreviewEmpty" style="font-size:12px; color:var(--text3);">Henüz görsel seçilmedi.</div>
         </div>
       {% endif %}
       <div style="display:flex; gap:8px; margin-top:12px;">
@@ -52,4 +52,155 @@
     </form>
   </div>
 </div>
+{% if can_use_media_picker %}
+<div id="mediaPickerModal" style="display:none; position:fixed; inset:0; z-index:1000;">
+  <div id="mediaPickerBackdrop" style="position:absolute; inset:0; background:rgba(8,27,49,.52);"></div>
+  <div style="position:relative; z-index:1; width:min(1080px, calc(100vw - 24px)); max-height:min(82vh, 920px); margin:36px auto; background:var(--surface); border:1px solid var(--border); border-radius:16px; box-shadow:0 24px 48px rgba(8,27,49,.24); overflow:hidden; display:flex; flex-direction:column;">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid var(--border);">
+      <div>
+        <div style="font-size:16px; font-weight:800;">Medya Kütüphanesi</div>
+        <div style="font-size:12px; color:var(--text3);">Sadece görsel türündeki kayıtlar seçilebilir.</div>
+      </div>
+      <button type="button" class="row-btn" id="closeMediaPickerModal">Kapat</button>
+    </div>
+
+    <div style="padding:12px 16px; border-bottom:1px solid var(--border);">
+      <input type="search" id="mediaPickerSearch" class="form-control" placeholder="Başlık veya yol ara...">
+    </div>
+
+    <div style="padding:0 16px 16px; overflow:auto;">
+      <div class="table-container" style="margin-top:12px;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Önizleme</th>
+              <th>Başlık</th>
+              <th>Yol</th>
+              <th>Tür</th>
+              <th>İşlem</th>
+            </tr>
+          </thead>
+          <tbody id="mediaPickerRows">
+            {% for asset in media_assets %}
+            <tr data-media-row data-search-text="{{ (asset.title ~ ' ' ~ asset.file_path)|lower }}">
+              <td style="width:72px;">
+                {% if asset.file_type == 'image' %}
+                  <img src="{{ asset.file_path }}" alt="{{ asset.alt_text or asset.title }}" style="width:56px; height:40px; object-fit:cover; border-radius:6px; border:1px solid var(--border);">
+                {% else %}
+                  📄
+                {% endif %}
+              </td>
+              <td>{{ asset.title }}</td>
+              <td style="font-family:var(--mono); font-size:11px;">{{ asset.file_path }}</td>
+              <td>{{ asset.file_type }}</td>
+              <td>
+                {% if asset.file_type == 'image' %}
+                  <button type="button" class="row-btn" data-media-select="{{ asset.file_path }}">Seç</button>
+                {% else %}
+                  <span style="font-size:12px; color:var(--text3);">Sadece Görüntüle</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5"><div class="hp-empty">Henüz medya kaydı yok. Önce Medya sekmesinden yükleme yapabilirsiniz.</div></td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+<script>
+  (function () {
+    const imageInput = document.getElementById("sliderImagePath");
+    const previewImage = document.getElementById("sliderImagePreview");
+    const previewEmpty = document.getElementById("sliderImagePreviewEmpty");
+    const openPickerButton = document.getElementById("openMediaPickerModal");
+    const closePickerButton = document.getElementById("closeMediaPickerModal");
+    const pickerModal = document.getElementById("mediaPickerModal");
+    const pickerBackdrop = document.getElementById("mediaPickerBackdrop");
+    const pickerRows = document.getElementById("mediaPickerRows");
+    const pickerSearch = document.getElementById("mediaPickerSearch");
+
+    function updatePreview(value) {
+      if (!previewImage) return;
+      const src = (value || "").trim();
+      if (!src) {
+        previewImage.style.display = "none";
+        previewImage.removeAttribute("src");
+        if (previewEmpty) previewEmpty.style.display = "block";
+        return;
+      }
+      previewImage.src = src;
+      previewImage.style.display = "block";
+      if (previewEmpty) previewEmpty.style.display = "none";
+    }
+
+    function applySelectedMedia(url) {
+      if (!imageInput) return;
+      imageInput.value = (url || "").trim();
+      updatePreview(imageInput.value);
+      imageInput.dispatchEvent(new Event("input", { bubbles: true }));
+      imageInput.focus();
+    }
+
+    function openPickerModal() {
+      if (!pickerModal) return;
+      pickerModal.style.display = "block";
+      document.body.style.overflow = "hidden";
+      if (pickerSearch) pickerSearch.focus();
+    }
+
+    function closePickerModal() {
+      if (!pickerModal) return;
+      pickerModal.style.display = "none";
+      document.body.style.overflow = "";
+    }
+
+    function filterPickerRows(value) {
+      if (!pickerRows) return;
+      const query = String(value || "").trim().toLowerCase();
+      const rows = Array.from(pickerRows.querySelectorAll("[data-media-row]"));
+      rows.forEach(function (row) {
+        const text = String(row.getAttribute("data-search-text") || "");
+        row.style.display = !query || text.includes(query) ? "" : "none";
+      });
+    }
+
+    if (imageInput) {
+      imageInput.addEventListener("input", function () {
+        updatePreview(this.value);
+      });
+    }
+
+    if (openPickerButton) openPickerButton.addEventListener("click", openPickerModal);
+    if (closePickerButton) closePickerButton.addEventListener("click", closePickerModal);
+    if (pickerBackdrop) pickerBackdrop.addEventListener("click", closePickerModal);
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") closePickerModal();
+    });
+
+    if (pickerSearch) {
+      pickerSearch.addEventListener("input", function () {
+        filterPickerRows(this.value);
+      });
+    }
+
+    if (pickerRows) {
+      pickerRows.addEventListener("click", function (event) {
+        const button = event.target.closest("[data-media-select]");
+        if (!button) return;
+        const url = (button.getAttribute("data-media-select") || "").trim();
+        if (!url) return;
+        applySelectedMedia(url);
+        closePickerModal();
+      });
+    }
+
+    if (imageInput) {
+      updatePreview(imageInput.value);
+    }
+  })();
+</script>
 {% endblock %}

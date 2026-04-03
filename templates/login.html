@@ -7,6 +7,8 @@
     <title>Giriş Yap — SAR-X ARFF</title>
 
     <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="shortcut icon" href="/favicon.ico">
     <meta name="theme-color" content="#0f2d4a">
     <link rel="apple-touch-icon" href="/static/img/icon-192.png">
 
@@ -75,47 +77,34 @@
             overflow: hidden;
         }
 
+        .login-card-shell {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
         .login-header {
             background: linear-gradient(180deg, var(--navy) 0%, #123858 100%);
             padding: 22px 24px 16px;
             text-align: center;
         }
 
-        .login-logo-mark {
-            width: 46px;
-            height: 46px;
-            background: var(--orange);
-            border-radius: 12px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 10px 24px rgba(249,115,22,.35);
-            margin-bottom: 10px;
-        }
-
-        .login-logo-mark svg {
-            width: 24px;
-            height: 24px;
-            stroke: #fff;
-            fill: none;
-            stroke-width: 2.2;
-            stroke-linecap: round;
-            stroke-linejoin: round;
-        }
-
-        .login-brand {
-            font-size: 22px;
-            font-weight: 800;
-            color: #fff;
-            letter-spacing: -.02em;
+        .login-logo-image {
+            width: min(196px, 80%);
+            max-width: 196px;
+            height: auto;
+            display: block;
+            margin: 0 auto 10px;
+            object-fit: contain;
+            background: transparent;
         }
 
         .login-title {
-            margin-top: 7px;
-            font-size: 14px;
+            margin-top: 0;
+            font-size: 13px;
             font-weight: 800;
             color: #fff;
-            letter-spacing: .06em;
+            letter-spacing: .08em;
             text-transform: uppercase;
             line-height: 1.28;
         }
@@ -131,44 +120,6 @@
 
         .login-body {
             padding: 16px 20px 18px;
-        }
-
-        .section-topbar {
-            display: flex;
-            justify-content: flex-start;
-            margin-bottom: 10px;
-        }
-
-        .home-link {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            min-height: 44px;
-            padding: 9px 12px;
-            border-radius: 999px;
-            border: 1px solid var(--border);
-            background: var(--surface2);
-            color: var(--text2);
-            text-decoration: none;
-            font-size: 12px;
-            font-weight: 800;
-            transition: .18s ease;
-        }
-
-        .home-link:hover {
-            background: var(--orange-light);
-            border-color: var(--orange-border);
-            color: var(--orange);
-        }
-
-        .home-link svg {
-            width: 14px;
-            height: 14px;
-            stroke: currentColor;
-            fill: none;
-            stroke-width: 2;
-            stroke-linecap: round;
-            stroke-linejoin: round;
         }
 
         .fade-in-up { animation: fadeInUp .36s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
@@ -698,20 +649,16 @@
         }
 
         .login-footer {
-            margin-top: 14px;
-            padding: 12px 13px;
+            margin: 0 20px 16px;
+            padding: 11px 12px;
             background: var(--blue-light);
             border: 1px solid #bfdbfe;
             border-radius: var(--r-lg);
             text-align: center;
             color: #1d4ed8;
-        }
-
-        .login-footer strong {
-            display: block;
-            font-size: 13px;
-            font-weight: 800;
-            margin-bottom: 6px;
+            width: auto;
+            max-width: 100%;
+            overflow-wrap: anywhere;
         }
 
         .login-footer p {
@@ -719,11 +666,27 @@
             line-height: 1.5;
         }
 
-        .login-tech-note {
+        .login-footer-link {
+            display: inline-flex;
             margin-top: 6px;
+            font-size: 12px;
+            font-weight: 800;
+            color: var(--blue);
+            text-decoration: none;
+        }
+
+        .login-footer-link:hover {
+            color: var(--navy);
+            text-decoration: underline;
+        }
+
+        .login-credits {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed #bfdbfe;
             font-size: 10.5px;
-            line-height: 1.45;
             color: #1e40af;
+            line-height: 1.45;
         }
 
         .back-btn-wrapper {
@@ -795,20 +758,20 @@
         }
 
         @media (max-width: 560px) {
-            body { align-items: flex-start; padding: 10px; }
-            .login-card { max-width: 100%; border-radius: 16px; box-shadow: 0 16px 34px rgba(15,45,74,.12); }
-            .login-header { padding: 14px 14px 10px; }
-            .login-logo-mark { width: 38px; height: 38px; margin-bottom: 6px; }
-            .login-logo-mark svg { width: 20px; height: 20px; }
-            .login-brand { font-size: 18px; }
-            .login-title { margin-top: 4px; font-size: 11px; letter-spacing: .045em; line-height: 1.2; }
+            body { align-items: flex-start; padding: 4px; overflow: hidden; }
+            .login-card { max-width: 100%; max-height: calc(100svh - 8px); border-radius: 16px; box-shadow: 0 16px 34px rgba(15,45,74,.12); }
+            .login-card-shell { min-height: 0; height: 100%; }
+            .login-header { padding: 0 12px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; overflow: hidden; }
+            .login-logo-image { width: min(196px, 84%); margin-top: -8px; margin-bottom: -12px; }
+            .login-title { margin-top: -3px; font-size: 11px; letter-spacing: .045em; line-height: 1.2; }
             .login-subtitle { font-size: 9.5px; letter-spacing: .1em; }
-            .login-body { padding: 14px 14px 16px; }
+            .login-body { padding: 2px 12px 8px; }
             .login-toast-stack { padding: 12px 14px 0; }
-            .section-topbar { margin-bottom: 8px; }
-            .home-link { justify-content: flex-start; }
-            .captcha-caption { flex-direction: column; align-items: flex-start; gap: 6px; }
-            .captcha-timer { font-size: 10px; padding: 1px 7px; opacity: .86; }
+            .field-group { margin-bottom: 7px; }
+            .field-label { margin-bottom: 4px; font-size: 12px; }
+            .field-input { min-height: 42px; padding-top: 9px; padding-bottom: 9px; }
+            .password-shell { min-height: 42px; }
+            .captcha-caption { display: none; }
             .captcha-box { grid-template-columns: minmax(0, 1fr) 42px 124px; gap: 6px; }
             .captcha-canvas-container { grid-column: 1; }
             .captcha-refresh { grid-column: 2; }
@@ -823,16 +786,24 @@
             .captcha-input-shell { padding: 0 10px; width: 100%; min-width: 0; overflow: hidden; }
             .captcha-input { font-size: 15px !important; letter-spacing: .05em; line-height: 1; min-height: 0; height: 100%; }
             .captcha-input { max-inline-size: 100%; }
-            .account-actions-row { gap: 8px; margin: 2px 0 8px; }
+            .account-actions-row { gap: 8px; margin: 2px 0 6px; }
             .remember-option { padding: 4px 8px; min-height: 40px; border-radius: 10px; }
-            .forgot-password-link { min-height: 40px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface2); padding: 0 10px; }
+            .forgot-password-link { min-height: 36px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface2); padding: 0 9px; }
             .remember-copy,
             .forgot-password-link { font-size: 12px; }
-            .login-btn-submit { min-height: 46px; }
-            .login-footer { margin-top: 10px; padding: 10px 11px; }
-            .login-footer strong { margin-bottom: 4px; font-size: 12.5px; }
-            .login-footer p { font-size: 10.5px; line-height: 1.4; }
-            .login-tech-note { margin-top: 4px; font-size: 9.8px; line-height: 1.35; }
+            .remember-option { min-height: 36px; padding-top: 3px; padding-bottom: 3px; }
+            .login-btn-submit { min-height: 38px; padding-top: 7px; padding-bottom: 7px; margin-top: 2px; }
+            .login-btn-passkey { min-height: 39px; }
+            .login-footer {
+                width: auto;
+                margin: 0 10px 2px;
+                padding: 5px 10px 1px;
+                border-radius: var(--r-lg);
+            }
+            .login-footer p { font-size: 9.5px; line-height: 1.32; }
+            .login-footer-link { margin-top: 4px; font-size: 10.5px; }
+            .login-credits { margin-top: 3px; padding-top: 3px; font-size: 8.8px; line-height: 1.25; }
+            .captcha-note { display: none; }
         }
 
         @media (max-width: 520px) {
@@ -840,14 +811,13 @@
         }
 
         @media (max-width: 460px) {
-            .captcha-box { grid-template-columns: 1fr; }
+            .captcha-box { grid-template-columns: minmax(0, 1fr) 42px 112px; }
             .captcha-canvas-container,
             .captcha-refresh,
-            .captcha-input-shell { grid-column: auto; }
-            .captcha-refresh { width: 100%; min-width: 0; }
-            .captcha-input-shell { min-height: 44px; height: 44px; }
-            .captcha-input { font-size: 14.5px !important; letter-spacing: .04em; }
-            .captcha-input { line-height: 1; }
+            .captcha-input-shell { min-height: 42px; height: 42px; }
+            .captcha-refresh { width: 42px; min-width: 42px; }
+            .captcha-input-shell { min-height: 42px; height: 42px; }
+            .captcha-input { font-size: 14.5px !important; letter-spacing: .04em; line-height: 1; }
             .captcha-canvas-container,
             .captcha-input-shell { overflow: hidden; }
         }
@@ -855,9 +825,7 @@
         @media (max-height: 860px) {
             body { padding: 8px 12px; }
             .login-header { padding: 18px 22px 14px; }
-            .login-logo-mark { width: 42px; height: 42px; margin-bottom: 8px; }
-            .login-logo-mark svg { width: 22px; height: 22px; }
-            .login-brand { font-size: 20px; }
+            .login-logo-image { width: min(184px, 78%); margin-bottom: 9px; }
             .login-title { margin-top: 6px; font-size: 12.5px; }
             .login-subtitle { font-size: 10.5px; }
             .login-body { padding: 14px 18px 16px; }
@@ -873,23 +841,77 @@
             .captcha-box { gap: 6px; }
             .account-actions-row { margin: 2px 0 8px; }
             .login-btn-submit { padding: 11px; }
-            .login-footer { margin-top: 12px; padding: 10px 12px; }
-            .login-footer strong { font-size: 12px; margin-bottom: 4px; }
+            .login-footer { margin: 0 18px 14px; padding: 10px 12px; }
             .login-footer p,
             .captcha-note,
             .captcha-state { font-size: 10.5px; }
+        }
+
+        @media all and (display-mode: standalone) {
+            body { overflow: hidden; }
+            .login-card { max-height: calc(100svh - 8px); }
+            .login-header {
+                padding-top: 0;
+                padding-bottom: 0;
+                padding-left: 12px;
+                padding-right: 12px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: flex-start;
+                overflow: hidden;
+            }
+            .login-logo-image { width: min(196px, 84%); margin-top: -8px; margin-bottom: -12px; }
+            .login-title { margin-top: -3px; }
+            .login-body { padding-top: 2px; padding-bottom: 8px; }
+            .field-group { margin-bottom: 7px; }
+            .field-label { margin-bottom: 4px; }
+            .field-input { min-height: 42px; padding-top: 9px; padding-bottom: 9px; }
+            .password-shell { min-height: 42px; }
+            .login-btn-submit { min-height: 38px; padding-top: 7px; padding-bottom: 7px; margin-top: 2px; }
+            .login-btn-passkey { min-height: 39px; }
+            .remember-option { min-height: 36px; padding-top: 3px; padding-bottom: 3px; }
+            .forgot-password-link { min-height: 36px; padding-top: 0; padding-bottom: 0; }
+            .login-footer {
+                width: auto;
+                margin: 0 10px 2px;
+                padding: 5px 10px 1px;
+                border-radius: var(--r-lg);
+            }
+            .login-footer p { font-size: 9.5px; line-height: 1.32; }
+            .login-footer-link { margin-top: 4px; font-size: 10.5px; }
+            .login-credits { margin-top: 3px; padding-top: 3px; font-size: 8.8px; line-height: 1.25; }
+            .captcha-caption,
+            .captcha-note {
+                display: none;
+            }
+        }
+
+        @media (min-width: 561px) {
+            html, body { overflow: hidden; }
+            body { padding: 8px; }
+            .login-card { max-height: calc(100svh - 16px); }
+            .login-header { padding: 18px 20px 12px; }
+            .login-logo-image { width: min(176px, 78%); margin-bottom: 8px; }
+            .login-title { font-size: 12px; letter-spacing: .06em; line-height: 1.22; }
+            .login-subtitle { font-size: 10px; letter-spacing: .11em; }
+            .login-body { padding: 12px 16px 12px; }
+            .login-footer { margin: 0 16px 12px; }
+            .field-group { margin-bottom: 9px; }
+            .captcha-box { grid-template-columns: minmax(0, 1fr) 46px minmax(0, 1fr); }
+            .captcha-canvas-container,
+            .captcha-input-shell { min-height: 46px; height: 46px; }
+            .captcha-refresh { align-self: center; justify-self: center; }
         }
     </style>
 </head>
 <body>
 
     <div class="login-card">
+        <div class="login-card-shell">
         <div class="login-header">
-            <div class="login-logo-mark">
-                <svg viewBox="0 0 24 24"><path d="M12 2L3 7v5c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7L12 2z"/><path d="M9 12l2 2 4-4"/></svg>
-            </div>
-            <div class="login-brand">SAR-X</div>
-            <div class="login-title">ARFF ARAMA KURTARMA TİMİ</div>
+            <img src="{{ url_for('static', filename='img/sarx-logo.png') }}" alt="SAR-X logo" class="login-logo-image">
+            <div class="login-title">ÖZEL ARFF ARAMA KURTARMA TİMİ</div>
             <div class="login-subtitle">ENVANTER YÖNETİM SİSTEMİ</div>
         </div>
 
@@ -911,15 +933,11 @@
         {% endwith %}
 
         <div class="login-body" id="loginSection">
-            <div class="section-topbar">
-                <a href="{{ url_for('ana_sayfa') }}" class="home-link">
-                    <svg viewBox="0 0 24 24"><path d="M4 12h16"/><path d="M10 6l-6 6 6 6"/></svg>
-                    <span>Anasayfaya Dön</span>
-                </a>
-            </div>
-
             <form method="POST" action="{{ url_for('auth.login') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {% if login_next %}
+                <input type="hidden" name="next" value="{{ login_next }}">
+                {% endif %}
 
                 <div class="field-group">
                     <label class="field-label">E-POSTA ADRESİ</label>
@@ -1041,7 +1059,7 @@
 
                 <div class="account-actions-row">
                     <label class="remember-option">
-                        <input type="checkbox" name="remember_me" value="on">
+                        <input type="checkbox" name="remember_me" value="on" checked>
                         <span class="remember-copy">Beni hatırla</span>
                     </label>
                     <a class="forgot-password-link" onclick="toggleSection('forgotPasswordSection')">Şifremi Unuttum?</a>
@@ -1060,21 +1078,9 @@
                 {% endif %}
             </form>
 
-            <div class="login-footer">
-                <strong>SAR-X Envanter Yönetim Sistemi</strong>
-                <p>Bu sistem yalnızca mevcut arama kurtarma ekiplerinde görevli ARFF personelinin kullanımına açıktır.</p>
-                <p class="login-tech-note">Giriş oturumu ve "Beni hatırla" için yalnızca zorunlu teknik çerezler kullanılır; analitik veya reklam çerezi kullanılmaz.</p>
-            </div>
         </div>
 
         <div class="login-body" id="forgotPasswordSection" style="display:none;">
-            <div class="section-topbar">
-                <a href="{{ url_for('ana_sayfa') }}" class="home-link">
-                    <svg viewBox="0 0 24 24"><path d="M4 12h16"/><path d="M10 6l-6 6 6 6"/></svg>
-                    <span>Anasayfaya Dön</span>
-                </a>
-            </div>
-
             <div class="back-btn-wrapper">
                 <button type="button" class="back-icon-btn" onclick="toggleSection('loginSection')" title="Giriş ekranına dön">
                     <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg>
@@ -1107,6 +1113,12 @@
                     Sıfırlama Bağlantısı Gönder
                 </button>
             </form>
+        </div>
+        <div class="login-footer">
+            <p>Bu sistem yalnızca mevcut arama kurtarma ekiplerinde görevli ARFF personelinin kullanımına açıktır.</p>
+            <a href="https://arff.org.tr" target="_blank" rel="noopener noreferrer" class="login-footer-link">arff.org.tr</a>
+            <div class="login-credits">Mehmet CİNOÇEVİ tarafından geliştirilmiştir.</div>
+        </div>
         </div>
     </div>
 
@@ -1173,12 +1185,20 @@
             window.showLoginToast = function (message, type, duration) {
                 const tone = String(type || 'info');
                 const icons = { success: '✓', info: 'i', warning: '!', danger: '!', error: '!' };
+                const escapeLoginToastHtml = function (value) {
+                    return String(value == null ? '' : value)
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/\"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
+                };
                 const toast = document.createElement('div');
                 toast.className = 'login-toast login-toast-' + tone;
                 toast.setAttribute('data-login-toast', '');
                 toast.innerHTML = [
                     '<span class="login-toast-icon" aria-hidden="true">' + (icons[tone] || icons.info) + '</span>',
-                    '<div>' + message + '</div>',
+                    '<div>' + escapeLoginToastHtml(message) + '</div>',
                     '<button type="button" class="login-toast-close" data-login-toast-close aria-label="Bildirimi kapat">×</button>'
                 ].join('');
 
@@ -1222,6 +1242,61 @@
                 button.setAttribute('aria-pressed', visible ? 'false' : 'true');
                 button.setAttribute('aria-label', visible ? 'Şifreyi göster' : 'Şifreyi gizle');
                 input.focus({ preventScroll: true });
+            });
+        })();
+
+        (function initGovTrEmailValidation() {
+            const blockedGovTrMessage = 'Güvenlik nedeniyle "gov.tr" uzantılı e-posta adresleri kabul edilmemektedir.';
+            const emailInputs = Array.from(document.querySelectorAll('input[name="kullanici_adi"][type="email"]'));
+            if (!emailInputs.length) return;
+            let lastGovTrToastAt = 0;
+
+            const notifyBlockedGovTr = function () {
+                const now = Date.now();
+                if (now - lastGovTrToastAt < 1800) return;
+                lastGovTrToastAt = now;
+                if (typeof window.showLoginToast === 'function') {
+                    window.showLoginToast(blockedGovTrMessage, 'warning', 3200);
+                }
+            };
+
+            const isDisallowedGovTr = function (value) {
+                const normalized = String(value || '').trim().toLowerCase();
+                if (!normalized || !normalized.includes('@')) return false;
+                const domain = normalized.split('@').pop().replace(/\.+$/g, '');
+                return domain === 'gov.tr' || domain.endsWith('.gov.tr');
+            };
+
+            const applyValidation = function (input, options) {
+                const shouldReport = Boolean(options && options.report);
+                if (isDisallowedGovTr(input.value)) {
+                    input.setCustomValidity(blockedGovTrMessage);
+                    if (shouldReport) {
+                        input.reportValidity();
+                        notifyBlockedGovTr();
+                    }
+                    return false;
+                }
+                input.setCustomValidity('');
+                return true;
+            };
+
+            emailInputs.forEach(function (input) {
+                input.addEventListener('input', function () {
+                    applyValidation(input);
+                });
+                input.addEventListener('blur', function () {
+                    applyValidation(input, { report: true });
+                });
+                const form = input.closest('form');
+                if (form) {
+                    form.addEventListener('submit', function (event) {
+                        if (!applyValidation(input, { report: true })) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                        }
+                    });
+                }
             });
         })();
 
@@ -1315,6 +1390,7 @@
                 if (!captcha) return;
                 const imageUrl = captcha.image_url || '';
                 const cacheBustedUrl = imageUrl ? imageUrl + (imageUrl.includes('?') ? '&' : '?') + 'cb=' + Date.now() : '';
+                const previousImageSrc = imageEl.getAttribute('src') || '';
                 boxEl.dataset.captchaToken = captcha.token || '';
                 if (tokenInput) {
                     tokenInput.value = captcha.token || '';
@@ -1336,16 +1412,28 @@
                         resolve();
                         return;
                     }
-                    const preload = new Image();
-                    preload.onload = function () {
-                        imageEl.src = cacheBustedUrl;
+
+                    const cleanup = function () {
+                        imageEl.removeEventListener('load', onLoad);
+                        imageEl.removeEventListener('error', onError);
+                    };
+
+                    const onLoad = function () {
+                        cleanup();
                         resolve();
                     };
-                    preload.onerror = function () {
-                        imageEl.src = cacheBustedUrl;
+
+                    const onError = function () {
+                        cleanup();
+                        if (previousImageSrc) {
+                            imageEl.src = previousImageSrc;
+                        }
                         resolve();
                     };
-                    preload.src = cacheBustedUrl;
+
+                    imageEl.addEventListener('load', onLoad, { once: true });
+                    imageEl.addEventListener('error', onError, { once: true });
+                    imageEl.src = cacheBustedUrl;
                 });
             }
 

@@ -106,7 +106,7 @@ def test_asset_detail_contains_spare_part_manage_and_add_sections(client, app):
 
 def test_low_stock_endpoint_returns_critical_stock(client, app):
     airport = HavalimaniFactory(kodu="BJV")
-    owner = KullaniciFactory(rol="sahip")
+    owner = KullaniciFactory(rol="sistem_sorumlusu")
     part = SparePartFactory(part_code="LOW-01", title="Düşük Stok Parça")
     stock = SparePartStockFactory(
         spare_part=part,

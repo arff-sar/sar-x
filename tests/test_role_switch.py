@@ -1,6 +1,7 @@
 from extensions import db
 from models import Role
 from tests.factories import HavalimaniFactory, KullaniciFactory
+from urllib.parse import urlsplit
 
 
 def _login(client, user_id):
@@ -441,3 +442,29 @@ def test_non_allow_list_user_cannot_open_role_switch_page(client, app):
     _login(client, user_id)
     response = client.get("/role-switch")
     assert response.status_code == 403
+
+
+def test_role_switch_rejects_external_next_redirect_target(client, app):
+    _set_role_switch_allowed_users(app, "mehmetcinocevi@gmail.com")
+    with app.app_context():
+        user = KullaniciFactory(
+            rol="sahip",
+            is_deleted=False,
+            tam_ad="Mehmet",
+            kullanici_adi="mehmetcinocevi@gmail.com",
+        )
+        db.session.add(user)
+        db.session.commit()
+        user_id = user.id
+
+    _login(client, user_id)
+    response = client.post(
+        "/role-switch",
+        data={"role": "admin", "next": "https://evil.example/phish"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    parsed = urlsplit(response.headers["Location"])
+    assert parsed.hostname in {"localhost", None}
+    assert parsed.path == "/dashboard"

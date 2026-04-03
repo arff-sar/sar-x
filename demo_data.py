@@ -5,11 +5,12 @@ from html import unescape
 from pathlib import Path
 from datetime import timedelta
 
-from flask import current_app
-from sqlalchemy import false, or_
+from flask import current_app, g, has_request_context
+from sqlalchemy import false, inspect, or_, text
+from sqlalchemy.exc import SQLAlchemyError
 
 from decorators import ROLE_ADMIN, ROLE_AIRPORT_MANAGER, ROLE_EDITOR, ROLE_MAINTENANCE, ROLE_MANAGER, ROLE_OWNER, ROLE_PERSONNEL, ROLE_READONLY, ROLE_WAREHOUSE
-from extensions import db, log_kaydet, table_exists
+from extensions import column_exists, db, log_kaydet, table_exists
 from models import (
     AssetOperationalState,
     AssignmentHistoryEntry,
@@ -33,6 +34,8 @@ from models import (
     MaintenanceTriggerRule,
     Malzeme,
     MeterDefinition,
+    PPEAssignmentItem,
+    PPEAssignmentRecord,
     PPERecord,
     PPERecordEvent,
     SiteAyarlari,
@@ -54,6 +57,7 @@ AIRPORTS = [
     ("Kocaeli Cengiz Topel Havalimanı", "KCO"),
 ]
 AIRPORT_PERSONNEL_COUNT = 20
+DEMO_TARGET_ASSET_COUNT = 50
 USAR_HTML_CANDIDATES = [
     Path("/Users/mehmetcinocevi/Downloads/usar_envanter_tablo_html.html"),
 ]
@@ -108,7 +112,9 @@ USAR_FALLBACK_ROWS = [
 
 
 def demo_tools_enabled():
-    return bool(current_app.config.get("DEMO_TOOLS_ENABLED", False))
+    if not current_app.config.get("DEMO_TOOLS_ENABLED", False):
+        return False
+    return str(current_app.config.get("ENV") or "").strip().lower() != "production"
 
 
 def _guard_demo_tools():
@@ -119,6 +125,25 @@ def _guard_demo_tools():
             db.create_all()
         else:
             raise RuntimeError("Demo seed tablosu eksik. Önce migration çalıştırın.")
+
+
+def _ensure_demo_ppe_schema_ready():
+    missing_parts = []
+    if not table_exists("ppe_record"):
+        missing_parts.append("ppe_record tablosu")
+    elif not column_exists("ppe_record", "ppe_assignment_id"):
+        missing_parts.append("ppe_record.ppe_assignment_id kolonu")
+    if not table_exists("ppe_assignment_record"):
+        missing_parts.append("ppe_assignment_record tablosu")
+    if not table_exists("ppe_assignment_item"):
+        missing_parts.append("ppe_assignment_item tablosu")
+
+    if not missing_parts:
+        return
+    detail = ", ".join(missing_parts)
+    raise RuntimeError(
+        f"KKD demo şeması güncel değil ({detail}). Lütfen `flask db upgrade` çalıştırın."
+    )
 
 
 def _register_record(instance, label=None):
@@ -140,39 +165,69 @@ def _register_record(instance, label=None):
 
 
 def _summary():
+    if not table_exists("demo_seed_record"):
+        return {}
+
+    user_ids = [
+        int(row.record_id)
+        for row in DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="Kullanici").all()
+        if row.record_id is not None
+    ]
+    personnel_count = 0
+    if user_ids:
+        personnel_count = Kullanici.query.filter(
+            Kullanici.id.in_(user_ids),
+            Kullanici.havalimani_id.isnot(None),
+        ).count()
+
+    work_order_count = DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="WorkOrder").count()
+    assignment_count = DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="AssignmentRecord").count()
     return {
         "havalimani": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="Havalimani").count(),
         "kullanici": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="Kullanici").count(),
+        "personel": personnel_count,
         "ekipman_sablonu": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="EquipmentTemplate").count(),
         "asset": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="InventoryAsset").count(),
         "kutu": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="Kutu").count(),
         "bakim_formu": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="MaintenanceFormTemplate").count(),
         "bakim_plani": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="MaintenancePlan").count(),
-        "is_emri": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="WorkOrder").count(),
+        "is_emri": work_order_count,
+        "bakim": work_order_count,
         "yedek_parca": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="SparePart").count(),
         "operasyon_durumu": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="AssetOperationalState").count(),
         "bakim_talimati": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="MaintenanceInstruction").count(),
+        "zimmet": assignment_count,
+        "zimmet_kalem": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="AssignmentItem").count(),
+        "zimmet_teslim_alan": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="AssignmentRecipient").count(),
         "kkd": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="PPERecord").count(),
         "kkd_olay": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="PPERecordEvent").count(),
+        "kkd_tahsis": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="PPEAssignmentRecord").count(),
+        "kkd_tahsis_kalem": DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name="PPEAssignmentItem").count(),
     }
 
 
 def format_demo_summary(summary):
     return "\n".join(
         [
-            f"Havalimanı: {summary['havalimani']}",
-            f"Kullanıcı: {summary['kullanici']}",
-            f"Ekipman Şablonu: {summary['ekipman_sablonu']}",
-            f"Asset: {summary['asset']}",
-            f"Kutu/Ünite: {summary['kutu']}",
-            f"Bakım Formu: {summary['bakim_formu']}",
-            f"Bakım Planı: {summary['bakim_plani']}",
-            f"İş Emri: {summary['is_emri']}",
-            f"Yedek Parça: {summary['yedek_parca']}",
-            f"Operasyon Durumu: {summary['operasyon_durumu']}",
-            f"Bakım Talimatı: {summary['bakim_talimati']}",
-            f"KKD Kaydı: {summary['kkd']}",
-            f"KKD Olayı: {summary['kkd_olay']}",
+            f"Havalimanı: {summary.get('havalimani', 0)}",
+            f"Personel: {summary.get('personel', 0)}",
+            f"Kullanıcı: {summary.get('kullanici', 0)}",
+            f"Ekipman Şablonu: {summary.get('ekipman_sablonu', 0)}",
+            f"Asset: {summary.get('asset', 0)}",
+            f"Kutu/Ünite: {summary.get('kutu', 0)}",
+            f"Bakım Formu: {summary.get('bakim_formu', 0)}",
+            f"Bakım Planı: {summary.get('bakim_plani', 0)}",
+            f"İş Emri: {summary.get('is_emri', 0)}",
+            f"Zimmet: {summary.get('zimmet', 0)}",
+            f"Zimmet Kalemi: {summary.get('zimmet_kalem', 0)}",
+            f"Zimmet Teslim Alan: {summary.get('zimmet_teslim_alan', 0)}",
+            f"Yedek Parça: {summary.get('yedek_parca', 0)}",
+            f"Operasyon Durumu: {summary.get('operasyon_durumu', 0)}",
+            f"Bakım Talimatı: {summary.get('bakim_talimati', 0)}",
+            f"KKD Kaydı: {summary.get('kkd', 0)}",
+            f"KKD Olayı: {summary.get('kkd_olay', 0)}",
+            f"KKD Tahsis: {summary.get('kkd_tahsis', 0)}",
+            f"KKD Tahsis Kalemi: {summary.get('kkd_tahsis_kalem', 0)}",
         ]
     )
 
@@ -219,33 +274,154 @@ def _set_platform_demo_state(active, action, summary=None):
     _save_site_meta(ayarlar, meta)
 
 
-def get_platform_demo_status():
+def _demo_request_cache():
+    if not has_request_context():
+        return None
+    cache = getattr(g, "_demo_data_cache", None)
+    if cache is None:
+        cache = {}
+        g._demo_data_cache = cache
+    return cache
+
+
+def _invalidate_demo_request_cache():
+    if has_request_context() and hasattr(g, "_demo_data_cache"):
+        g._demo_data_cache = {}
+
+
+def _platform_demo_state_only():
     if not table_exists("site_ayarlari") or not table_exists("demo_seed_record"):
-        return {"active": False, "summary": _summary(), "updated_at": "-", "action": "unavailable"}
+        return {"active": False, "updated_at": "-", "action": "unavailable"}
     ayarlar = SiteAyarlari.query.first()
     meta = _load_site_meta(ayarlar)
     state = meta.get(PLATFORM_DEMO_STATE_KEY, {}) if isinstance(meta.get(PLATFORM_DEMO_STATE_KEY), dict) else {}
     return {
         "active": bool(state.get("active")),
-        "summary": _summary(),
         "updated_at": state.get("updated_at", "-"),
         "action": state.get("action", "idle"),
     }
 
 
+def _ensure_calibration_record_schema_for_demo_cleanup():
+    _ensure_table_schema_for_demo_cleanup(
+        "calibration_record",
+        {
+            "certificate_drive_file_id": "ALTER TABLE calibration_record ADD COLUMN certificate_drive_file_id VARCHAR(255)",
+            "certificate_drive_folder_id": "ALTER TABLE calibration_record ADD COLUMN certificate_drive_folder_id VARCHAR(255)",
+            "certificate_mime_type": "ALTER TABLE calibration_record ADD COLUMN certificate_mime_type VARCHAR(120)",
+            "certificate_size_bytes": "ALTER TABLE calibration_record ADD COLUMN certificate_size_bytes INTEGER",
+        },
+    )
+
+
+def _ensure_islem_log_schema_for_demo_cleanup():
+    _ensure_table_schema_for_demo_cleanup(
+        "islem_log",
+        {
+            "event_key": "ALTER TABLE islem_log ADD COLUMN event_key VARCHAR(120)",
+            "target_model": "ALTER TABLE islem_log ADD COLUMN target_model VARCHAR(80)",
+            "target_id": "ALTER TABLE islem_log ADD COLUMN target_id INTEGER",
+            "outcome": "ALTER TABLE islem_log ADD COLUMN outcome VARCHAR(20) DEFAULT 'success'",
+            "error_code": "ALTER TABLE islem_log ADD COLUMN error_code VARCHAR(32)",
+            "title": "ALTER TABLE islem_log ADD COLUMN title VARCHAR(180)",
+            "user_message": "ALTER TABLE islem_log ADD COLUMN user_message VARCHAR(255)",
+            "owner_message": "ALTER TABLE islem_log ADD COLUMN owner_message TEXT",
+            "module": "ALTER TABLE islem_log ADD COLUMN module VARCHAR(24)",
+            "severity": "ALTER TABLE islem_log ADD COLUMN severity VARCHAR(20)",
+            "exception_type": "ALTER TABLE islem_log ADD COLUMN exception_type VARCHAR(120)",
+            "exception_message": "ALTER TABLE islem_log ADD COLUMN exception_message TEXT",
+            "traceback_summary": "ALTER TABLE islem_log ADD COLUMN traceback_summary TEXT",
+            "route": "ALTER TABLE islem_log ADD COLUMN route VARCHAR(255)",
+            "method": "ALTER TABLE islem_log ADD COLUMN method VARCHAR(12)",
+            "request_id": "ALTER TABLE islem_log ADD COLUMN request_id VARCHAR(64)",
+            "user_email": "ALTER TABLE islem_log ADD COLUMN user_email VARCHAR(150)",
+            "resolved": "ALTER TABLE islem_log ADD COLUMN resolved BOOLEAN DEFAULT 0",
+            "resolution_note": "ALTER TABLE islem_log ADD COLUMN resolution_note TEXT",
+            "ip_address": "ALTER TABLE islem_log ADD COLUMN ip_address VARCHAR(45)",
+            "havalimani_id": "ALTER TABLE islem_log ADD COLUMN havalimani_id INTEGER",
+        },
+    )
+
+
+def _ensure_table_schema_for_demo_cleanup(table_name, required_columns):
+    if not table_exists(table_name):
+        return
+
+    bind = db.session.get_bind()
+    try:
+        existing_columns = {
+            item["name"]
+            for item in inspect(bind).get_columns(table_name)
+            if item.get("name")
+        }
+    except SQLAlchemyError:
+        current_app.logger.exception("%s kolonları okunamadı.", table_name)
+        raise RuntimeError("Veritabanı şema kontrolü yapılamadı. Migration/şema doğrulaması gerekli.")
+
+    missing = [name for name in required_columns if name not in existing_columns]
+    if not missing:
+        return
+
+    dialect_name = str(getattr(bind.dialect, "name", "") or "").lower()
+    if dialect_name != "sqlite":
+        raise RuntimeError(
+            f"{table_name} şeması güncel değil. "
+            "Eksik kolonlar: " + ", ".join(missing) + ". Lütfen migration çalıştırın."
+        )
+
+    for column_name in missing:
+        db.session.execute(text(required_columns[column_name]))
+    db.session.commit()
+    current_app.logger.warning(
+        "Demo cleanup öncesi %s legacy şeması güncellendi. Eklenen kolonlar: %s",
+        table_name,
+        ", ".join(missing),
+    )
+
+
+def get_platform_demo_status():
+    cache = _demo_request_cache()
+    if cache is not None and "platform_demo_status" in cache:
+        return dict(cache["platform_demo_status"])
+
+    state = _platform_demo_state_only()
+    summary = _summary() if table_exists("demo_seed_record") else {}
+    status = {
+        "active": bool(state.get("active")),
+        "summary": summary,
+        "updated_at": state.get("updated_at", "-"),
+        "action": state.get("action", "idle"),
+    }
+    if cache is not None:
+        cache["platform_demo_status"] = dict(status)
+    return status
+
+
 def platform_demo_is_active():
-    status = get_platform_demo_status()
-    return bool(status.get("active"))
+    cache = _demo_request_cache()
+    if cache is not None and "platform_demo_active" in cache:
+        return bool(cache["platform_demo_active"])
+    active = bool(_platform_demo_state_only().get("active"))
+    if cache is not None:
+        cache["platform_demo_active"] = active
+    return active
 
 
 def demo_record_ids(model_name):
+    cache = _demo_request_cache()
+    cache_key = f"demo_ids:{model_name}"
+    if cache is not None and cache_key in cache:
+        return set(cache[cache_key])
     if not table_exists("demo_seed_record"):
         return set()
-    return {
+    record_ids = {
         int(row.record_id)
         for row in DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name=model_name).all()
         if row.record_id is not None
     }
+    if cache is not None:
+        cache[cache_key] = set(record_ids)
+    return record_ids
 
 
 def apply_platform_demo_scope(query, model_name, id_column):
@@ -440,24 +616,47 @@ def _seed_homepage_demo_if_available():
 
 def _clear_homepage_demo_if_available():
     if not demo_tools_enabled():
-        return None
+        return {"attempted": False, "deleted": 0}
     if not table_exists("demo_seed_record"):
-        return None
+        return {"attempted": False, "deleted": 0}
     try:
         from homepage_demo import clear_homepage_demo_data
 
-        return clear_homepage_demo_data()
-    except RuntimeError:
-        return None
+        result = clear_homepage_demo_data() or {}
+        return {
+            "attempted": True,
+            "deleted": int(result.get("deleted") or 0),
+            "message": str(result.get("message") or ""),
+        }
+    except RuntimeError as exc:
+        return {"attempted": True, "deleted": 0, "error": str(exc)}
     except Exception:
         db.session.rollback()
-        return None
+        current_app.logger.exception("Platform demo temizliği sırasında anasayfa demo temizliği hata verdi.")
+        return {
+            "attempted": True,
+            "deleted": 0,
+            "error": "Anasayfa demo temizliği beklenmeyen bir hatayla tamamlanamadı.",
+        }
 
 
 def clear_demo_data():
     _guard_demo_tools()
+    _ensure_demo_ppe_schema_ready()
+    _ensure_calibration_record_schema_for_demo_cleanup()
+    _ensure_islem_log_schema_for_demo_cleanup()
+    _invalidate_demo_request_cache()
     if not table_exists("demo_seed_record"):
-        return {"deleted": 0}
+        return {"deleted": 0, "homepage_deleted": 0, "warnings": []}
+
+    warnings = []
+    seed_row_count = DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG).count()
+    platform_state = _platform_demo_state_only()
+    if seed_row_count == 0 and platform_state.get("active"):
+        warnings.append(
+            "Platform demo aktif görünüyor ancak demo iz kayıtları bulunamadı. "
+            "Bu nedenle yalnızca izlenebilir kayıtlar temizlenebildi."
+        )
 
     demo_template_ids = demo_record_ids("EquipmentTemplate")
     demo_form_ids = demo_record_ids("MaintenanceFormTemplate")
@@ -469,6 +668,9 @@ def clear_demo_data():
     demo_spare_part_ids = demo_record_ids("SparePart")
     demo_work_order_ids = demo_record_ids("WorkOrder")
     demo_stock_ids = demo_record_ids("SparePartStock")
+    demo_ppe_record_ids = demo_record_ids("PPERecord")
+    demo_ppe_assignment_ids = demo_record_ids("PPEAssignmentRecord")
+    demo_ppe_item_ids = demo_record_ids("PPEAssignmentItem")
 
     with db.session.no_autoflush:
         dependent_asset_ids = set()
@@ -514,12 +716,8 @@ def clear_demo_data():
             )
             if demo_template_ids:
                 extra_templates = extra_templates.filter(~EquipmentTemplate.id.in_(sorted(demo_template_ids)))
-            extra_template_ids = [tpl.id for tpl in extra_templates.all()]
-            if extra_template_ids:
-                EquipmentTemplate.query.filter(EquipmentTemplate.id.in_(extra_template_ids)).update(
-                    {EquipmentTemplate.default_maintenance_form_id: None},
-                    synchronize_session=False,
-                )
+            for template in extra_templates.all():
+                template.default_maintenance_form_id = None
 
         # Demo şablonuna bağlı fakat seed tablosunda olmayan asset kayıtları,
         # template silinirken equipment_template_id alanını NULL'a düşürüp
@@ -536,9 +734,46 @@ def clear_demo_data():
         # Assignment recipient satırları kullanıcı silme sırasından önce temizlenmezse
         # ORM user_id alanını NULL'a çekmeye çalışabiliyor.
         if demo_user_ids and table_exists("assignment_recipient"):
-            AssignmentRecipient.query.filter(
+            recipient_rows = AssignmentRecipient.query.filter(
                 AssignmentRecipient.user_id.in_(sorted(demo_user_ids))
-            ).delete(synchronize_session=False)
+            ).all()
+            for recipient in recipient_rows:
+                db.session.delete(recipient)
+
+        if table_exists("ppe_assignment_record") and demo_user_ids:
+            dependent_ppe_assignment_query = PPEAssignmentRecord.query.filter(
+                or_(
+                    PPEAssignmentRecord.recipient_user_id.in_(sorted(demo_user_ids)),
+                    PPEAssignmentRecord.delivered_by_id.in_(sorted(demo_user_ids)),
+                    PPEAssignmentRecord.created_by_id.in_(sorted(demo_user_ids)),
+                )
+            )
+            if demo_ppe_assignment_ids:
+                dependent_ppe_assignment_query = dependent_ppe_assignment_query.filter(
+                    ~PPEAssignmentRecord.id.in_(sorted(demo_ppe_assignment_ids))
+                )
+            dependent_ppe_assignment_ids = {
+                row.id
+                for row in dependent_ppe_assignment_query.with_entities(PPEAssignmentRecord.id).all()
+            }
+            if dependent_ppe_assignment_ids and table_exists("ppe_assignment_item"):
+                PPEAssignmentItem.query.filter(
+                    PPEAssignmentItem.assignment_id.in_(sorted(dependent_ppe_assignment_ids))
+                ).delete(synchronize_session=False)
+            if dependent_ppe_assignment_ids:
+                PPEAssignmentRecord.query.filter(
+                    PPEAssignmentRecord.id.in_(sorted(dependent_ppe_assignment_ids))
+                ).delete(synchronize_session=False)
+
+        if table_exists("ppe_assignment_item") and demo_ppe_record_ids:
+            dependent_ppe_items = PPEAssignmentItem.query.filter(
+                PPEAssignmentItem.ppe_record_id.in_(sorted(demo_ppe_record_ids))
+            )
+            if demo_ppe_item_ids:
+                dependent_ppe_items = dependent_ppe_items.filter(
+                    ~PPEAssignmentItem.id.in_(sorted(demo_ppe_item_ids))
+                )
+            dependent_ppe_items.delete(synchronize_session=False)
 
         # Bridge/usage kayıtları DemoSeedRecord dışında kalabiliyor.
         # Demo varlıklara/parçalara bağlı bağımlılıkları önce temizle.
@@ -565,20 +800,27 @@ def clear_demo_data():
             WorkOrderPartUsage.query.filter(or_(*clauses)).delete(synchronize_session=False)
 
         if dependent_work_order_ids:
-            WorkOrder.query.filter(WorkOrder.id.in_(sorted(dependent_work_order_ids))).delete(synchronize_session=False)
+            WorkOrder.query.filter(WorkOrder.id.in_(sorted(dependent_work_order_ids))).delete(synchronize_session="fetch")
 
         if dependent_asset_ids:
-            InventoryAsset.query.filter(InventoryAsset.id.in_(sorted(dependent_asset_ids))).delete(synchronize_session=False)
+            InventoryAsset.query.filter(InventoryAsset.id.in_(sorted(dependent_asset_ids))).delete(synchronize_session="fetch")
 
         if demo_airport_ids:
-            dependent_materials_query.delete(synchronize_session=False)
-            dependent_boxes_query.delete(synchronize_session=False)
+            dependent_materials_query.delete(synchronize_session="fetch")
+            dependent_boxes_query.delete(synchronize_session="fetch")
+
+    # Şablon siliminden önce bağımlı asset silimlerini flush ederek
+    # ORM'nin FK alanını NULL'a çekme yolunu kapatır.
+    db.session.flush()
+    db.session.expire_all()
 
     model_map = {
         "AssignmentHistoryEntry": AssignmentHistoryEntry,
         "AssignmentItem": AssignmentItem,
         "AssignmentRecipient": AssignmentRecipient,
         "AssignmentRecord": AssignmentRecord,
+        "PPEAssignmentItem": PPEAssignmentItem,
+        "PPEAssignmentRecord": PPEAssignmentRecord,
         "PPERecordEvent": PPERecordEvent,
         "PPERecord": PPERecord,
         "CalibrationRecord": CalibrationRecord,
@@ -608,6 +850,8 @@ def clear_demo_data():
         "AssignmentItem",
         "AssignmentRecipient",
         "AssignmentRecord",
+        "PPEAssignmentItem",
+        "PPEAssignmentRecord",
         "PPERecordEvent",
         "PPERecord",
         "CalibrationRecord",
@@ -637,20 +881,52 @@ def clear_demo_data():
         for model_name in delete_order:
             rows = DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG, model_name=model_name).order_by(DemoSeedRecord.id.desc()).all()
             model = model_map[model_name]
+            if model_name == "EquipmentTemplate":
+                record_ids = sorted({int(row.record_id) for row in rows if row.record_id is not None})
+                # Şablona bağlı kalmış seed dışı asset kayıtları template silimi sırasında
+                # FK/NOT NULL çakışması üretmesin diye son bir güvenli temizleme geçişi.
+                if record_ids:
+                    remaining_assets = InventoryAsset.query.filter(
+                        InventoryAsset.equipment_template_id.in_(record_ids)
+                    ).all()
+                    for remaining_asset in remaining_assets:
+                        db.session.delete(remaining_asset)
+                    if remaining_assets:
+                        db.session.flush()
             for row in rows:
                 obj = db.session.get(model, row.record_id)
                 if obj is not None:
                     db.session.delete(obj)
                     deleted += 1
-    DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG).delete(synchronize_session=False)
+    if demo_form_ids:
+        EquipmentTemplate.query.filter(
+            EquipmentTemplate.default_maintenance_form_id.in_(sorted(demo_form_ids))
+        ).update(
+            {EquipmentTemplate.default_maintenance_form_id: None},
+            synchronize_session=False,
+        )
+    with db.session.no_autoflush:
+        DemoSeedRecord.query.filter_by(seed_tag=DEMO_SEED_TAG).delete(synchronize_session=False)
     _set_platform_demo_state(False, "cleared", summary={"deleted": deleted})
     db.session.commit()
-    homepage_result = _clear_homepage_demo_if_available() or {}
-    return {"deleted": deleted, "homepage_deleted": int(homepage_result.get("deleted") or 0)}
+    homepage_result = _clear_homepage_demo_if_available()
+    homepage_deleted = int(homepage_result.get("deleted") or 0)
+    if homepage_result.get("error"):
+        warnings.append(str(homepage_result.get("error")))
+    if deleted == 0 and homepage_deleted == 0 and seed_row_count == 0 and not warnings:
+        warnings.append("Temizlenecek demo kaydı bulunamadı.")
+    return {
+        "deleted": deleted,
+        "homepage_deleted": homepage_deleted,
+        "warnings": warnings,
+        "partial_success": bool(warnings),
+    }
 
 
 def seed_demo_data(reset=False):
     _guard_demo_tools()
+    _ensure_demo_ppe_schema_ready()
+    _invalidate_demo_request_cache()
     if reset:
         clear_demo_data()
         db.session.expire_all()
@@ -1140,22 +1416,29 @@ def seed_demo_data(reset=False):
     statuses = ["aktif", "aktif", "aktif", "bakimda", "arizali", "pasif"]
     work_order_statuses = ["acik", "atandi", "islemde", "beklemede_parca", "tamamlandi"]
     work_order_types = ["preventive", "corrective", "inspection", "calibration", "emergency"]
-    for airport in airports:
-        for asset_index in range(1, 25):
-            template = templates[(asset_index + airport.id) % len(templates)]
-            box = boxes_by_airport[airport.id][asset_index % len(boxes_by_airport[airport.id])]
-            status = statuses[(asset_index + airport.id) % len(statuses)]
+    target_asset_count = max(int(DEMO_TARGET_ASSET_COUNT), len(airports))
+    base_assets_per_airport = target_asset_count // len(airports)
+    remaining_assets = target_asset_count % len(airports)
+    global_asset_index = 0
+
+    for airport_index, airport in enumerate(airports):
+        airport_asset_count = base_assets_per_airport + (1 if airport_index < remaining_assets else 0)
+        for local_asset_index in range(1, airport_asset_count + 1):
+            global_asset_index += 1
+            template = templates[(global_asset_index + airport.id) % len(templates)]
+            box = boxes_by_airport[airport.id][(local_asset_index - 1) % len(boxes_by_airport[airport.id])]
+            status = statuses[(global_asset_index + airport.id) % len(statuses)]
             default_units = template_default_units.get(template.id, 1)
             serial = _clip_text(
-                f"{airport.kodu}-{template.id:03d}-{asset_index:03d}-{rng.randint(100, 999)}",
+                f"{airport.kodu}-{template.id:03d}-{global_asset_index:03d}-{rng.randint(100, 999)}",
                 100,
             )
-            asset_tag = _clip_text(f"USAR-{airport.kodu}-{template.id:03d}-{asset_index:03d}", 120)
+            asset_tag = _clip_text(f"USAR-{airport.kodu}-{template.id:03d}-{global_asset_index:03d}", 120)
             last_maintenance = today - timedelta(days=rng.randint(5, 160))
             next_maintenance = last_maintenance + timedelta(days=template.maintenance_period_days or 90)
-            if asset_index % 6 == 0:
+            if global_asset_index % 6 == 0:
                 next_maintenance = today - timedelta(days=rng.randint(1, 20))
-            elif asset_index % 4 == 0:
+            elif global_asset_index % 4 == 0:
                 next_maintenance = today + timedelta(days=rng.randint(1, 12))
             material = Malzeme(
                 ad=_clip_text(f"{template.name} / {template.brand} {template.model_code}", 100, "Demo Ekipman"),
@@ -1231,15 +1514,15 @@ def seed_demo_data(reset=False):
                 notes="Demo bakım planı",
             )
             plan.recalculate_next_due_date(last_maintenance)
-            if asset_index % 6 == 0:
+            if global_asset_index % 6 == 0:
                 plan.next_due_date = today - timedelta(days=rng.randint(1, 20))
-            elif asset_index % 4 == 0:
+            elif global_asset_index % 4 == 0:
                 plan.next_due_date = today + timedelta(days=rng.randint(1, 10))
             db.session.add(plan)
             db.session.flush()
             _register_record(plan, plan.name)
 
-            if asset_index % 3 == 0:
+            if global_asset_index % 3 == 0:
                 meter = MeterDefinition(
                     name="Çalışma Saati",
                     meter_type="hours",
@@ -1258,7 +1541,7 @@ def seed_demo_data(reset=False):
                     meter_definition_id=meter.id,
                     threshold_value=500,
                     warning_lead_value=25,
-                    auto_create_work_order=asset_index % 2 == 0,
+                    auto_create_work_order=global_asset_index % 2 == 0,
                     is_active=True,
                 )
                 db.session.add(rule)
@@ -1353,99 +1636,216 @@ def seed_demo_data(reset=False):
             _register_record(usage, f"wo-usage-{order.id}-{part.id}")
 
     if table_exists("assignment_record") and table_exists("assignment_recipient") and table_exists("assignment_item"):
-        staff_by_airport = {}
+        assignment_scenarios = [
+            {"status": "active", "days_ago": 2, "return_mode": "none", "signed": False},
+            {"status": "partial", "days_ago": 9, "return_mode": "partial", "signed": True},
+            {"status": "returned", "days_ago": 16, "return_mode": "full", "signed": True},
+        ]
         for airport in airports:
-            scoped_staff = [u for u in users if u.havalimani_id == airport.id and u.rol in {ROLE_PERSONNEL, ROLE_MAINTENANCE}]
-            if scoped_staff:
-                staff_by_airport[airport.id] = scoped_staff
-
-        for index, airport in enumerate(airports, start=1):
-            scoped_staff = staff_by_airport.get(airport.id, [])
+            scoped_staff = [
+                user
+                for user in users
+                if user.havalimani_id == airport.id and user.rol in {ROLE_PERSONNEL, ROLE_MAINTENANCE, ROLE_MANAGER}
+            ]
             scoped_assets = [asset for asset in assets if asset.havalimani_id == airport.id]
-            if len(scoped_staff) < 2 or len(scoped_assets) < 3:
+            if len(scoped_staff) < 3 or len(scoped_assets) < 4:
                 continue
 
-            assignment = AssignmentRecord(
-                assignment_no=f"ASG-DEMO-{airport.kodu}-{index:02d}",
-                assignment_date=today - timedelta(days=index),
-                delivered_by_id=scoped_staff[0].id,
-                delivered_by_name=scoped_staff[0].tam_ad,
-                airport_id=airport.id,
-                note="Demo zimmet kaydı",
-                status="active" if index % 2 else "partially_returned",
-                created_by_id=users[0].id if users else None,
-            )
-            db.session.add(assignment)
-            db.session.flush()
-            _register_record(assignment, assignment.assignment_no)
-
-            recipient = AssignmentRecipient(
-                assignment_id=assignment.id,
-                user_id=scoped_staff[1].id,
-            )
-            db.session.add(recipient)
-            db.session.flush()
-            _register_record(recipient, f"recipient-{assignment.id}-{scoped_staff[1].id}")
-
-            selected_assets = scoped_assets[:2]
-            for item_index, asset in enumerate(selected_assets, start=1):
-                item = AssignmentItem(
-                    assignment_id=assignment.id,
-                    material_id=asset.legacy_material_id,
-                    asset_id=asset.id,
-                    item_name=_clip_text(asset.legacy_material.ad if asset.legacy_material else (asset.equipment_template.name if asset.equipment_template else "Demo Ekipman"), 180, "Demo Ekipman"),
-                    quantity=1,
-                    unit="adet",
-                    note="Demo zimmet kalemi",
-                    returned_quantity=1 if (item_index == 1 and index % 2 == 0) else 0,
-                    returned_at=get_tr_now() if (item_index == 1 and index % 2 == 0) else None,
-                    returned_by_id=scoped_staff[0].id if (item_index == 1 and index % 2 == 0) else None,
-                    return_note="Kısmi iade - demo" if (item_index == 1 and index % 2 == 0) else None,
+            for scenario_index, scenario in enumerate(assignment_scenarios, start=1):
+                delivered_user = scoped_staff[(scenario_index - 1) % len(scoped_staff)]
+                recipient_user = scoped_staff[scenario_index % len(scoped_staff)]
+                assignment = AssignmentRecord(
+                    assignment_no=f"ASG-DEMO-{airport.kodu}-{scenario_index:02d}",
+                    assignment_date=today - timedelta(days=scenario["days_ago"]),
+                    delivered_by_id=delivered_user.id,
+                    delivered_by_name=delivered_user.tam_ad,
+                    airport_id=airport.id,
+                    note=f"Demo klasik zimmet kaydı ({scenario['status']})",
+                    status=scenario["status"],
+                    created_by_id=users[0].id if users else None,
                 )
-                db.session.add(item)
+                if scenario["signed"]:
+                    assignment.signed_document_url = f"https://demo.sarx.local/zimmet/{assignment.assignment_no.lower()}.pdf"
+                    assignment.signed_document_name = f"{assignment.assignment_no}_imzali.pdf"
+                db.session.add(assignment)
                 db.session.flush()
-                _register_record(item, f"assignment-item-{assignment.id}-{item_index}")
+                _register_record(assignment, assignment.assignment_no)
 
-            history = AssignmentHistoryEntry(
-                assignment_id=assignment.id,
-                event_type="created",
-                event_note="Demo zimmet oluşturuldu",
-                created_by_id=users[0].id if users else None,
-            )
-            db.session.add(history)
-            db.session.flush()
-            _register_record(history, f"assignment-history-{assignment.id}")
+                recipient_ids = [recipient_user.id]
+                if scenario_index == 1 and len(scoped_staff) > 4:
+                    recipient_ids.append(scoped_staff[(scenario_index + 2) % len(scoped_staff)].id)
+                for recipient_user_id in recipient_ids:
+                    recipient = AssignmentRecipient(
+                        assignment_id=assignment.id,
+                        user_id=recipient_user_id,
+                    )
+                    db.session.add(recipient)
+                    db.session.flush()
+                    _register_record(recipient, f"recipient-{assignment.id}-{recipient_user_id}")
+
+                base_asset_index = (scenario_index - 1) * 2
+                selected_assets = [
+                    scoped_assets[base_asset_index % len(scoped_assets)],
+                    scoped_assets[(base_asset_index + 1) % len(scoped_assets)],
+                ]
+                for item_index, asset in enumerate(selected_assets, start=1):
+                    quantity = 2 if item_index == 1 else 1
+                    returned_quantity = 0
+                    returned_at = None
+                    returned_by_id = None
+                    return_note = None
+                    if scenario["return_mode"] == "full":
+                        returned_quantity = quantity
+                        returned_at = get_tr_now() - timedelta(days=1)
+                        returned_by_id = delivered_user.id
+                        return_note = "Demo iade tamamlandı."
+                    elif scenario["return_mode"] == "partial" and item_index == 1:
+                        returned_quantity = 1
+                        returned_at = get_tr_now() - timedelta(days=1)
+                        returned_by_id = delivered_user.id
+                        return_note = "Demo kısmi iade."
+
+                    item = AssignmentItem(
+                        assignment_id=assignment.id,
+                        material_id=asset.legacy_material_id,
+                        asset_id=asset.id,
+                        item_name=_clip_text(
+                            asset.legacy_material.ad
+                            if asset.legacy_material
+                            else (asset.equipment_template.name if asset.equipment_template else "Demo Ekipman"),
+                            180,
+                            "Demo Ekipman",
+                        ),
+                        quantity=quantity,
+                        unit="adet",
+                        note=f"Demo zimmet kalemi ({scenario['status']})",
+                        returned_quantity=returned_quantity,
+                        returned_at=returned_at,
+                        returned_by_id=returned_by_id,
+                        return_note=return_note,
+                    )
+                    db.session.add(item)
+                    db.session.flush()
+                    _register_record(item, f"assignment-item-{assignment.id}-{item_index}")
+
+                history_entries = [
+                    ("created", "Demo zimmet oluşturuldu."),
+                ]
+                if scenario["return_mode"] == "partial":
+                    history_entries.append(("return", "Kısmi iade kaydı işlendi."))
+                elif scenario["return_mode"] == "full":
+                    history_entries.append(("return", "İade tamamlandı."))
+                for event_type, event_note in history_entries:
+                    history = AssignmentHistoryEntry(
+                        assignment_id=assignment.id,
+                        event_type=event_type,
+                        event_note=event_note,
+                        created_by_id=users[0].id if users else None,
+                    )
+                    db.session.add(history)
+                    db.session.flush()
+                    _register_record(history, f"assignment-history-{assignment.id}-{event_type}")
 
     ppe_specs = [
-        ("Baret", "MSA V-Gard", "M"),
-        ("Koruyucu Eldiven", "Ansell HyFlex", "L"),
-        ("Koruyucu Gözlük", "Uvex i-3", "STD"),
-        ("Yüksek Görünürlük Yeleği", "3M Reflect", "XL"),
+        {
+            "category": "Baş ve Yüz Koruması",
+            "subcategory": "Baret",
+            "item_name": "Baret",
+            "brand": "MSA",
+            "model_name": "V-Gard",
+            "size_info": "M",
+        },
+        {
+            "category": "El Koruması",
+            "subcategory": "Mekanik Risk Eldiveni",
+            "item_name": "Koruyucu Eldiven",
+            "brand": "Ansell",
+            "model_name": "HyFlex",
+            "size_info": "L",
+        },
+        {
+            "category": "Baş ve Yüz Koruması",
+            "subcategory": "Koruyucu Gözlük",
+            "item_name": "Koruyucu Gözlük",
+            "brand": "Uvex",
+            "model_name": "i-3",
+            "size_info": "STD",
+        },
+        {
+            "category": "Vücut Koruması",
+            "subcategory": "Reflektif Yelek",
+            "item_name": "Yüksek Görünürlük Yeleği",
+            "brand": "3M",
+            "model_name": "Reflect",
+            "size_info": "XL",
+        },
     ]
+    ppe_pool_specs = [
+        {
+            "category": "Ayak Koruması",
+            "subcategory": "Çelik Burunlu İş Botu",
+            "item_name": "KKD Havuz Botu",
+            "brand": "YDS",
+            "model_name": "Rescue Pro",
+            "size_info": "42",
+            "quantity": 4,
+        },
+        {
+            "category": "Solunum Koruması",
+            "subcategory": "Toz Maskesi",
+            "item_name": "KKD Havuz Maskesi",
+            "brand": "3M",
+            "model_name": "Aura 9332+",
+            "size_info": "STD",
+            "quantity": 12,
+        },
+    ]
+    ppe_records_by_airport = {}
     for airport in airports:
         scoped_staff = [
             user
             for user in users
             if user.havalimani_id == airport.id and user.rol in {ROLE_PERSONNEL, ROLE_MAINTENANCE, ROLE_MANAGER}
         ]
-        for index, staff in enumerate(scoped_staff[:4], start=1):
-            item_name, brand_model, size_info = ppe_specs[(index - 1) % len(ppe_specs)]
+        airport_ppe_records = []
+        for index, staff in enumerate(scoped_staff[:5], start=1):
+            spec = ppe_specs[(index - 1) % len(ppe_specs)]
+            status = ["aktif", "aktif", "eksik", "hasarli", "aktif"][(index - 1) % 5]
             record = PPERecord(
                 user_id=staff.id,
                 airport_id=airport.id,
                 assignment_id=None,
-                item_name=item_name,
-                brand_model=brand_model,
-                size_info=size_info,
+                ppe_assignment_id=None,
+                category=spec["category"],
+                subcategory=spec["subcategory"],
+                item_name=spec["item_name"],
+                brand=spec["brand"],
+                model_name=spec["model_name"],
+                brand_model=f"{spec['brand']} {spec['model_name']}",
+                size_info=spec["size_info"],
                 delivered_at=today - timedelta(days=rng.randint(5, 70)),
                 quantity=1,
-                status=rng.choice(["aktif", "aktif", "eksik", "hasarli"]),
-                description=f"{airport.kodu} demo KKD kaydı",
+                status=status,
+                physical_condition="hasarli" if status == "hasarli" else rng.choice(["iyi", "iyi", "yeni"]),
+                is_active=True,
+                manufacturer_url="https://example.com/demo-kkd",
+                description=f"{airport.kodu} demo KKD personel kaydı",
+                signed_document_url=(
+                    f"https://demo.sarx.local/kkd/{airport.kodu.lower()}-{staff.id}.pdf"
+                    if index in {1, 4}
+                    else None
+                ),
+                signed_document_name=(
+                    f"KKD_{airport.kodu}_{staff.id}_imzali.pdf"
+                    if index in {1, 4}
+                    else None
+                ),
                 created_by_id=users[0].id if users else None,
             )
             db.session.add(record)
             db.session.flush()
-            _register_record(record, f"{airport.kodu}-{staff.id}-{item_name}")
+            _register_record(record, f"{airport.kodu}-{staff.id}-{spec['item_name']}")
+            airport_ppe_records.append(record)
 
             event = PPERecordEvent(
                 ppe_record_id=record.id,
@@ -1458,10 +1858,127 @@ def seed_demo_data(reset=False):
             db.session.flush()
             _register_record(event, f"ppe-event-{record.id}")
 
+        for pool_index, spec in enumerate(ppe_pool_specs, start=1):
+            pool_record = PPERecord(
+                user_id=None,
+                airport_id=airport.id,
+                assignment_id=None,
+                ppe_assignment_id=None,
+                category=spec["category"],
+                subcategory=spec["subcategory"],
+                item_name=spec["item_name"],
+                brand=spec["brand"],
+                model_name=spec["model_name"],
+                brand_model=f"{spec['brand']} {spec['model_name']}",
+                size_info=spec["size_info"],
+                delivered_at=today - timedelta(days=rng.randint(2, 30)),
+                quantity=int(spec["quantity"]),
+                status="aktif",
+                physical_condition="iyi",
+                is_active=True,
+                manufacturer_url="https://example.com/demo-kkd",
+                description=f"{airport.kodu} demo KKD havuz kaydı #{pool_index}",
+                created_by_id=users[0].id if users else None,
+            )
+            db.session.add(pool_record)
+            db.session.flush()
+            _register_record(pool_record, f"{airport.kodu}-pool-{pool_index}")
+            airport_ppe_records.append(pool_record)
+
+            pool_event = PPERecordEvent(
+                ppe_record_id=pool_record.id,
+                event_type="created",
+                status_after=pool_record.status,
+                event_note="Demo seed ile havuz kaydı oluşturuldu.",
+                created_by_id=users[0].id if users else None,
+            )
+            db.session.add(pool_event)
+            db.session.flush()
+            _register_record(pool_event, f"ppe-pool-event-{pool_record.id}")
+
+        ppe_records_by_airport[airport.id] = airport_ppe_records
+
+    if table_exists("ppe_assignment_record") and table_exists("ppe_assignment_item"):
+        ppe_assignment_scenarios = [
+            {"status": "active", "days_ago": 1, "signed": False},
+            {"status": "returned", "days_ago": 8, "signed": True},
+            {"status": "active", "days_ago": 14, "signed": True},
+        ]
+        for airport in airports:
+            scoped_staff = [
+                user
+                for user in users
+                if user.havalimani_id == airport.id and user.rol in {ROLE_PERSONNEL, ROLE_MAINTENANCE, ROLE_MANAGER}
+            ]
+            scoped_records = [
+                row
+                for row in ppe_records_by_airport.get(airport.id, [])
+                if bool(getattr(row, "is_active", False)) and float(row.quantity or 0) > 0
+            ]
+            pool_records = [row for row in scoped_records if row.user_id is None]
+            user_records = [row for row in scoped_records if row.user_id is not None]
+            if len(scoped_staff) < 2 or not pool_records or not user_records:
+                continue
+
+            for scenario_index, scenario in enumerate(ppe_assignment_scenarios, start=1):
+                delivered_user = scoped_staff[(scenario_index - 1) % len(scoped_staff)]
+                recipient_user = scoped_staff[scenario_index % len(scoped_staff)]
+                assignment = PPEAssignmentRecord(
+                    assignment_no=f"KKD-DEMO-{airport.kodu}-{scenario_index:02d}",
+                    assignment_date=today - timedelta(days=scenario["days_ago"]),
+                    delivered_by_id=delivered_user.id,
+                    delivered_by_name=delivered_user.tam_ad,
+                    recipient_user_id=recipient_user.id,
+                    airport_id=airport.id,
+                    note=f"Demo KKD tahsis kaydı ({scenario['status']})",
+                    status=scenario["status"],
+                    returned_at=(get_tr_now() - timedelta(days=1)) if scenario["status"] == "returned" else None,
+                    returned_by_id=delivered_user.id if scenario["status"] == "returned" else None,
+                    returned_note="Demo iade tamamlandı." if scenario["status"] == "returned" else None,
+                    created_by_id=users[0].id if users else None,
+                )
+                if scenario["signed"]:
+                    assignment.signed_document_url = (
+                        f"https://demo.sarx.local/kkd/tahsis/{assignment.assignment_no.lower()}.pdf"
+                    )
+                    assignment.signed_document_name = f"{assignment.assignment_no}_imzali.pdf"
+                db.session.add(assignment)
+                db.session.flush()
+                _register_record(assignment, assignment.assignment_no)
+
+                selected_records = [
+                    pool_records[(scenario_index - 1) % len(pool_records)],
+                    user_records[(scenario_index - 1) % len(user_records)],
+                ]
+                for item_index, record in enumerate(selected_records, start=1):
+                    quantity = float(min(max(int(record.quantity or 1), 1), 2))
+                    item = PPEAssignmentItem(
+                        assignment_id=assignment.id,
+                        ppe_record_id=record.id,
+                        item_name=record.item_name,
+                        category=record.category,
+                        subcategory=record.subcategory,
+                        brand=record.brand,
+                        model_name=record.model_name,
+                        serial_no=record.serial_no,
+                        size_info=record.size_info,
+                        quantity=quantity,
+                        unit="adet",
+                        note=f"Demo KKD tahsis kalemi ({scenario['status']})",
+                    )
+                    db.session.add(item)
+                    db.session.flush()
+                    _register_record(item, f"ppe-assignment-item-{assignment.id}-{item_index}")
+
+                if scenario["status"] == "active":
+                    linked_pool = selected_records[0]
+                    linked_pool.ppe_assignment_id = assignment.id
+
     db.session.commit()
     summary = _summary()
     _set_platform_demo_state(True, "seeded", summary=summary)
     db.session.commit()
+    _invalidate_demo_request_cache()
     _seed_homepage_demo_if_available()
     log_kaydet(
         "Demo Veri",

@@ -28,11 +28,13 @@
             box-shadow: 0 16px 40px rgba(15, 23, 42, 0.12);
         }
         .label-topline {
-            font-size: 11px;
+            font-size: 9.5px;
             font-weight: 800;
             color: #475569;
-            letter-spacing: .16em;
-            text-transform: uppercase;
+            letter-spacing: .06em;
+            line-height: 1.35;
+            text-transform: none;
+            overflow-wrap: anywhere;
         }
         .label-title {
             margin-top: 8px;
@@ -106,9 +108,12 @@
 <body>
     <div class="label-sheet">
         <div class="label-card">
-            <div class="label-topline">ARFF Operational Asset Label</div>
+            <div class="label-topline">SAR-X ARFF ENVANTER YÖNETİM SİSTEMİ</div>
             <div class="label-title">{{ asset.equipment_template.name if asset.equipment_template else asset.legacy_material.ad }}</div>
-            <div class="label-subtitle">Saha tarama ve hizli ekipman takibi</div>
+            {% set brand_name = asset.equipment_template.brand if asset.equipment_template and asset.equipment_template.brand else '' %}
+            {% set model_name = asset.equipment_template.model_code if asset.equipment_template and asset.equipment_template.model_code else '' %}
+            {% set brand_model = ((brand_name ~ ' ' ~ model_name).strip()) %}
+            <div class="label-subtitle">{{ brand_model or 'Marka / Model Bilgisi Yok' }}</div>
 
             <div class="qr-frame">
                 <img src="{{ url_for('inventory.qr_img', asset_id=asset.id) }}" alt="QR Kod" class="qr-image">

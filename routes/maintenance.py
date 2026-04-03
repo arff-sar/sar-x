@@ -9,6 +9,8 @@ from xhtml2pdf import pisa
 from extensions import audit_log, create_approval_request, create_notification, db, limiter, log_kaydet, guvenli_metin
 from decorators import (
     CANONICAL_ROLE_ADMIN,
+    CANONICAL_ROLE_SYSTEM,
+    CANONICAL_ROLE_TEAM_LEAD,
     CANONICAL_ROLE_TEAM_MEMBER,
     get_effective_role,
     has_permission,
@@ -54,6 +56,11 @@ CHECKLIST_FIELD_TYPES = {
     "pass_fail": "Geçti / Kaldı",
     "select": "Seçim Listesi",
 }
+MAINTENANCE_PERIOD_TYPES = {
+    "gunluk": "Günlük",
+    "aylik": "Aylık",
+    "yillik": "Yıllık",
+}
 
 
 def _can_view_all():
@@ -74,6 +81,10 @@ def _can_assign_work_order():
 
 def _can_manage_form_catalog():
     return has_permission("maintenance.templates.manage") or has_permission("maintenance.plan.change")
+
+
+def _can_manage_instruction_maintenance_forms():
+    return get_effective_role(current_user) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_TEAM_LEAD}
 
 
 def _can_manage_instruction_catalog():
@@ -134,6 +145,88 @@ def _build_instruction_catalog_options():
 
     selectable_categories = sorted({item["category"] for item in catalog}, key=str.lower)
     return catalog, selectable_categories
+
+
+def _build_maintenance_form_equipment_options():
+    templates = (
+        EquipmentTemplate.query.filter(
+            EquipmentTemplate.is_deleted.is_(False),
+            EquipmentTemplate.is_active.is_(True),
+            EquipmentTemplate.name.isnot(None),
+            EquipmentTemplate.name != "",
+        )
+        .order_by(
+            EquipmentTemplate.category.asc(),
+            EquipmentTemplate.name.asc(),
+            EquipmentTemplate.brand.asc(),
+            EquipmentTemplate.model_code.asc(),
+            EquipmentTemplate.id.asc(),
+        )
+        .all()
+    )
+
+    options = []
+    for template in templates:
+        options.append(
+            {
+                "id": template.id,
+                "name": guvenli_metin(template.name or "").strip(),
+                "category": guvenli_metin(template.category or "").strip(),
+                "brand": guvenli_metin(template.brand or "").strip(),
+                "model_code": guvenli_metin(template.model_code or "").strip(),
+            }
+        )
+    return options
+
+
+def _normalize_period_type(raw_value):
+    value = guvenli_metin(raw_value or "").strip().lower()
+    return value if value in MAINTENANCE_PERIOD_TYPES else None
+
+
+def _parse_maintenance_step_rows(raw_payload):
+    try:
+        payload = json.loads(raw_payload or "[]")
+    except (TypeError, ValueError):
+        return [], "Bakım adımları doğrulanamadı. Adımları tekrar ekleyip kaydedin."
+
+    if not isinstance(payload, list):
+        return [], "Bakım adımları doğrulanamadı. Adımları tekrar ekleyip kaydedin."
+
+    rows = []
+    seen = set()
+    for item in payload:
+        label = " ".join(str(item or "").split()).strip()
+        if not label:
+            continue
+        normalized_key = label.casefold()
+        if normalized_key in seen:
+            continue
+        seen.add(normalized_key)
+        rows.append(label)
+    return rows, None
+
+
+def _build_maintenance_form_name(template, period_label):
+    base_name = f"{template.name} - {period_label} Bakım Formu"
+    existing = MaintenanceFormTemplate.query.filter(
+        MaintenanceFormTemplate.is_deleted.is_(False),
+        MaintenanceFormTemplate.name == base_name,
+    ).first()
+    if not existing:
+        return base_name
+
+    suffix = template.model_code or template.brand or f"#{template.id}"
+    suffix = guvenli_metin(suffix or "").strip() or f"#{template.id}"
+    candidate = f"{base_name} ({suffix})"
+    sequence = 2
+    while MaintenanceFormTemplate.query.filter(
+        MaintenanceFormTemplate.is_deleted.is_(False),
+        MaintenanceFormTemplate.name == candidate,
+    ).first():
+        candidate = f"{base_name} ({suffix}-{sequence})"
+        sequence += 1
+    return candidate
 
 
 def _asset_scope():
@@ -603,6 +696,7 @@ def bakim_paneli():
         overdue_assets=overdue_assets,
         open_orders=open_orders,
         critical_fault_assets=critical_fault_assets,
+        status_label=_status_label,
     )
 
 
@@ -766,8 +860,21 @@ def is_emri_detay(work_order_id):
 @login_required
 @permission_required("maintenance.view")
 def asset_hizli_bakim_legacy(asset_id):
-    flash("Bakım akışı artık güvenli form gönderimi ile başlatılır.", "warning")
-    return redirect(url_for("inventory.quick_asset_view", asset_id=asset_id))
+    asset = _asset_scope().filter(InventoryAsset.id == asset_id).first_or_404()
+    if not _asset_allowed(asset):
+        abort(403)
+
+    order, created = _ensure_asset_work_order(asset)
+    if created:
+        db.session.commit()
+        log_kaydet(
+            "Bakım İş Emri",
+            f"Hızlı bakım formu için iş emri oluşturuldu: {order.work_order_no}",
+            event_key="workorder.quick_create",
+            target_model="WorkOrder",
+            target_id=order.id,
+        )
+    return redirect(url_for("maintenance.work_order_quick_close", work_order_id=order.id))
 
 
 @maintenance_bp.route("/bakim/asset/<int:asset_id>/hizli", methods=["POST"])
@@ -935,11 +1042,91 @@ def work_order_quick_close(work_order_id):
     if not (_can_edit_work_order() or order.assigned_user_id == current_user.id):
         abort(403)
 
+    checklist_fields = []
+    if order.checklist_template:
+        checklist_fields = order.checklist_template.fields
+    elif order.asset.equipment_template and order.asset.equipment_template.default_maintenance_form:
+        checklist_fields = order.asset.equipment_template.default_maintenance_form.fields
+
+    can_direct_close = has_permission("workorder.approve") or get_effective_role(current_user) != CANONICAL_ROLE_TEAM_MEMBER
+
     if request.method == "POST":
+        default_action = "close" if can_direct_close else "submit_for_approval"
+        action = (request.form.get("submit_action") or default_action).strip()
+        if action == "close" and not can_direct_close:
+            abort(403)
         result_text = guvenli_metin(request.form.get("result") or "Saha hızlı kapanış")
         extra_notes = guvenli_metin(request.form.get("extra_notes") or "")
         labor_hours = request.form.get("labor_hours", type=float)
         used_parts = guvenli_metin(request.form.get("used_parts") or "")
+
+        if action == "submit_for_approval":
+            WorkOrderChecklistResponse.query.filter_by(work_order_id=order.id).delete()
+            has_critical_failure = False
+            response_snapshot = []
+            for field in checklist_fields:
+                input_name = f"field_{field.id}"
+                value = guvenli_metin(request.form.get(input_name) or "")
+                if field.is_required and not value:
+                    flash(f"Checklist alanı zorunlu: {field.label}", "danger")
+                    return redirect(url_for("maintenance.work_order_quick_close", work_order_id=order.id))
+
+                is_failure = value.strip().lower() in CHECKLIST_FAILURE_VALUES
+                has_critical_failure = has_critical_failure or (_is_critical_field(field) and is_failure)
+                db.session.add(
+                    WorkOrderChecklistResponse(
+                        work_order_id=order.id,
+                        field_id=field.id,
+                        field_key=field.field_key,
+                        field_label=field.label,
+                        response_value=value,
+                        responded_by_id=current_user.id,
+                        is_failure=is_failure,
+                        approval_note=guvenli_metin(request.form.get(f"approval_{field.id}") or ""),
+                    )
+                )
+                response_snapshot.append(
+                    {
+                        "key": field.field_key,
+                        "label": field.label,
+                        "type": field.field_type,
+                        "value": value,
+                        "is_failure": is_failure,
+                    }
+                )
+
+            order.status = "beklemede_onay"
+            order.result = result_text or order.result
+            order.extra_notes = extra_notes
+            order.used_parts = used_parts
+            order.labor_hours = labor_hours
+            order.labor_minutes = int((labor_hours or 0) * 60) if labor_hours is not None else order.labor_minutes
+            order.verification_status = "kritik_bulgu" if has_critical_failure else "beklemede"
+            order.completion_notes = extra_notes
+            order.completed_at = None
+            order.completed_by_id = None
+
+            db.session.add(
+                MaintenanceHistory(
+                    asset_id=order.asset.id,
+                    work_order_id=order.id,
+                    performed_by_id=current_user.id,
+                    maintenance_type=order.maintenance_type,
+                    performed_at=get_tr_now(),
+                    result="Checklist dolduruldu, kapatma onayına gönderildi",
+                    checklist_snapshot=json.dumps(response_snapshot, ensure_ascii=False),
+                    notes=extra_notes,
+                    next_maintenance_date=order.asset.next_maintenance_date,
+                    inspection_score=0 if has_critical_failure else 100 if response_snapshot else None,
+                    inspection_summary="Kritik checklist bulgusu var" if has_critical_failure else None,
+                    source_type=order.source_type or "manual",
+                )
+            )
+            db.session.commit()
+            log_kaydet("Saha Hızlı Kapanış", f"İş emri onaya gönderildi: {order.work_order_no}")
+            flash("Checklist kaydedildi ve kapatma onayına gönderildi.", "warning")
+            return redirect(url_for("maintenance.is_emri_detay", work_order_id=order.id))
+
         if order.priority == "kritik" and not has_permission("workorder.approve"):
             payload = json.dumps(
                 {
@@ -995,16 +1182,12 @@ def work_order_quick_close(work_order_id):
         flash("İş emri hızlı akışla tamamlandı.", "success")
         return redirect(url_for("maintenance.is_emri_detay", work_order_id=order.id))
 
-    checklist_fields = []
-    if order.checklist_template:
-        checklist_fields = order.checklist_template.fields
-    elif order.asset.equipment_template and order.asset.equipment_template.default_maintenance_form:
-        checklist_fields = order.asset.equipment_template.default_maintenance_form.fields
     return render_template(
         "quick_close_work_order.html",
         order=order,
         checklist_fields=checklist_fields,
         field_meta=_field_meta,
+        can_direct_close=can_direct_close,
     )
 
 
@@ -1280,8 +1463,116 @@ def geciken_bakimlar():
 @permission_required("maintenance.plan.change", "maintenance.instructions.manage", any_of=True)
 def ekipman_sablonlari():
     selectable_catalog, selectable_categories = _build_instruction_catalog_options()
+    maintenance_form_equipment_options = _build_maintenance_form_equipment_options()
 
     if request.method == "POST":
+        form_action = (request.form.get("form_action") or "").strip()
+        if form_action == "create_maintenance_form":
+            if not _can_manage_instruction_maintenance_forms():
+                abort(403)
+
+            if not maintenance_form_equipment_options:
+                flash("Önce merkezi ekipman şablonu oluşturulmalıdır.", "danger")
+                return redirect(url_for("maintenance.ekipman_sablonlari"))
+
+            equipment_template_id = request.form.get("form_equipment_template_id", type=int)
+            selected_period = _normalize_period_type(request.form.get("periyot_turu"))
+            raw_steps_payload = request.form.get("maintenance_steps_payload", "")
+
+            if not equipment_template_id:
+                flash("Bakım formu için merkezi ekipman seçmelisiniz.", "danger")
+                return redirect(url_for("maintenance.ekipman_sablonlari"))
+
+            equipment_template = EquipmentTemplate.query.filter_by(
+                id=equipment_template_id,
+                is_deleted=False,
+                is_active=True,
+            ).first()
+            if equipment_template is None:
+                flash("Seçilen ekipman şablonu sistemde bulunamadı.", "danger")
+                return redirect(url_for("maintenance.ekipman_sablonlari"))
+
+            if selected_period is None:
+                flash("Bakım periyot türü seçmelisiniz.", "danger")
+                return redirect(url_for("maintenance.ekipman_sablonlari"))
+
+            step_rows, parse_error = _parse_maintenance_step_rows(raw_steps_payload)
+            if parse_error:
+                flash(parse_error, "danger")
+                return redirect(url_for("maintenance.ekipman_sablonlari"))
+            if not step_rows:
+                flash("En az 1 bakım adımı eklemelisiniz.", "danger")
+                return redirect(url_for("maintenance.ekipman_sablonlari"))
+
+            duplicate = MaintenanceFormTemplate.query.filter(
+                MaintenanceFormTemplate.is_deleted.is_(False),
+                MaintenanceFormTemplate.equipment_template_id == equipment_template.id,
+                MaintenanceFormTemplate.period_type == selected_period,
+            ).first()
+            if duplicate:
+                flash("Bu ekipman ve periyot için bakım formu zaten kayıtlı.", "danger")
+                return redirect(url_for("maintenance.ekipman_sablonlari"))
+
+            period_label = MAINTENANCE_PERIOD_TYPES[selected_period]
+            template_name = _build_maintenance_form_name(equipment_template, period_label)
+            template_description = f"{equipment_template.name} için {period_label.lower()} bakım adımları."
+
+            new_template = MaintenanceFormTemplate(
+                name=template_name,
+                description=template_description,
+                equipment_template_id=equipment_template.id,
+                period_type=selected_period,
+                is_active=True,
+            )
+            db.session.add(new_template)
+            db.session.flush()
+
+            for order_index, label in enumerate(step_rows, start=1):
+                db.session.add(
+                    MaintenanceFormField(
+                        form_template_id=new_template.id,
+                        field_key=f"step_{new_template.id}_{order_index}",
+                        label=label,
+                        field_type="yes_no",
+                        is_required=True,
+                        order_index=order_index,
+                        options_json=json.dumps({"options": [], "help_text": "", "is_critical": False}, ensure_ascii=False),
+                    )
+                )
+
+            db.session.commit()
+            log_kaydet("Bakım Formu", f"Bakım formu oluşturuldu: {new_template.name}")
+            flash("Bakım formu oluşturuldu.", "success")
+            return redirect(url_for("maintenance.ekipman_sablonlari"))
+
+        if form_action == "delete_maintenance_form":
+            if not _can_manage_instruction_maintenance_forms():
+                abort(403)
+
+            form_template_id = request.form.get("form_template_id", type=int)
+            if not form_template_id:
+                flash("Silinecek bakım formu seçilemedi.", "danger")
+                return redirect(url_for("maintenance.ekipman_sablonlari"))
+
+            template = MaintenanceFormTemplate.query.filter_by(
+                id=form_template_id,
+                is_deleted=False,
+            ).first()
+            if template is None:
+                flash("Bakım formu bulunamadı.", "danger")
+                return redirect(url_for("maintenance.ekipman_sablonlari"))
+
+            template.is_active = False
+            template.soft_delete()
+            for field in template.fields:
+                if not field.is_deleted:
+                    field.soft_delete()
+
+            db.session.commit()
+            log_kaydet("Bakım Formu", f"Bakım formu silindi: {template.name}")
+            flash("Bakım formu silindi.", "success")
+            return redirect(url_for("maintenance.ekipman_sablonlari"))
+
         if not _can_manage_instruction_catalog():
             abort(403)
 
@@ -1359,7 +1650,14 @@ def ekipman_sablonlari():
     templates = EquipmentTemplate.query.filter_by(is_deleted=False).order_by(
         EquipmentTemplate.created_at.desc()
     ).all()
-    form_templates = MaintenanceFormTemplate.query.filter_by(is_deleted=False, is_active=True).all()
+    form_templates = MaintenanceFormTemplate.query.filter_by(is_deleted=False, is_active=True).order_by(
+        MaintenanceFormTemplate.name.asc()
+    ).all()
+    maintenance_form_templates = MaintenanceFormTemplate.query.filter(
+        MaintenanceFormTemplate.is_deleted.is_(False),
+        MaintenanceFormTemplate.equipment_template_id.isnot(None),
+        MaintenanceFormTemplate.period_type.isnot(None),
+    ).order_by(MaintenanceFormTemplate.created_at.desc()).all()
     airports = Havalimani.query.filter_by(is_deleted=False).all()
     return render_template(
         "ekipman_sablonlari.html",
@@ -1368,6 +1666,10 @@ def ekipman_sablonlari():
         airports=airports,
         selectable_catalog=selectable_catalog,
         selectable_categories=selectable_categories,
+        maintenance_form_equipment_options=maintenance_form_equipment_options,
+        maintenance_form_templates=maintenance_form_templates,
+        maintenance_period_options=MAINTENANCE_PERIOD_TYPES,
+        can_manage_maintenance_forms=_can_manage_instruction_maintenance_forms(),
     )
 
 

@@ -2,42 +2,229 @@
 <html lang="tr">
 <head>
 <meta charset="UTF-8">
-<title>KKD Raporu</title>
+<title>KKD Tahsis Raporu</title>
 <style>
-  @page { size: A4 landscape; margin: 16mm 12mm; }
-  body { font-family: DejaVu Sans, sans-serif; font-size: 9pt; color: #172033; }
-  .title { font-size: 17pt; font-weight: bold; color: #1d3557; }
-  .subtitle { margin-top: 4px; color: #607089; font-size: 8.5pt; }
-  table { width: 100%; border-collapse: collapse; margin-top: 14px; }
-  th, td { border: 1px solid #d5dde8; padding: 6px 7px; vertical-align: top; }
-  th { background: #eef3f8; color: #1d3557; font-weight: bold; }
-  .footer { margin-top: 12px; text-align: right; font-size: 8pt; color: #607089; }
+  @page {
+    size: A4 landscape;
+    margin: 12mm 10mm 14mm 10mm;
+  }
+
+  @font-face {
+    font-family: "AssignmentPdfSans";
+    src: url("{{ pdf_font_regular }}");
+  }
+  @font-face {
+    font-family: "AssignmentPdfSans";
+    src: url("{{ pdf_font_bold }}");
+    font-weight: bold;
+  }
+
+  body {
+    margin: 0;
+    color: #1f2937;
+    font-family: "AssignmentPdfSans", sans-serif;
+    font-size: 8.1pt;
+    line-height: 1.4;
+  }
+
+  table { border-collapse: collapse; }
+
+  .header-shell {
+    width: 100%;
+    border: 1.4pt solid #d7dee8;
+    margin-bottom: 8pt;
+  }
+
+  .top-band {
+    height: 8pt;
+    background: #0f2d4a;
+  }
+
+  .header-grid {
+    width: 100%;
+    table-layout: fixed;
+  }
+
+  .logo-cell {
+    width: 34mm;
+    border-right: 1pt solid #d7dee8;
+    text-align: center;
+    vertical-align: middle;
+    padding: 7pt;
+  }
+
+  .logo-shell {
+    width: 24mm;
+    height: 24mm;
+    margin: 0 auto;
+    border: 1pt solid #d7dee8;
+    background: #f8fafc;
+    text-align: center;
+  }
+
+  .logo-shell img {
+    width: 20mm;
+    height: 20mm;
+    margin: 2mm auto 0;
+    display: block;
+  }
+
+  .title-cell {
+    padding: 8pt 10pt;
+    vertical-align: top;
+  }
+
+  .title-top {
+    color: #0f2d4a;
+    font-size: 10pt;
+    font-weight: bold;
+    letter-spacing: .03em;
+  }
+
+  .title-main {
+    margin-top: 4pt;
+    color: #0f2d4a;
+    font-size: 17pt;
+    font-weight: bold;
+    line-height: 1.1;
+  }
+
+  .title-meta {
+    margin-top: 4pt;
+    color: #64748b;
+    font-size: 7.8pt;
+  }
+
+  .filters-grid {
+    width: 100%;
+    margin-bottom: 8pt;
+  }
+
+  .filters-grid td {
+    border: 1pt solid #d7dee8;
+    padding: 6pt 7pt;
+    width: 25%;
+    vertical-align: top;
+  }
+
+  .filter-label {
+    font-size: 6.5pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    color: #6b7280;
+    letter-spacing: .04em;
+  }
+
+  .filter-value {
+    margin-top: 3pt;
+    color: #0f2d4a;
+    font-size: 8.6pt;
+    font-weight: bold;
+    line-height: 1.25;
+  }
+
+  .report-table {
+    width: 100%;
+    table-layout: fixed;
+  }
+
+  .report-table thead { display: table-header-group; }
+  .report-table tr { page-break-inside: avoid; }
+
+  .report-table th {
+    border: 1pt solid #0f2d4a;
+    background: #0f2d4a;
+    color: #fff;
+    font-size: 6.8pt;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    padding: 5pt 4pt;
+    text-align: left;
+  }
+
+  .report-table td {
+    border: 1pt solid #d7dee8;
+    padding: 5pt 4pt;
+    vertical-align: top;
+    font-size: 7.4pt;
+  }
+
+  .footer-note {
+    margin-top: 6pt;
+    text-align: right;
+    color: #64748b;
+    font-size: 6.8pt;
+  }
 </style>
 </head>
 <body>
-  <div class="title">KKD Tahsis Raporu</div>
-  <div class="subtitle">Üretilme zamanı: {{ generated_at.strftime('%d.%m.%Y %H:%M') if generated_at else '-' }}</div>
+  <table class="header-shell">
+    <tr><td class="top-band"></td></tr>
+    <tr>
+      <td>
+        <table class="header-grid">
+          <tr>
+            <td class="logo-cell">
+              <div class="logo-shell">
+                {% if pdf_logo_uri %}
+                <img src="{{ pdf_logo_uri }}" alt="SAR-X Logo">
+                {% else %}
+                <div style="padding-top:7mm; font-size:8.5pt; font-weight:bold; color:#0f2d4a;">SAR-X</div>
+                {% endif %}
+              </div>
+            </td>
+            <td class="title-cell">
+              <div class="title-top">SAR-X ARFF OPERASYON TAKİP SİSTEMİ</div>
+              <div class="title-main">KKD TAHSİS RAPORU</div>
+              <div class="title-meta">Rapor oluşturulma zamanı: {{ generated_at.strftime('%d.%m.%Y %H:%M') if generated_at else '-' }}</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 
-  <table>
+  <table class="filters-grid">
+    <tr>
+      <td>
+        <div class="filter-label">Durum Filtresi</div>
+        <div class="filter-value">{{ selected_status_label }}</div>
+      </td>
+      <td>
+        <div class="filter-label">Havalimanı</div>
+        <div class="filter-value">{{ selected_airport_label }}</div>
+      </td>
+      <td>
+        <div class="filter-label">Personel</div>
+        <div class="filter-value">{{ selected_user_label }}</div>
+      </td>
+      <td>
+        <div class="filter-label">Toplam Kayıt</div>
+        <div class="filter-value">{{ total_records }}</div>
+      </td>
+    </tr>
+  </table>
+
+  <table class="report-table">
     <thead>
       <tr>
-        <th>Personel</th>
-        <th>Havalimanı</th>
-        <th>Kategori</th>
-        <th>Alt Tür</th>
-        <th>KKD</th>
-        <th>Marka / Model</th>
-        <th>Beden / Numara</th>
-        <th>Teslim</th>
-        <th>Miktar</th>
-        <th>Fiziksel Durum</th>
-        <th>Aktif/Pasif</th>
+        <th style="width:11%;">Personel</th>
+        <th style="width:10%;">Havalimanı</th>
+        <th style="width:10%;">Kategori</th>
+        <th style="width:10%;">Alt Tür</th>
+        <th style="width:14%;">Donanım Adı</th>
+        <th style="width:10%;">Marka / Model</th>
+        <th style="width:8%;">Beden / Numara</th>
+        <th style="width:8%;">Teslim Tarihi</th>
+        <th style="width:5%;">Miktar</th>
+        <th style="width:7%;">Fiziksel Durum</th>
+        <th style="width:7%;">Aktif / Pasif</th>
       </tr>
     </thead>
     <tbody>
       {% for record in records %}
       <tr>
-        <td>{{ record.user.tam_ad if record.user else '-' }}</td>
+        <td>{{ record.user.tam_ad if record.user else 'Havuz Kaydı' }}</td>
         <td>{{ record.airport.ad if record.airport else '-' }}</td>
         <td>{{ record.category or '-' }}</td>
         <td>{{ record.subcategory or '-' }}</td>
@@ -53,6 +240,6 @@
     </tbody>
   </table>
 
-  <div class="footer">SAR-X ARFF Operasyon Takip Sistemi</div>
+  <div class="footer-note">Bu rapor SAR-X sistemi tarafından otomatik üretilmiştir.</div>
 </body>
 </html>

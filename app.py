@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+import sys
 import time
 import uuid
 from datetime import datetime
@@ -9,14 +10,14 @@ from types import SimpleNamespace
 from urllib.parse import urlsplit, urlunsplit
 
 from dotenv import load_dotenv
-from flask import Flask, abort, g, jsonify, make_response, redirect, render_template, request, send_file, send_from_directory, url_for
+from flask import Flask, abort, g, jsonify, make_response, redirect, render_template, request, send_file, send_from_directory, session, url_for
 from flask_wtf.csrf import CSRFError
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.exceptions import HTTPException
 
 from config import DevelopmentConfig, config_by_name
-from extensions import csrf, db, executor, limiter, login_manager, migrate
+from extensions import column_exists, csrf, db, executor, limiter, login_manager, migrate
 from error_handling import capture_error, format_user_error_message, resolve_error_code
 from routes.admin import admin_bp
 from routes.api import api_bp
@@ -49,6 +50,10 @@ from decorators import (
 from extensions import table_exists
 
 load_dotenv()
+
+
+ERROR_REPORT_SESSION_KEY = "pending_error_report"
+PASSKEY_AUTO_PROMPT_SESSION_KEY = "passkey_auto_prompt_after_password_login"
 
 
 def _normalize_config_name(value):
@@ -104,6 +109,31 @@ def _is_secret_key_strong(secret_key):
 
 def _is_sqlite_url(database_url):
     return bool(database_url and str(database_url).startswith("sqlite:"))
+
+
+def _is_sqlite_memory_url(database_url):
+    normalized = str(database_url or "").strip().lower()
+    return normalized in {"sqlite://", "sqlite:///:memory:"} or normalized.endswith("/:memory:")
+
+
+def _ensure_sqlite_parent_dir(database_url):
+    if not _is_sqlite_url(database_url) or _is_sqlite_memory_url(database_url):
+        return
+    raw_url = str(database_url or "").strip()
+    raw_path = raw_url
+    if raw_url.startswith("sqlite:///"):
+        raw_path = raw_url[len("sqlite:///"):]
+    if not raw_path:
+        return
+    raw_path = raw_path.split("?", 1)[0].split("#", 1)[0].strip()
+    if not raw_path or raw_path.startswith("file:"):
+        return
+    if raw_path == ":memory:":
+        return
+    file_path = raw_path if os.path.isabs(raw_path) else os.path.abspath(raw_path)
+    parent_dir = os.path.dirname(file_path)
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
 
 
 def _bool_env(name):
@@ -188,6 +218,13 @@ def _validate_passkey_runtime_config(app, *, selected_env):
             continue
         raw_origins.extend(part.strip().rstrip("/") for part in str(raw_value).split(",") if part.strip())
 
+    if selected_env in {"development", "testing"} and (not rp_id or not raw_origins):
+        app.logger.warning(
+            "PASSKEY_ENABLED aktif ancak PASSKEY_RP_ID veya PASSKEY_ORIGIN/PASSKEY_ALLOWED_ORIGINS eksik. "
+            "Development/Testing ortamında request host fallback'i kullanılacak. "
+            "Staging doğrulaması için explicit PASSKEY_* ayarları önerilir."
+        )
+
     if selected_env == "production":
         if not rp_id:
             raise RuntimeError(
@@ -236,7 +273,6 @@ def _apply_runtime_env_overrides(app):
         "MAIL_PASSWORD_SECRET_NAME",
         "MAIL_PASSWORD_SECRET_VERSION",
         "SMTP_PASSWORD",
-        "REDIS_URL",
         "RATELIMIT_STORAGE_URI",
         "LOG_LEVEL",
         "STORAGE_BACKEND",
@@ -304,6 +340,7 @@ def _apply_runtime_env_overrides(app):
         "GCS_MAKE_UPLOADS_PUBLIC",
         "ALLOW_CLOUD_RUN_WEB_SCHEDULER",
         "ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION",
+        "ALLOW_LOCAL_STORAGE_IN_PRODUCTION",
         "PASSKEY_ENABLED",
     ]
     for key in bool_keys:
@@ -311,10 +348,8 @@ def _apply_runtime_env_overrides(app):
         if parsed is not None:
             app.config[key] = parsed
 
-    if app.config.get("RATELIMIT_STORAGE_URI"):
-        app.config["RATELIMIT_STORAGE_URI"] = app.config.get("RATELIMIT_STORAGE_URI")
-    elif app.config.get("REDIS_URL"):
-        app.config["RATELIMIT_STORAGE_URI"] = app.config.get("REDIS_URL")
+    rate_limit_storage = str(app.config.get("RATELIMIT_STORAGE_URI") or "").strip()
+    app.config["RATELIMIT_STORAGE_URI"] = rate_limit_storage or "memory://"
 
 
 def _wants_json_response():
@@ -422,84 +457,185 @@ def _sqlite_column_names(table_name):
     return {row.get("name") for row in rows if row.get("name")}
 
 
-def _ensure_runtime_schema_compatibility(app):
-    database_url = app.config.get("SQLALCHEMY_DATABASE_URI") or ""
-    if not _is_sqlite_url(database_url):
-        return
-    if not table_exists("kullanici"):
-        return
+def _ensure_sqlite_columns(app, table_name, required_columns):
+    if not table_exists(table_name):
+        return []
 
-    mevcut_kolonlar = _sqlite_column_names("kullanici")
-    if "telefon_numarasi" in mevcut_kolonlar:
-        pass
-    else:
-        db.session.execute(text("ALTER TABLE kullanici ADD COLUMN telefon_numarasi VARCHAR(32)"))
-        db.session.commit()
-        app.logger.warning("Legacy sqlite şeması güncellendi: kullanici.telefon_numarasi eklendi.")
-
-    if not table_exists("islem_log"):
-        return
-
-    islem_log_kolonlari = _sqlite_column_names("islem_log")
-    required_columns = {
-        "error_code": "ALTER TABLE islem_log ADD COLUMN error_code VARCHAR(32)",
-        "title": "ALTER TABLE islem_log ADD COLUMN title VARCHAR(180)",
-        "user_message": "ALTER TABLE islem_log ADD COLUMN user_message VARCHAR(255)",
-        "owner_message": "ALTER TABLE islem_log ADD COLUMN owner_message TEXT",
-        "module": "ALTER TABLE islem_log ADD COLUMN module VARCHAR(24)",
-        "severity": "ALTER TABLE islem_log ADD COLUMN severity VARCHAR(20)",
-        "exception_type": "ALTER TABLE islem_log ADD COLUMN exception_type VARCHAR(120)",
-        "exception_message": "ALTER TABLE islem_log ADD COLUMN exception_message TEXT",
-        "traceback_summary": "ALTER TABLE islem_log ADD COLUMN traceback_summary TEXT",
-        "route": "ALTER TABLE islem_log ADD COLUMN route VARCHAR(255)",
-        "method": "ALTER TABLE islem_log ADD COLUMN method VARCHAR(12)",
-        "request_id": "ALTER TABLE islem_log ADD COLUMN request_id VARCHAR(64)",
-        "user_email": "ALTER TABLE islem_log ADD COLUMN user_email VARCHAR(150)",
-        "resolved": "ALTER TABLE islem_log ADD COLUMN resolved BOOLEAN DEFAULT 0",
-        "resolution_note": "ALTER TABLE islem_log ADD COLUMN resolution_note TEXT",
-        "ip_address": "ALTER TABLE islem_log ADD COLUMN ip_address VARCHAR(45)",
-        "havalimani_id": "ALTER TABLE islem_log ADD COLUMN havalimani_id INTEGER",
-    }
+    existing_columns = _sqlite_column_names(table_name)
     added_columns = []
     for column_name, ddl in required_columns.items():
-        if column_name in islem_log_kolonlari:
+        if column_name in existing_columns:
             continue
         db.session.execute(text(ddl))
         added_columns.append(column_name)
     if added_columns:
         db.session.commit()
-        app.logger.warning("Legacy sqlite şeması güncellendi: islem_log alanları eklendi: %s", ", ".join(added_columns))
+        app.logger.warning(
+            "Legacy sqlite şeması güncellendi: %s alanları eklendi: %s",
+            table_name,
+            ", ".join(added_columns),
+        )
+    return added_columns
 
-    if not table_exists("ppe_record"):
+
+def _ensure_runtime_schema_compatibility(app):
+    database_url = app.config.get("SQLALCHEMY_DATABASE_URI") or ""
+    if not _is_sqlite_url(database_url):
+        return
+    runtime_env = str(app.config.get("ENV") or "").strip().lower()
+    if runtime_env != "development":
+        return
+    if not table_exists("kullanici"):
         return
 
-    ppe_columns = _sqlite_column_names("ppe_record")
-    required_ppe_columns = {
-        "category": "ALTER TABLE ppe_record ADD COLUMN category VARCHAR(80)",
-        "subcategory": "ALTER TABLE ppe_record ADD COLUMN subcategory VARCHAR(120)",
-        "brand": "ALTER TABLE ppe_record ADD COLUMN brand VARCHAR(120)",
-        "model_name": "ALTER TABLE ppe_record ADD COLUMN model_name VARCHAR(120)",
-        "serial_no": "ALTER TABLE ppe_record ADD COLUMN serial_no VARCHAR(120)",
-        "apparel_size": "ALTER TABLE ppe_record ADD COLUMN apparel_size VARCHAR(16)",
-        "shoe_size": "ALTER TABLE ppe_record ADD COLUMN shoe_size VARCHAR(16)",
-        "production_date": "ALTER TABLE ppe_record ADD COLUMN production_date DATE",
-        "expiry_date": "ALTER TABLE ppe_record ADD COLUMN expiry_date DATE",
-        "physical_condition": "ALTER TABLE ppe_record ADD COLUMN physical_condition VARCHAR(30) DEFAULT 'iyi'",
-        "is_active": "ALTER TABLE ppe_record ADD COLUMN is_active BOOLEAN DEFAULT 1",
-        "manufacturer_url": "ALTER TABLE ppe_record ADD COLUMN manufacturer_url VARCHAR(500)",
-        "signed_document_key": "ALTER TABLE ppe_record ADD COLUMN signed_document_key VARCHAR(255)",
-        "signed_document_url": "ALTER TABLE ppe_record ADD COLUMN signed_document_url VARCHAR(500)",
-        "signed_document_name": "ALTER TABLE ppe_record ADD COLUMN signed_document_name VARCHAR(255)",
-    }
-    added_ppe_columns = []
-    for column_name, ddl in required_ppe_columns.items():
-        if column_name in ppe_columns:
-            continue
-        db.session.execute(text(ddl))
-        added_ppe_columns.append(column_name)
-    if added_ppe_columns:
+    _ensure_sqlite_columns(
+        app,
+        "kullanici",
+        {
+            "telefon_numarasi": "ALTER TABLE kullanici ADD COLUMN telefon_numarasi VARCHAR(32)",
+            "kan_grubu_harf": "ALTER TABLE kullanici ADD COLUMN kan_grubu_harf VARCHAR(4)",
+            "kan_grubu_rh": "ALTER TABLE kullanici ADD COLUMN kan_grubu_rh VARCHAR(4)",
+            "boy_cm": "ALTER TABLE kullanici ADD COLUMN boy_cm INTEGER",
+            "kilo_kg": "ALTER TABLE kullanici ADD COLUMN kilo_kg INTEGER",
+            "ayak_numarasi": "ALTER TABLE kullanici ADD COLUMN ayak_numarasi FLOAT",
+            "beden": "ALTER TABLE kullanici ADD COLUMN beden VARCHAR(8)",
+            "ust_beden": "ALTER TABLE kullanici ADD COLUMN ust_beden VARCHAR(8)",
+            "alt_beden": "ALTER TABLE kullanici ADD COLUMN alt_beden VARCHAR(8)",
+            "sertifika_tarihi": "ALTER TABLE kullanici ADD COLUMN sertifika_tarihi DATE",
+            "uzmanlik_alani": "ALTER TABLE kullanici ADD COLUMN uzmanlik_alani VARCHAR(100)",
+        },
+    )
+
+    if not table_exists("islem_log"):
+        pass
+    else:
+        _ensure_sqlite_columns(
+            app,
+            "islem_log",
+            {
+                "event_key": "ALTER TABLE islem_log ADD COLUMN event_key VARCHAR(120)",
+                "target_model": "ALTER TABLE islem_log ADD COLUMN target_model VARCHAR(80)",
+                "target_id": "ALTER TABLE islem_log ADD COLUMN target_id INTEGER",
+                "outcome": "ALTER TABLE islem_log ADD COLUMN outcome VARCHAR(20) DEFAULT 'success'",
+                "error_code": "ALTER TABLE islem_log ADD COLUMN error_code VARCHAR(32)",
+                "title": "ALTER TABLE islem_log ADD COLUMN title VARCHAR(180)",
+                "user_message": "ALTER TABLE islem_log ADD COLUMN user_message VARCHAR(255)",
+                "owner_message": "ALTER TABLE islem_log ADD COLUMN owner_message TEXT",
+                "module": "ALTER TABLE islem_log ADD COLUMN module VARCHAR(24)",
+                "severity": "ALTER TABLE islem_log ADD COLUMN severity VARCHAR(20)",
+                "exception_type": "ALTER TABLE islem_log ADD COLUMN exception_type VARCHAR(120)",
+                "exception_message": "ALTER TABLE islem_log ADD COLUMN exception_message TEXT",
+                "traceback_summary": "ALTER TABLE islem_log ADD COLUMN traceback_summary TEXT",
+                "route": "ALTER TABLE islem_log ADD COLUMN route VARCHAR(255)",
+                "method": "ALTER TABLE islem_log ADD COLUMN method VARCHAR(12)",
+                "request_id": "ALTER TABLE islem_log ADD COLUMN request_id VARCHAR(64)",
+                "user_email": "ALTER TABLE islem_log ADD COLUMN user_email VARCHAR(150)",
+                "resolved": "ALTER TABLE islem_log ADD COLUMN resolved BOOLEAN DEFAULT 0",
+                "resolution_note": "ALTER TABLE islem_log ADD COLUMN resolution_note TEXT",
+                "ip_address": "ALTER TABLE islem_log ADD COLUMN ip_address VARCHAR(45)",
+                "havalimani_id": "ALTER TABLE islem_log ADD COLUMN havalimani_id INTEGER",
+            },
+        )
+
+    if not table_exists("ppe_record"):
+        pass
+    else:
+        _ensure_sqlite_columns(
+            app,
+            "ppe_record",
+            {
+                "category": "ALTER TABLE ppe_record ADD COLUMN category VARCHAR(80)",
+                "subcategory": "ALTER TABLE ppe_record ADD COLUMN subcategory VARCHAR(120)",
+                "brand": "ALTER TABLE ppe_record ADD COLUMN brand VARCHAR(120)",
+                "model_name": "ALTER TABLE ppe_record ADD COLUMN model_name VARCHAR(120)",
+                "serial_no": "ALTER TABLE ppe_record ADD COLUMN serial_no VARCHAR(120)",
+                "apparel_size": "ALTER TABLE ppe_record ADD COLUMN apparel_size VARCHAR(16)",
+                "shoe_size": "ALTER TABLE ppe_record ADD COLUMN shoe_size VARCHAR(16)",
+                "production_date": "ALTER TABLE ppe_record ADD COLUMN production_date DATE",
+                "expiry_date": "ALTER TABLE ppe_record ADD COLUMN expiry_date DATE",
+                "physical_condition": "ALTER TABLE ppe_record ADD COLUMN physical_condition VARCHAR(30) DEFAULT 'iyi'",
+                "is_active": "ALTER TABLE ppe_record ADD COLUMN is_active BOOLEAN DEFAULT 1",
+                "manufacturer_url": "ALTER TABLE ppe_record ADD COLUMN manufacturer_url VARCHAR(500)",
+                "signed_document_key": "ALTER TABLE ppe_record ADD COLUMN signed_document_key VARCHAR(255)",
+                "signed_document_url": "ALTER TABLE ppe_record ADD COLUMN signed_document_url VARCHAR(500)",
+                "signed_document_name": "ALTER TABLE ppe_record ADD COLUMN signed_document_name VARCHAR(255)",
+            },
+        )
+        ppe_columns = _sqlite_column_names("ppe_record")
+        if "physical_condition" in ppe_columns:
+            db.session.execute(text("UPDATE ppe_record SET physical_condition = 'iyi' WHERE physical_condition IS NULL"))
+        if "is_active" in ppe_columns:
+            db.session.execute(text("UPDATE ppe_record SET is_active = 1 WHERE is_active IS NULL"))
         db.session.commit()
-        app.logger.warning("Legacy sqlite şeması güncellendi: ppe_record alanları eklendi: %s", ", ".join(added_ppe_columns))
+
+    added_passkey_columns = _ensure_sqlite_columns(
+        app,
+        "passkey_credential",
+        {
+            "friendly_name": "ALTER TABLE passkey_credential ADD COLUMN friendly_name VARCHAR(120)",
+            "is_active": "ALTER TABLE passkey_credential ADD COLUMN is_active BOOLEAN DEFAULT 1",
+            "revoked_at": "ALTER TABLE passkey_credential ADD COLUMN revoked_at DATETIME",
+        },
+    )
+    if added_passkey_columns and table_exists("passkey_credential"):
+        db.session.execute(text("UPDATE passkey_credential SET is_active = 1 WHERE is_active IS NULL"))
+        db.session.commit()
+
+    _ensure_sqlite_columns(
+        app,
+        "havalimani",
+        {
+            "drive_folder_id": "ALTER TABLE havalimani ADD COLUMN drive_folder_id VARCHAR(255)",
+        },
+    )
+
+    _ensure_sqlite_columns(
+        app,
+        "equipment_template",
+        {
+            "maintenance_period_months": "ALTER TABLE equipment_template ADD COLUMN maintenance_period_months INTEGER DEFAULT 6",
+        },
+    )
+
+    _ensure_sqlite_columns(
+        app,
+        "inventory_asset",
+        {
+            "asset_type": "ALTER TABLE inventory_asset ADD COLUMN asset_type VARCHAR(30) DEFAULT 'equipment'",
+            "is_demirbas": "ALTER TABLE inventory_asset ADD COLUMN is_demirbas BOOLEAN DEFAULT 0",
+            "calibration_required": "ALTER TABLE inventory_asset ADD COLUMN calibration_required BOOLEAN DEFAULT 0",
+            "calibration_period_days": "ALTER TABLE inventory_asset ADD COLUMN calibration_period_days INTEGER",
+            "maintenance_period_months": "ALTER TABLE inventory_asset ADD COLUMN maintenance_period_months INTEGER DEFAULT 6",
+            "manual_url": "ALTER TABLE inventory_asset ADD COLUMN manual_url VARCHAR(500)",
+        },
+    )
+
+    _ensure_sqlite_columns(
+        app,
+        "kutu",
+        {
+            "marka": "ALTER TABLE kutu ADD COLUMN marka VARCHAR(120)",
+        },
+    )
+
+    _ensure_sqlite_columns(
+        app,
+        "assignment_record",
+        {
+            "delivered_by_name": "ALTER TABLE assignment_record ADD COLUMN delivered_by_name VARCHAR(160)",
+        },
+    )
+
+    _ensure_sqlite_columns(
+        app,
+        "calibration_record",
+        {
+            "certificate_drive_file_id": "ALTER TABLE calibration_record ADD COLUMN certificate_drive_file_id VARCHAR(255)",
+            "certificate_drive_folder_id": "ALTER TABLE calibration_record ADD COLUMN certificate_drive_folder_id VARCHAR(255)",
+            "certificate_mime_type": "ALTER TABLE calibration_record ADD COLUMN certificate_mime_type VARCHAR(120)",
+            "certificate_size_bytes": "ALTER TABLE calibration_record ADD COLUMN certificate_size_bytes INTEGER",
+        },
+    )
 
 
 CRITICAL_RUNTIME_TABLES = (
@@ -507,11 +643,33 @@ CRITICAL_RUNTIME_TABLES = (
     "site_ayarlari",
     "auth_lockout",
     "login_visual_challenge",
+    "demo_seed_record",
+    "islem_log",
+    "calibration_record",
 )
+
+CRITICAL_RUNTIME_COLUMNS = {
+    "auth_lockout": ("identifier", "failed_attempts", "locked_until"),
+    "login_visual_challenge": ("token", "code", "expires_at"),
+    "demo_seed_record": ("seed_tag", "model_name", "record_id"),
+    "islem_log": ("event_key", "target_model", "target_id", "outcome", "resolved", "havalimani_id"),
+    "calibration_record": ("certificate_drive_file_id", "certificate_drive_folder_id", "certificate_mime_type"),
+}
 
 
 def _missing_runtime_tables():
     return [table_name for table_name in CRITICAL_RUNTIME_TABLES if not table_exists(table_name)]
+
+
+def _missing_runtime_columns():
+    missing = []
+    for table_name, columns in CRITICAL_RUNTIME_COLUMNS.items():
+        if not table_exists(table_name):
+            continue
+        for column_name in columns:
+            if not column_exists(table_name, column_name):
+                missing.append(f"{table_name}.{column_name}")
+    return missing
 
 
 def _site_settings_seed_ready():
@@ -519,6 +677,113 @@ def _site_settings_seed_ready():
         return False
     row = db.session.execute(text("SELECT 1 FROM site_ayarlari LIMIT 1")).first()
     return row is not None
+
+
+def _alembic_heads(app):
+    try:
+        from alembic.config import Config as AlembicConfig
+        from alembic.script import ScriptDirectory
+
+        alembic_ini = os.path.join(app.root_path, "migrations", "alembic.ini")
+        script_location = os.path.join(app.root_path, "migrations")
+        config = AlembicConfig(alembic_ini)
+        config.set_main_option("script_location", script_location)
+        script = ScriptDirectory.from_config(config)
+        return set(script.get_heads() or [])
+    except Exception:
+        return set()
+
+
+def _current_alembic_versions():
+    if not table_exists("alembic_version"):
+        return set()
+    try:
+        rows = db.session.execute(text("SELECT version_num FROM alembic_version")).all()
+        return {str(row[0]).strip() for row in rows if row and row[0]}
+    except Exception:
+        db.session.rollback()
+        return set()
+
+
+def _warn_if_migrations_pending(app):
+    expected_heads = _alembic_heads(app)
+    if not expected_heads:
+        return
+    current_versions = _current_alembic_versions()
+    if not current_versions:
+        app.logger.warning(
+            "alembic_version kaydı bulunamadı veya okunamadı. Migration durumu belirsiz."
+        )
+        return
+    if expected_heads.issubset(current_versions):
+        return
+    app.logger.warning(
+        "Veritabanı migration revizyonu güncel değil. current=%s expected_head=%s. "
+        "Lütfen `flask db upgrade` çalıştırın.",
+        ",".join(sorted(current_versions)),
+        ",".join(sorted(expected_heads)),
+    )
+
+
+def _production_release_readiness_state(app):
+    missing_tables = _missing_runtime_tables()
+    missing_columns = _missing_runtime_columns()
+    seed_ready = bool(not missing_tables and _site_settings_seed_ready())
+
+    expected_heads = _alembic_heads(app)
+    current_versions = _current_alembic_versions() if expected_heads else set()
+    migration_status = "ok"
+    if expected_heads:
+        if not current_versions:
+            migration_status = "missing_revision"
+        elif expected_heads.issubset(current_versions):
+            migration_status = "ok"
+        else:
+            migration_status = "behind"
+    else:
+        migration_status = "unknown"
+
+    return {
+        "missing_tables": missing_tables,
+        "missing_columns": missing_columns,
+        "seed_ready": seed_ready,
+        "migration_status": migration_status,
+        "expected_heads": sorted(expected_heads),
+        "current_versions": sorted(current_versions),
+    }
+
+
+def _enforce_production_release_readiness(app, *, selected_env, database_url):
+    if selected_env != "production":
+        return
+    if os.getenv("FLASK_RUN_FROM_CLI"):
+        cli_args = " ".join(sys.argv).strip().lower()
+        if " db " in f" {cli_args} ":
+            return
+    if _is_sqlite_memory_url(database_url):
+        return
+
+    state = _production_release_readiness_state(app)
+    blockers = []
+    if state["migration_status"] != "ok":
+        blockers.append(
+            "migration_status="
+            f"{state['migration_status']} current={','.join(state['current_versions']) or '-'} "
+            f"expected={','.join(state['expected_heads']) or '-'}"
+        )
+    if state["missing_tables"]:
+        blockers.append("missing_tables=" + ",".join(state["missing_tables"]))
+    if state["missing_columns"]:
+        blockers.append("missing_columns=" + ",".join(state["missing_columns"]))
+    if not state["seed_ready"]:
+        blockers.append("site_ayarlari_seed_missing")
+
+    if blockers:
+        raise RuntimeError(
+            "Production release blocker: veritabanı şeması/migration hazır değil. "
+            + " | ".join(blockers)
+            + ". Deploy öncesi `flask db upgrade` çalıştırın ve /ready kontrolünü doğrulayın."
+        )
 
 
 def create_app(config_name=None):
@@ -543,6 +808,7 @@ def create_app(config_name=None):
     database_url = app.config.get("SQLALCHEMY_DATABASE_URI")
     if not database_url:
         raise RuntimeError("SQLALCHEMY_DATABASE_URI/DATABASE_URL tanımlı olmalıdır.")
+    _ensure_sqlite_parent_dir(database_url)
 
     if (
         selected_env == "production"
@@ -554,23 +820,44 @@ def create_app(config_name=None):
             "Cloud SQL/PostgreSQL için DATABASE_URL tanımlayın."
         )
 
-    rate_limit_storage = str(app.config.get("RATELIMIT_STORAGE_URI", ""))
+    if selected_env == "production" and app.config.get("DEMO_TOOLS_ENABLED", False):
+        raise RuntimeError(
+            "Production ortamında demo araçları etkin olamaz. DEMO_TOOLS_ENABLED kapatılmalıdır."
+        )
+
+    rate_limit_storage = str(app.config.get("RATELIMIT_STORAGE_URI", "")).strip() or "memory://"
+    app.config["RATELIMIT_STORAGE_URI"] = rate_limit_storage
     if rate_limit_storage.startswith("memory://"):
         if selected_env == "production":
-            if app.config.get("ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION"):
-                app.logger.warning(
-                    "Production ortamında rate-limit storage memory:// olarak açık override ile çalışıyor. "
-                    "Bu yapı tek-instance/smoke senaryoları dışında önerilmez."
-                )
-            else:
+            if not _is_sqlite_url(database_url):
                 raise RuntimeError(
-                    "Production ortamında memory:// rate-limit storage kullanılamaz. "
-                    "REDIS_URL veya RATELIMIT_STORAGE_URI tanımlayın; "
-                    "zorunlu tek-instance/smoke senaryosu için ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION=1 kullanın."
+                    "Production ortamında memory rate-limit storage kullanılamaz. "
+                    "RATELIMIT_STORAGE_URI için merkezi bir backend (ör. redis://) zorunludur."
+                )
+            if not app.config.get("ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION", False):
+                raise RuntimeError(
+                    "Production ortamında memory rate-limit storage sadece kontrollü override ile açılabilir. "
+                    "Geçici tek-instance/sqlite senaryosu için ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION=1 ayarlayın."
                 )
         elif selected_env != "testing":
-            app.logger.warning(
-                "REDIS_URL tanımlı değil. Development ortamında memory rate-limit storage ile devam ediliyor."
+            app.logger.info(
+                "RATELIMIT_STORAGE_URI tanımlı değil. Development ortamında memory rate-limit storage ile devam ediliyor."
+            )
+
+    storage_backend = str(app.config.get("STORAGE_BACKEND") or "local").strip().lower() or "local"
+    app.config["STORAGE_BACKEND"] = storage_backend
+    if selected_env == "production":
+        if storage_backend == "gcs" and not str(app.config.get("GCS_BUCKET_NAME") or "").strip():
+            raise RuntimeError("STORAGE_BACKEND=gcs için production ortamında GCS_BUCKET_NAME zorunludur.")
+        if (
+            storage_backend == "local"
+            and not _is_sqlite_url(database_url)
+            and not app.config.get("ALLOW_LOCAL_STORAGE_IN_PRODUCTION", False)
+        ):
+            raise RuntimeError(
+                "Production ortamında local storage backend varsayılan olarak kapalıdır. "
+                "Kalıcı medya için STORAGE_BACKEND=gcs kullanın; geçici kurtarma/smoke için "
+                "ALLOW_LOCAL_STORAGE_IN_PRODUCTION=1 ile kontrollü override açabilirsiniz."
             )
 
     _validate_passkey_runtime_config(app, selected_env=selected_env)
@@ -680,6 +967,7 @@ def create_app(config_name=None):
             "homepage_demo_logo_url": demo_logo,
             "site_contact_note": public_contact_note or demo_contact_note,
             "homepage_demo_contact_note": demo_contact_note,
+            "current_year": datetime.now().year,
         }
         passkey_shared = {
             "passkey_enabled": bool(app.config.get("PASSKEY_ENABLED")),
@@ -687,6 +975,8 @@ def create_app(config_name=None):
             "passkey_login_finish_url": url_for("auth.login_passkey_finish"),
             "passkey_register_begin_url": url_for("auth.passkey_register_begin"),
             "passkey_register_finish_url": url_for("auth.passkey_register_finish"),
+            "passkey_credentials_url": url_for("auth.passkey_credentials"),
+            "passkey_revoke_url": url_for("auth.passkey_credential_revoke"),
         }
 
         if current_user.is_authenticated:
@@ -715,6 +1005,20 @@ def create_app(config_name=None):
                     db.session.rollback()
                     unread_notifications = []
                     unread_notification_count = 0
+            passkey_auto_prompt = False
+            if passkey_shared.get("passkey_enabled"):
+                passkey_auto_prompt = bool(session.pop(PASSKEY_AUTO_PROMPT_SESSION_KEY, False))
+                if passkey_auto_prompt:
+                    try:
+                        has_active_passkey = any(
+                            getattr(credential, "is_active", True)
+                            for credential in (current_user.passkey_credentials or [])
+                        )
+                        if has_active_passkey:
+                            passkey_auto_prompt = False
+                    except Exception:
+                        db.session.rollback()
+                        passkey_auto_prompt = False
             permissions = sorted(get_effective_permissions(current_user))
             return {
                 "rol": get_legacy_compatible_role(current_user),
@@ -735,6 +1039,7 @@ def create_app(config_name=None):
                 "impersonation_mode": impersonation_mode,
                 "unread_notifications": unread_notifications,
                 "unread_notification_count": unread_notification_count,
+                "passkey_auto_prompt": passkey_auto_prompt,
                 **shared_context,
                 **passkey_shared,
             }
@@ -756,6 +1061,7 @@ def create_app(config_name=None):
             "impersonation_mode": False,
             "unread_notifications": [],
             "unread_notification_count": 0,
+            "passkey_auto_prompt": False,
             **shared_context,
             **passkey_shared,
         }
@@ -847,6 +1153,9 @@ def create_app(config_name=None):
         spec = payload["spec"]
         resolved_status = int(status_code or payload["status_code"] or spec.status_code)
         user_message = format_user_error_message(spec.error_code)
+        report_path = str(request.path or "").strip()
+        if not report_path.startswith("/"):
+            report_path = "/"
         if _wants_json_response():
             response = jsonify(
                 {
@@ -884,12 +1193,19 @@ def create_app(config_name=None):
                 response.headers["Retry-After"] = str(int(retry_after))
             return response
         template_name = "csrf_hata.html" if isinstance(exception, CSRFError) else "hata.html"
+        if template_name == "hata.html":
+            session[ERROR_REPORT_SESSION_KEY] = {
+                "error_code": spec.error_code,
+                "path": report_path[:255],
+                "request_id": str(getattr(g, "request_id", "") or "")[:64],
+            }
         return render_template(
             template_name,
             kod=resolved_status,
             mesaj=spec.user_message,
             error_code=spec.error_code,
             request_id=str(getattr(g, "request_id", "") or ""),
+            error_report_path=report_path[:255],
             support_note="Sorun devam ederse bu kodu bildiriniz.",
             full_message=user_message,
         ), resolved_status
@@ -949,29 +1265,47 @@ def create_app(config_name=None):
             Announcement,
             ContentWorkflow,
             DocumentResource,
-            Havalimani,
             Haber,
             HomeQuickLink,
             HomeSection,
             HomeSlider,
             HomeStatCard,
-            InventoryAsset,
-            Kullanici,
             NavMenu,
             SiteAyarlari,
             SliderResim,
         )
         from homepage_demo import filter_homepage_demo_items, homepage_demo_is_active
+        from services.homepage_stats_service import build_fixed_homepage_stat_payload
+
+        table_presence_cache = {}
+
+        def _route_table_exists(table_name):
+            if table_name in table_presence_cache:
+                return table_presence_cache[table_name]
+            exists = table_exists(table_name)
+            table_presence_cache[table_name] = exists
+            return exists
+
+        workflow_visibility_map = None
 
         def _workflow_status_map(entity_type):
-            if not table_exists("content_workflow"):
-                return {}
-            try:
-                rows = ContentWorkflow.query.filter_by(entity_type=entity_type).all()
-            except SQLAlchemyError:
-                db.session.rollback()
-                return {}
-            return {row.entity_id: row.status for row in rows}
+            nonlocal workflow_visibility_map
+            if workflow_visibility_map is None:
+                workflow_visibility_map = {}
+                if not _route_table_exists("content_workflow"):
+                    return {}
+                try:
+                    rows = ContentWorkflow.query.filter(
+                        ContentWorkflow.entity_type.in_(
+                            ["slider", "section", "announcement", "document", "quicklink", "stat"]
+                        )
+                    ).all()
+                except SQLAlchemyError:
+                    db.session.rollback()
+                    return {}
+                for row in rows:
+                    workflow_visibility_map.setdefault(row.entity_type, {})[row.entity_id] = row.status
+            return workflow_visibility_map.get(entity_type, {})
 
         def _filter_by_workflow(items, entity_type):
             status_map = _workflow_status_map(entity_type)
@@ -984,11 +1318,8 @@ def create_app(config_name=None):
                     filtered.append(item)
             return filtered
 
-        def _format_public_count(value):
-            return f"{int(value):,}".replace(",", ".")
-
         def _safe_public_collection(required_tables, factory, fallback=None):
-            if any(not table_exists(table_name) for table_name in required_tables):
+            if any(not _route_table_exists(table_name) for table_name in required_tables):
                 return [] if fallback is None else fallback
             try:
                 return factory()
@@ -996,75 +1327,19 @@ def create_app(config_name=None):
                 db.session.rollback()
                 return [] if fallback is None else fallback
 
-        def _safe_public_count(required_tables, factory):
-            if any(not table_exists(table_name) for table_name in required_tables):
-                return 0
-            try:
-                return int(factory())
-            except (SQLAlchemyError, TypeError, ValueError):
-                db.session.rollback()
-                return 0
-
-        def _build_public_stats(configured_cards, metric_registry):
-            metrics = list(metric_registry.values())
-            unused_keys = [metric["key"] for metric in metrics]
-
-            def _resolve_metric(card):
-                text = f"{card.title or ''} {card.subtitle or ''}".lower()
-                keyword_map = [
-                    ("total_assets", ("malzeme", "ekipman", "envanter", "varlik", "varlık")),
-                    ("total_personnel", ("personel", "kullanici", "kullanıcı", "gonullu", "gönüllü", "ekip")),
-                    ("total_airports", ("havalimani", "havalimanı", "lokasyon", "birim")),
-                    ("published_announcements", ("duyuru", "guncel", "güncel", "haber", "paylasim", "paylaşım")),
-                    ("training_modules", ("egitim", "eğitim", "gelisim", "gelişim")),
-                    ("exercise_modules", ("tatbikat", "senaryo", "operasyon")),
-                ]
-                for key, keywords in keyword_map:
-                    if any(keyword in text for keyword in keywords):
-                        return key
-                return unused_keys[0] if unused_keys else metrics[0]["key"]
-
-            resolved = []
-            for index, card in enumerate(configured_cards):
-                metric_key = _resolve_metric(card)
-                if metric_key in unused_keys:
-                    unused_keys.remove(metric_key)
-                metric = metric_registry[metric_key]
-                resolved.append(
-                    SimpleNamespace(
-                        metric_key=metric_key,
-                        title=card.title or metric["label"],
-                        value_text=_format_public_count(metric["value"]),
-                        subtitle=card.subtitle or metric["subtitle"],
-                        icon=card.icon or metric["icon"],
-                        order_index=index,
-                    )
-                )
-
-            if resolved:
-                return resolved
-
-            return [
-                SimpleNamespace(
-                    metric_key=metric["key"],
-                    title=metric["label"],
-                    value_text=_format_public_count(metric["value"]),
-                    subtitle=metric["subtitle"],
-                    icon=metric["icon"],
-                    order_index=index,
-                )
-                for index, metric in enumerate(metrics)
-            ]
-
         ayarlar = None
-        menuler = []
+        menuler = _safe_public_collection(
+            ("nav_menu",),
+            lambda: NavMenu.query.order_by(NavMenu.sira.asc(), NavMenu.id.asc()).all(),
+            fallback=[],
+        )
         homepage_demo_active = homepage_demo_is_active()
 
         sliders = _safe_public_collection(
             ("home_slider",),
             lambda: HomeSlider.query.filter_by(is_active=True).order_by(
                 HomeSlider.order_index.asc(), HomeSlider.id.asc()
-            ).all(),
+            ).limit(8).all(),
         )
         sliders = _filter_by_workflow(sliders, "slider")
         sliders = filter_homepage_demo_items(sliders)
@@ -1086,7 +1361,7 @@ def create_app(config_name=None):
             ("home_section",),
             lambda: HomeSection.query.filter_by(is_active=True).order_by(
                 HomeSection.order_index.asc(), HomeSection.id.asc()
-            ).all(),
+            ).limit(20).all(),
         )
         sections = _filter_by_workflow(sections, "section")
         sections = filter_homepage_demo_items(sections)
@@ -1123,6 +1398,22 @@ def create_app(config_name=None):
         ]
 
         assigned_section_ids = set()
+        default_about_card_height = 320
+        about_card_height_min = 140
+        about_card_height_max = 420
+
+        def _normalize_about_card_height(raw_value):
+            cleaned = str(raw_value or "").strip()
+            if not cleaned:
+                return default_about_card_height
+            match = re.fullmatch(r"\s*(-?\d+)\s*(?:px)?\s*", cleaned, flags=re.IGNORECASE)
+            if not match:
+                return default_about_card_height
+            try:
+                parsed = int(match.group(1))
+            except (TypeError, ValueError):
+                return default_about_card_height
+            return max(about_card_height_min, min(about_card_height_max, parsed))
 
         def _pick_about_section(preferred_key):
             for item in sections:
@@ -1150,6 +1441,7 @@ def create_app(config_name=None):
                         if source and source.subtitle
                         else config["description"]
                     ),
+                    card_height=_normalize_about_card_height(getattr(source, "icon", None)),
                 )
             )
 
@@ -1157,7 +1449,7 @@ def create_app(config_name=None):
             ("announcement",),
             lambda: Announcement.query.filter_by(is_published=True).order_by(
                 Announcement.published_at.desc(), Announcement.id.desc()
-            ).all(),
+            ).limit(24).all(),
         )
         announcement_pool = _filter_by_workflow(announcement_pool, "announcement")
         announcement_pool = filter_homepage_demo_items(announcement_pool)
@@ -1186,7 +1478,7 @@ def create_app(config_name=None):
             ("document_resource",),
             lambda: DocumentResource.query.filter_by(is_active=True).order_by(
                 DocumentResource.order_index.asc(), DocumentResource.id.asc()
-            ).all(),
+            ).limit(12).all(),
         )
         documents = _filter_by_workflow(documents, "document")
         documents = filter_homepage_demo_items(documents)
@@ -1194,54 +1486,18 @@ def create_app(config_name=None):
             ("home_quick_link",),
             lambda: HomeQuickLink.query.filter_by(is_active=True).order_by(
                 HomeQuickLink.order_index.asc(), HomeQuickLink.id.asc()
-            ).all(),
+            ).limit(12).all(),
         )
         quick_links = _filter_by_workflow(quick_links, "quicklink")
         quick_links = filter_homepage_demo_items(quick_links)
 
-        completed_training_count = sum(
-            1 for item in sections if item.section_key in {"training", "exercise", "operation"}
+        stat_cards = _safe_public_collection(
+            ("home_stat_card",),
+            lambda: HomeStatCard.query.order_by(HomeStatCard.order_index.asc(), HomeStatCard.id.asc()).all(),
+            fallback=[],
         )
-        stats = [
-            SimpleNamespace(
-                metric_key="total_assets",
-                title="Toplam Malzeme",
-                value_text=_format_public_count(
-                    _safe_public_count(("inventory_asset",), lambda: InventoryAsset.query.filter_by(is_deleted=False).count())
-                ),
-                subtitle="Tüm havalimanlarında kayıtlı ekipman ve varlık sayısı.",
-                icon="◈",
-                order_index=0,
-            ),
-            SimpleNamespace(
-                metric_key="total_personnel",
-                title="Toplam Personel",
-                value_text=_format_public_count(
-                    _safe_public_count(("kullanici",), lambda: Kullanici.query.filter_by(is_deleted=False).count())
-                ),
-                subtitle="Sistemde görevli ARFF personeli ve ekip üyeleri.",
-                icon="◎",
-                order_index=1,
-            ),
-            SimpleNamespace(
-                metric_key="total_airports",
-                title="Aktif Havalimanı",
-                value_text=_format_public_count(
-                    _safe_public_count(("havalimani",), lambda: Havalimani.query.filter_by(is_deleted=False).count())
-                ),
-                subtitle="Envanter ve operasyon takibi yapılan lokasyon sayısı.",
-                icon="◇",
-                order_index=2,
-            ),
-            SimpleNamespace(
-                metric_key="completed_trainings",
-                title="Tamamlanan Eğitimler",
-                value_text=_format_public_count(completed_training_count),
-                subtitle="Sistem kayıtlarına işlenmiş eğitim ve hazırlık çalışması sayısı.",
-                icon="✦",
-                order_index=3,
-            ),
-        ]
+        stat_cards = filter_homepage_demo_items(stat_cards)
+        stats = build_fixed_homepage_stat_payload(stat_cards)
 
         return render_template(
             "index.html",
@@ -1286,13 +1542,36 @@ def create_app(config_name=None):
     @app.route("/ready")
     def ready():
         missing_tables = []
+        missing_columns = []
         site_settings_seed_ready = False
+        migration_status = "unknown"
+        expected_heads = []
+        current_versions = []
         try:
             db.session.execute(text("SELECT 1"))
             missing_tables = _missing_runtime_tables()
+            missing_columns = _missing_runtime_columns()
             if not missing_tables:
                 site_settings_seed_ready = _site_settings_seed_ready()
-            db_status = "ok" if (not missing_tables and site_settings_seed_ready) else "schema_incomplete"
+
+            if str(app.config.get("ENV") or "").strip().lower() == "production":
+                migration_state = _production_release_readiness_state(app)
+                migration_status = migration_state["migration_status"]
+                expected_heads = migration_state["expected_heads"]
+                current_versions = migration_state["current_versions"]
+            else:
+                migration_status = "skipped"
+
+            db_status = (
+                "ok"
+                if (
+                    not missing_tables
+                    and not missing_columns
+                    and site_settings_seed_ready
+                    and migration_status in {"ok", "skipped"}
+                )
+                else "schema_incomplete"
+            )
             http_status = 200 if db_status == "ok" else 503
         except Exception:
             db.session.rollback()
@@ -1304,7 +1583,11 @@ def create_app(config_name=None):
                 "status": "ready" if db_status == "ok" else "degraded",
                 "database": db_status,
                 "missing_tables": missing_tables,
+                "missing_columns": missing_columns,
                 "seed_ready": site_settings_seed_ready,
+                "migration_status": migration_status,
+                "migration_expected_heads": expected_heads,
+                "migration_current_versions": current_versions,
                 "scheduler_enabled": bool(app.config.get("ENABLE_SCHEDULER")),
             }
         ), http_status
@@ -1335,11 +1618,11 @@ def create_app(config_name=None):
 
     @app.route("/apple-touch-icon.png")
     def serve_apple_touch_icon():
-        return send_from_directory("static", "favicon.png", mimetype="image/png")
+        return send_from_directory("static/img", "icon-192.png", mimetype="image/png")
 
     @app.route("/apple-touch-icon-precomposed.png")
     def serve_apple_touch_icon_precomposed():
-        return send_from_directory("static", "favicon.png", mimetype="image/png")
+        return send_from_directory("static/img", "icon-192.png", mimetype="image/png")
 
     @app.route("/.well-known/assetlinks.json")
     def serve_assetlinks():
@@ -1357,6 +1640,19 @@ def create_app(config_name=None):
                 app.logger.exception("Veritabanı tabloları hazırlanırken hata oluştu.")
     else:
         app.logger.info("AUTO_CREATE_TABLES devre dışı: migration tabanlı akış bekleniyor.")
+        with app.app_context():
+            try:
+                _ensure_runtime_schema_compatibility(app)
+            except SQLAlchemyError:
+                app.logger.exception("Runtime sqlite şema uyumluluğu kontrolü sırasında hata oluştu.")
+
+    with app.app_context():
+        _warn_if_migrations_pending(app)
+        _enforce_production_release_readiness(
+            app,
+            selected_env=selected_env,
+            database_url=database_url,
+        )
 
     _log_production_runtime_risks(app)
     start_scheduler(app)
@@ -1374,8 +1670,11 @@ def create_app(config_name=None):
 
 if __name__ == "__main__":
     app = create_app(os.getenv("APP_ENV") or os.getenv("FLASK_ENV") or "development")
+    debug_mode = bool(app.config.get("DEBUG", False))
+    enable_reloader = os.getenv("SARX_ENABLE_RELOADER", "").strip().lower() in {"1", "true", "yes", "on"}
     app.run(
         host="0.0.0.0",
         port=int(os.getenv("PORT", "8080")),
-        debug=bool(app.config.get("DEBUG", False)),
+        debug=debug_mode,
+        use_reloader=bool(debug_mode and enable_reloader),
     )

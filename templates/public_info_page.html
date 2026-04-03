@@ -279,6 +279,27 @@
     background: rgba(245,158,11,.08);
   }
 
+  @media (min-width: 981px) {
+    .info-feature-card {
+      min-height: var(--section-card-min-height, 320px);
+    }
+    .info-feature-image {
+      min-height: var(--section-card-min-height, 320px);
+    }
+    .info-card {
+      min-height: var(--section-card-min-height, 320px);
+    }
+    .info-card-image {
+      height: clamp(180px, calc(var(--section-card-min-height, 320px) * 0.62), 320px);
+    }
+    .info-module-card {
+      min-height: var(--section-card-min-height, 320px);
+    }
+    .info-module-media img {
+      min-height: var(--section-card-min-height, 320px);
+    }
+  }
+
   @media (max-width: 980px) {
     .info-feature-card,
     .info-module-card,
@@ -348,7 +369,7 @@
         {% for card in cards %}
           {% set raw_image = (card.image_url or "")|trim %}
           {% set image = raw_image if raw_image and not (raw_image|lower).startswith('javascript:') and not (raw_image|lower).startswith('data:') and not (raw_image|lower).startswith('vbscript:') else '' %}
-          <article class="public-card info-card">
+          <article class="public-card info-card" style="--section-card-min-height: {{ card.card_height }}px;" data-card-height="{{ card.card_height }}">
             {% if image %}
               <img src="{{ image }}" alt="{{ card.title }}" class="info-card-image" loading="lazy" onerror="this.src='{{ fallback_image }}'">
             {% endif %}
@@ -367,7 +388,7 @@
           {% set image = raw_image if raw_image and not (raw_image|lower).startswith('javascript:') and not (raw_image|lower).startswith('data:') and not (raw_image|lower).startswith('vbscript:') else fallback_image %}
           {% set normalized_card_title = (card.title or '')|replace('?', '')|replace('!', '')|trim|lower %}
           {% set hide_card_title = cards|length == 1 and normalized_card_title == normalized_page_title %}
-          <article class="public-card info-module-card {% if loop.index is even %}is-reverse{% endif %}">
+          <article class="public-card info-module-card {% if loop.index is even %}is-reverse{% endif %}" style="--section-card-min-height: {{ card.card_height }}px;" data-card-height="{{ card.card_height }}">
             <div class="info-module-media">
               <img src="{{ image }}" alt="{{ card.title or page_title }}" loading="lazy" onerror="this.src='{{ fallback_image }}'">
             </div>
@@ -408,7 +429,7 @@
           {% set image = raw_image if raw_image and not (raw_image|lower).startswith('javascript:') and not (raw_image|lower).startswith('data:') and not (raw_image|lower).startswith('vbscript:') else '' %}
           {% set normalized_card_title = (card.title or '')|replace('?', '')|replace('!', '')|trim|lower %}
           {% set hide_card_title = cards|length == 1 and normalized_card_title == normalized_page_title %}
-          <article class="public-card info-feature-card {% if not image %}is-text-only{% endif %}">
+          <article class="public-card info-feature-card {% if not image %}is-text-only{% endif %}" style="--section-card-min-height: {{ card.card_height }}px;" data-card-height="{{ card.card_height }}">
             <div class="info-feature-body">
               {% if card.subtitle %}
                 <div class="info-subtitle">{{ card.subtitle }}</div>

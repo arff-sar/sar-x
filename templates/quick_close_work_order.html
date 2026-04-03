@@ -93,7 +93,16 @@
                 </div>
             </div>
             {% endif %}
-            <button class="btn btn-primary" style="justify-content:center;">Hızlı Kapat</button>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <button class="btn btn-secondary" type="submit" name="submit_action" value="submit_for_approval" style="flex:1; justify-content:center;">
+                    Ekip Sorumlusuna Gönder
+                </button>
+                {% if can_direct_close %}
+                <button class="btn btn-primary" type="submit" name="submit_action" value="close" style="flex:1; justify-content:center;">
+                    Hızlı Kapat
+                </button>
+                {% endif %}
+            </div>
         </form>
     </div>
 </div>

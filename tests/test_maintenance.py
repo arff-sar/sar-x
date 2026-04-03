@@ -126,3 +126,134 @@ def test_maintenance_api_requires_permission(client, app):
     response = client.get("/api/bakim/istatistikler")
 
     assert response.status_code == 403
+
+
+def test_maintenance_panel_uses_turkish_status_labels_instead_of_raw_uppercase_status(client, app):
+    airport = HavalimaniFactory(kodu="VAN")
+    owner = KullaniciFactory(rol="sahip", havalimani=airport)
+    template = EquipmentTemplateFactory(name="Kompresör", maintenance_period_days=30)
+    asset = InventoryAssetFactory(
+        equipment_template=template,
+        airport=airport,
+        serial_no="VAN-SN-1",
+        qr_code="VAN-QR-1",
+    )
+    order = WorkOrder(
+        work_order_no="WO-VAN-1",
+        asset=asset,
+        maintenance_type="bakim",
+        description="Durum etiketi Türkçe olmalı",
+        created_user=owner,
+        status="atandi",
+        priority="orta",
+    )
+    db.session.add_all([airport, owner, template, asset, order])
+    db.session.commit()
+    _login(client, owner)
+
+    response = client.get("/bakim")
+    html = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Atandı" in html
+    assert "ATANDI" not in html
+
+
+def test_work_order_pages_render_turkish_status_labels(client, app):
+    airport = HavalimaniFactory(kodu="GZT")
+    owner = KullaniciFactory(rol="sahip", havalimani=airport)
+    template = EquipmentTemplateFactory(name="Jeneratör", maintenance_period_days=45)
+    asset = InventoryAssetFactory(
+        equipment_template=template,
+        airport=airport,
+        serial_no="GZT-SN-9",
+        qr_code="GZT-QR-9",
+    )
+    order = WorkOrder(
+        work_order_no="WO-GZT-1",
+        asset=asset,
+        maintenance_type="bakim",
+        description="Durum metni Türkçe test",
+        created_user=owner,
+        status="islemde",
+        priority="orta",
+    )
+    db.session.add_all([airport, owner, template, asset, order])
+    db.session.commit()
+    _login(client, owner)
+
+    list_response = client.get("/bakim/is-emirleri")
+    list_html = list_response.data.decode("utf-8")
+    assert list_response.status_code == 200
+    assert "İşlemde" in list_html
+    assert "ISLEMDE" not in list_html
+
+    detail_response = client.get(f"/bakim/is-emri/{order.id}")
+    detail_html = detail_response.data.decode("utf-8")
+    assert detail_response.status_code == 200
+    assert "Durum: İşlemde" in detail_html
+
+
+def test_overdue_maintenance_list_links_to_real_form(client, app):
+    today = get_tr_now().date()
+    airport = HavalimaniFactory(kodu="HTY")
+    member = KullaniciFactory(rol="ekip_uyesi", havalimani=airport)
+    template = EquipmentTemplateFactory(name="Kompresör")
+    asset = InventoryAssetFactory(
+        equipment_template=template,
+        airport=airport,
+        serial_no="HTY-SN-1",
+        next_maintenance_date=today - timedelta(days=3),
+    )
+    db.session.add_all([airport, member, template, asset])
+    db.session.commit()
+    _login(client, member)
+
+    response = client.get("/bakim/geciken")
+    html = response.data.decode("utf-8")
+    assert response.status_code == 200
+    assert f'data-href="/bakim/asset/{asset.id}/hizli"' in html
+    assert "Bakım Formu" in html
+
+
+def test_team_member_can_submit_checklist_for_lead_approval_flow(client, app):
+    airport = HavalimaniFactory(kodu="DIY")
+    member = KullaniciFactory(rol="ekip_uyesi", havalimani=airport)
+    lead = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport)
+    template = EquipmentTemplateFactory(name="Yakıt Pompası")
+    asset = InventoryAssetFactory(
+        equipment_template=template,
+        airport=airport,
+        serial_no="DIY-SN-7",
+    )
+    order = WorkOrder(
+        work_order_no="WO-DIY-1",
+        asset=asset,
+        maintenance_type="bakim",
+        description="Form akışı testi",
+        created_user=lead,
+        assigned_user=member,
+        status="acik",
+        priority="orta",
+    )
+    db.session.add_all([airport, member, lead, template, asset, order])
+    db.session.commit()
+
+    _login(client, member)
+    submit_response = client.post(
+        f"/work-orders/{order.id}/quick-close",
+        data={
+            "result": "Checklist tamamlandı",
+            "extra_notes": "Ekip üyesi tarafından dolduruldu",
+            "submit_action": "submit_for_approval",
+        },
+        follow_redirects=True,
+    )
+    assert submit_response.status_code == 200
+    db.session.refresh(order)
+    assert order.status == "beklemede_onay"
+
+    _login(client, lead)
+    detail_response = client.get(f"/bakim/is-emri/{order.id}")
+    assert detail_response.status_code == 200
+    assert "Durum: Onay Bekleniyor" in detail_response.data.decode("utf-8")

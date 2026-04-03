@@ -37,6 +37,26 @@ class GoogleDriveDrillService:
             raise GoogleDriveError("Google Drive redirect URI yapılandırması eksik.")
         return f"{public_base_url}/google-drive/oauth/callback"
 
+    def build_authorization_url(self, state):
+        client_id = str(self._config("GOOGLE_DRIVE_CLIENT_ID") or "").strip()
+        if not client_id:
+            raise GoogleDriveError("Google Drive istemci kimliği eksik.")
+        auth_uri = str(self._config("GOOGLE_DRIVE_AUTH_URI") or "").strip()
+        if not auth_uri:
+            raise GoogleDriveError("Google Drive OAuth yetkilendirme adresi eksik.")
+
+        params = {
+            "client_id": client_id,
+            "redirect_uri": self.build_redirect_uri(),
+            "response_type": "code",
+            "scope": self.DRIVE_SCOPE,
+            "access_type": "offline",
+            "include_granted_scopes": "true",
+            "prompt": "consent",
+            "state": str(state or "").strip(),
+        }
+        return f"{auth_uri}?{urlencode(params)}"
+
     def _credentials(self):
         client_id = self._config("GOOGLE_DRIVE_CLIENT_ID")
         client_secret = self._config("GOOGLE_DRIVE_CLIENT_SECRET")

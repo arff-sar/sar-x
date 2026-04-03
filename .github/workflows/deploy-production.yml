@@ -49,7 +49,6 @@ jobs:
       GCS_UPLOAD_PREFIX: ${{ vars.GCS_UPLOAD_PREFIX }}
       GCS_PUBLIC_BASE_URL: ${{ vars.GCS_PUBLIC_BASE_URL }}
       GCS_CACHE_CONTROL: ${{ vars.GCS_CACHE_CONTROL }}
-      REDIS_URL: ${{ vars.REDIS_URL }}
       PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
       MAIL_HOST: ${{ vars.MAIL_HOST }}
       MAIL_PORT: ${{ vars.MAIL_PORT }}
@@ -58,6 +57,7 @@ jobs:
       MAIL_FROM_EMAIL: ${{ vars.MAIL_FROM_EMAIL }}
       MAIL_REPLY_TO: ${{ vars.MAIL_REPLY_TO }}
       SESSION_COOKIE_SAMESITE: ${{ vars.SESSION_COOKIE_SAMESITE }}
+      RATELIMIT_STORAGE_URI: ${{ vars.RATELIMIT_STORAGE_URI }}
       CLOUD_RUN_MIN_INSTANCES: ${{ vars.CLOUD_RUN_MIN_INSTANCES }}
       CLOUD_RUN_MAX_INSTANCES: ${{ vars.CLOUD_RUN_MAX_INSTANCES }}
       CLOUD_RUN_CONCURRENCY: ${{ vars.CLOUD_RUN_CONCURRENCY }}
@@ -94,8 +94,19 @@ jobs:
           : "${PUBLIC_BASE_URL:?Missing production variable PUBLIC_BASE_URL}"
           : "${MAIL_USERNAME:?Missing production variable MAIL_USERNAME}"
           : "${MAIL_FROM_EMAIL:?Missing production variable MAIL_FROM_EMAIL}"
+          : "${RATELIMIT_STORAGE_URI:?Missing production variable RATELIMIT_STORAGE_URI}"
           : "${GCP_WORKLOAD_IDENTITY_PROVIDER:?Missing GitHub secret GCP_WORKLOAD_IDENTITY_PROVIDER}"
           : "${GCP_DEPLOYER_SERVICE_ACCOUNT:?Missing GitHub secret GCP_DEPLOYER_SERVICE_ACCOUNT}"
+
+          ratelimit_storage_normalized="$(printf '%s' "${RATELIMIT_STORAGE_URI}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+          if [ -z "${ratelimit_storage_normalized}" ]; then
+            echo "RATELIMIT_STORAGE_URI değeri boş olamaz."
+            exit 1
+          fi
+          if [ "${ratelimit_storage_normalized}" = "memory://" ] || [ "${ratelimit_storage_normalized}" = "memory:" ]; then
+            echo "Production deploy için RATELIMIT_STORAGE_URI merkezi backend olmalıdır (örn: redis://...)."
+            exit 1
+          fi
 
           echo "STORAGE_BACKEND=${STORAGE_BACKEND:-gcs}" >> "$GITHUB_ENV"
           echo "GCS_PROJECT_ID=${GCS_PROJECT_ID:-$GCP_PROJECT_ID}" >> "$GITHUB_ENV"
@@ -106,6 +117,7 @@ jobs:
           echo "MAIL_USE_TLS=${MAIL_USE_TLS:-1}" >> "$GITHUB_ENV"
           echo "MAIL_REPLY_TO=${MAIL_REPLY_TO:-$MAIL_FROM_EMAIL}" >> "$GITHUB_ENV"
           echo "SESSION_COOKIE_SAMESITE=${SESSION_COOKIE_SAMESITE:-Lax}" >> "$GITHUB_ENV"
+          echo "RATELIMIT_STORAGE_URI=${RATELIMIT_STORAGE_URI}" >> "$GITHUB_ENV"
           echo "SECRET_KEY_SECRET_VERSION=${SECRET_KEY_SECRET_VERSION}" >> "$GITHUB_ENV"
           echo "DATABASE_URL_SECRET_VERSION=${DATABASE_URL_SECRET_VERSION}" >> "$GITHUB_ENV"
           echo "SMTP_PASSWORD_SECRET_VERSION=${SMTP_PASSWORD_SECRET_VERSION}" >> "$GITHUB_ENV"
@@ -233,7 +245,7 @@ jobs:
             --project "${GCP_PROJECT_ID}" \
             --service-account "${CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT}" \
             --set-cloudsql-instances "${CLOUD_SQL_CONNECTION_NAME}" \
-            --set-env-vars "APP_ENV=production,ENABLE_SCHEDULER=0,ALLOW_CLOUD_RUN_WEB_SCHEDULER=0,ALLOW_SQLITE_IN_PRODUCTION=0,ALLOW_IN_MEMORY_RATE_LIMIT_IN_PRODUCTION=1,SESSION_COOKIE_SECURE=1,REMEMBER_COOKIE_SECURE=1,SESSION_COOKIE_SAMESITE=${SESSION_COOKIE_SAMESITE}" \
+            --set-env-vars "APP_ENV=production,ENABLE_SCHEDULER=0,ALLOW_CLOUD_RUN_WEB_SCHEDULER=0,ALLOW_SQLITE_IN_PRODUCTION=0,SESSION_COOKIE_SECURE=1,REMEMBER_COOKIE_SECURE=1,SESSION_COOKIE_SAMESITE=${SESSION_COOKIE_SAMESITE},RATELIMIT_STORAGE_URI=${RATELIMIT_STORAGE_URI}" \
             --set-secrets "SECRET_KEY=${SECRET_KEY_SECRET_NAME}:${SECRET_KEY_SECRET_VERSION},DATABASE_URL=${DATABASE_URL_SECRET_NAME}:${DATABASE_URL_SECRET_VERSION}" \
             --command "flask" \
             --args="--app" \
@@ -327,6 +339,7 @@ jobs:
               "DATABASE_URL",
               "ENABLE_SCHEDULER",
               "ALLOW_SQLITE_IN_PRODUCTION",
+              "RATELIMIT_STORAGE_URI",
               "STORAGE_BACKEND",
               "MAIL_USERNAME",
               "MAIL_FROM_EMAIL",
@@ -339,6 +352,10 @@ jobs:
           for secret_name in ("SECRET_KEY", "DATABASE_URL", "SMTP_PASSWORD"):
               if "valueFrom" not in env_by_name[secret_name]:
                   raise SystemExit(f"{secret_name} is not wired from Secret Manager")
+
+          rate_limit_storage = str(env_by_name["RATELIMIT_STORAGE_URI"].get("value", "")).strip().lower()
+          if not rate_limit_storage or rate_limit_storage.startswith("memory://"):
+              raise SystemExit("RATELIMIT_STORAGE_URI must be a centralized backend in production.")
 
           expected_secret_refs = {
               "SECRET_KEY": (os.environ["SECRET_KEY_SECRET_NAME"], os.environ["SECRET_KEY_SECRET_VERSION"]),

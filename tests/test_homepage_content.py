@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from extensions import db
-from models import Announcement, HomeSection
+from models import Announcement, HomeSection, HomeStatCard, MediaAsset
 from tests.factories import AnnouncementFactory, HomeSliderFactory, KullaniciFactory
 
 
@@ -69,7 +69,7 @@ def test_homepage_announcement_preview_payload_renders(client, app):
 
 
 def test_public_dropdown_pages_open_and_render_section_content(client, app):
-    admin = KullaniciFactory(rol="sahip")
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(admin)
     db.session.commit()
 
@@ -160,7 +160,7 @@ def test_training_and_drills_pages_render_shared_empty_safe_layout(client, app):
 
 
 def test_admin_and_editor_can_access_homepage_management(client, app):
-    admin = KullaniciFactory(rol="sahip")
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
     editor = KullaniciFactory(rol="editor")
     db.session.add_all([admin, editor])
     db.session.commit()
@@ -178,7 +178,7 @@ def test_unauthorized_user_cannot_access_homepage_management(client, app):
     anonymous_resp = client.get("/admin/homepage")
     assert anonymous_resp.status_code == 302
 
-    personel = KullaniciFactory(rol="personel")
+    personel = KullaniciFactory(rol="ekip_uyesi")
     db.session.add(personel)
     db.session.commit()
     _login(client, personel)
@@ -188,7 +188,7 @@ def test_unauthorized_user_cannot_access_homepage_management(client, app):
 
 
 def test_admin_can_access_all_homepage_management_pages(client, app):
-    admin = KullaniciFactory(rol="sahip")
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(admin)
     db.session.commit()
     _login(client, admin)
@@ -207,8 +207,77 @@ def test_admin_can_access_all_homepage_management_pages(client, app):
         assert response.status_code == 200
 
 
+def test_homepage_section_list_backfills_default_public_modules_once(client, app):
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
+    db.session.add(admin)
+    db.session.commit()
+    _login(client, admin)
+
+    first_response = client.get("/admin/homepage/sections")
+    first_page = first_response.data.decode("utf-8")
+    assert first_response.status_code == 200
+    assert "Henüz public içerik modülü yok" not in first_page
+    assert "Biz Kimiz" in first_page
+    assert "Misyon Kartı" in first_page
+    assert "Vizyon Kartı" in first_page
+    assert "Etik Değerler Kartı" in first_page
+    assert "Eğitimler Sayfası Modülü" in first_page
+    assert "Tatbikatlar Sayfası Modülü" in first_page
+    assert "Kart Yüksekliği" in first_page
+    assert "320 px" in first_page
+
+    counts_after_first = {
+        key: HomeSection.query.filter_by(section_key=key).count()
+        for key in ["about", "mission", "vision", "ethics", "training", "exercise"]
+    }
+    assert all(value >= 1 for value in counts_after_first.values())
+
+    second_response = client.get("/admin/homepage/sections")
+    assert second_response.status_code == 200
+    counts_after_second = {
+        key: HomeSection.query.filter_by(section_key=key).count()
+        for key in ["about", "mission", "vision", "ethics", "training", "exercise"]
+    }
+    assert counts_after_second == counts_after_first
+
+
+def test_homepage_section_list_renders_card_height_map_with_normalize_and_fallback(client, app):
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
+    db.session.add(admin)
+    db.session.flush()
+    db.session.add_all(
+        [
+            HomeSection(
+                section_key="custom-height-valid",
+                title="Özel Modül 1",
+                content="İçerik 1",
+                icon="360",
+                is_active=True,
+            ),
+            HomeSection(
+                section_key="custom-height-invalid",
+                title="Özel Modül 2",
+                content="İçerik 2",
+                icon="bozuk-deger",
+                is_active=True,
+            ),
+        ]
+    )
+    db.session.commit()
+    _login(client, admin)
+
+    response = client.get("/admin/homepage/sections")
+    page = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "Özel Modül 1" in page
+    assert "Özel Modül 2" in page
+    assert "360 px" in page
+    assert "320 px" in page
+
+
 def test_homepage_announcement_search_matches_turkish_character_variants(client, app):
-    admin = KullaniciFactory(rol="sahip", is_deleted=False)
+    admin = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False)
     published = AnnouncementFactory(
         title="Şule Çağrı İçerik Duyurusu",
         slug="sule-cagri-duyurusu",
@@ -234,7 +303,7 @@ def test_homepage_announcement_search_matches_turkish_character_variants(client,
 
 
 def test_admin_homepage_dashboard_focuses_on_core_public_modules(client, app):
-    admin = KullaniciFactory(rol="sahip")
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(admin)
     db.session.commit()
     _login(client, admin)
@@ -251,7 +320,7 @@ def test_admin_homepage_dashboard_focuses_on_core_public_modules(client, app):
 
 
 def test_admin_homepage_forms_expose_new_labels(client, app):
-    admin = KullaniciFactory(rol="sahip")
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(admin)
     db.session.commit()
     _login(client, admin)
@@ -267,8 +336,13 @@ def test_admin_homepage_forms_expose_new_labels(client, app):
     section_page = section_response.data.decode("utf-8")
 
     assert slider_response.status_code == 200
-    assert "Ana Başlık" in slider_page
-    assert "Detay için tıklayınız" in slider_page
+    assert "Görsel Yolu / URL" in slider_page
+    assert "Medya Kütüphanesinden Seç" in slider_page
+    assert "Ana Başlık" not in slider_page
+    assert "Kısa Üst Etiket" not in slider_page
+    assert "Kısa Destek Metni" not in slider_page
+    assert "Buton Metni" not in slider_page
+    assert "Buton Linki" not in slider_page
 
     assert announcement_response.status_code == 200
     assert 'name="published_at"' in announcement_page
@@ -280,14 +354,155 @@ def test_admin_homepage_forms_expose_new_labels(client, app):
     assert "Anasayfada ve detay sayfasında göster" in announcement_page
 
     assert stats_response.status_code == 200
-    assert "İstatistik Kartları" in stats_page
+    assert "Sayısal Özet Kartları (Public Anasayfa)" in stats_page
+    assert "openMediaPickerModal" in slider_page
+    assert "mediaPickerModal" in slider_page
+    assert "window.open" not in slider_page
+    assert "postMessage" not in slider_page
     assert section_response.status_code == 200
     assert "Eğitimler Sayfası Modülü" in section_page
     assert "Tatbikatlar Sayfası Modülü" in section_page
+    assert 'name="card_height"' in section_page
+    assert "Kart genişliği sistem tarafından sabittir." in section_page
+    assert "Mevcut yükseklik:" in section_page
+    assert 'name="icon"' not in section_page
+
+
+def test_public_info_cards_use_clamped_card_height_and_keep_fixed_grid_width(client, app):
+    db.session.add_all(
+        [
+            HomeSection(
+                section_key="mission",
+                title="Misyon",
+                subtitle="Misyon başlığı",
+                content="Misyon içeriği",
+                icon="280",
+                is_active=True,
+            ),
+            HomeSection(
+                section_key="vision",
+                title="Vizyon",
+                subtitle="Vizyon başlığı",
+                content="Vizyon içeriği",
+                icon="999",
+                is_active=True,
+            ),
+            HomeSection(
+                section_key="ethics",
+                title="Etik Değerler",
+                subtitle="Etik başlığı",
+                content="Etik içeriği",
+                icon="https://example.com/icon-300.png",
+                is_active=True,
+            ),
+        ]
+    )
+    db.session.commit()
+
+    mission_vision_page = client.get("/hakkimizda/misyon-ve-vizyon").data.decode("utf-8")
+    ethics_page = client.get("/hakkimizda/etik-degerler").data.decode("utf-8")
+
+    assert 'data-card-height="280"' in mission_vision_page
+    assert 'data-card-height="420"' in mission_vision_page
+    assert "--section-card-min-height: 280px;" in mission_vision_page
+    assert "--section-card-min-height: 420px;" in mission_vision_page
+    assert "@media (min-width: 981px)" in mission_vision_page
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in mission_vision_page
+
+    assert 'data-card-height="320"' in ethics_page
+    assert "--section-card-min-height: 320px;" in ethics_page
+
+
+def test_slider_form_renders_inline_media_picker_modal_with_select_buttons(client, app):
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
+    db.session.add(admin)
+    db.session.flush()
+    db.session.add_all(
+        [
+            MediaAsset(
+                title="Slider Görseli",
+                file_path="/static/uploads/cms/slider.png",
+                file_type="image",
+                alt_text="Slider",
+                uploaded_by_id=admin.id,
+                is_active=True,
+            ),
+            MediaAsset(
+                title="Doküman",
+                file_path="/static/uploads/cms/form.pdf",
+                file_type="document",
+                alt_text="",
+                uploaded_by_id=admin.id,
+                is_active=True,
+            ),
+        ]
+    )
+    db.session.commit()
+    _login(client, admin)
+
+    response = client.get("/admin/homepage/sliders/new")
+    page = response.data.decode("utf-8")
+
+    assert response.status_code == 200
+    assert "id=\"mediaPickerModal\"" in page
+    assert "id=\"mediaPickerRows\"" in page
+    assert "data-media-select=\"/static/uploads/cms/slider.png\"" in page
+    assert "Sadece Görüntüle" in page
+    assert "applySelectedMedia" in page
+
+
+def test_fixed_stats_can_be_updated_from_cms_and_rendered_on_public_homepage(client, app):
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
+    db.session.add(admin)
+    db.session.commit()
+    _login(client, admin)
+
+    stats_page_response = client.get("/admin/homepage/stats")
+    stats_page = stats_page_response.data.decode("utf-8")
+    assert stats_page_response.status_code == 200
+    assert "toplam_malzeme" in stats_page
+    assert "toplam_personel" in stats_page
+    assert "aktif_tim" in stats_page
+    assert "tamamlanan_egitimler" in stats_page
+
+    cards = HomeStatCard.query.order_by(HomeStatCard.order_index.asc(), HomeStatCard.id.asc()).all()
+    assert [card.title for card in cards[:4]] == [
+        "Toplam Malzeme",
+        "Toplam Personel",
+        "Aktif Tim",
+        "Tamamlanan Eğitimler",
+    ]
+
+    updates = [("72", "https://example.com/malzeme.png"), ("65", "https://example.com/personel.png"), ("3", "https://example.com/tim.png"), ("8", "https://example.com/egitim.png")]
+    for card, (value_text, image_url) in zip(cards[:4], updates):
+        response = client.post(
+            f"/admin/homepage/stats/{card.id}/edit",
+            data={
+                "value_text": value_text,
+                "image_url": image_url,
+                "image_alt_text": f"{card.title} simgesi",
+            },
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+
+    public_page = client.get("/").data.decode("utf-8")
+    assert "Toplam Malzeme" in public_page
+    assert "Toplam Personel" in public_page
+    assert "Aktif Tim" in public_page
+    assert "Tamamlanan Eğitimler" in public_page
+    assert 'data-stat-final="72"' in public_page
+    assert 'data-stat-final="65"' in public_page
+    assert 'data-stat-final="3"' in public_page
+    assert 'data-stat-final="8"' in public_page
+    assert "https://example.com/malzeme.png" in public_page
+    assert "https://example.com/personel.png" in public_page
+    assert "https://example.com/tim.png" in public_page
+    assert "https://example.com/egitim.png" in public_page
 
 
 def test_active_sliders_listed_on_management_page(client, app):
-    admin = KullaniciFactory(rol="sahip")
+    admin = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(admin)
     db.session.commit()
     _login(client, admin)

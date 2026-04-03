@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+{% block title %}Ayarlar{% endblock %}
+
+{% block extra_css %}
+<style>
+.settings-grid { display: grid; gap: 16px; }
+.settings-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 16px; box-shadow: 0 6px 16px rgba(15,23,42,.04); }
+.settings-card h3 { font-size: 15px; color: var(--navy); margin-bottom: 8px; }
+.settings-card .hint { color: var(--text3); font-size: 12px; line-height: 1.5; margin-bottom: 12px; }
+.settings-row { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.settings-row.single { grid-template-columns: 1fr; }
+.settings-field { display: grid; gap: 6px; }
+.settings-field label { font-size: 12px; font-weight: 700; color: var(--text2); }
+.settings-field input,
+.settings-field select { width: 100%; min-height: 40px; border: 1px solid var(--border-dark); border-radius: 10px; padding: 9px 11px; font-family: var(--sans); font-size: 13px; background: #fff; }
+.settings-actions { margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
+.settings-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; padding: 6px 10px; background: var(--surface2); font-size: 11px; color: var(--text2); font-weight: 700; }
+.settings-checklist { display: grid; gap: 8px; }
+.settings-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text2); }
+.settings-check input { width: 17px; height: 17px; }
+.settings-warning { border: 1px solid var(--amber-border); background: var(--amber-light); color: #92400e; border-radius: 10px; padding: 10px 12px; font-size: 12px; line-height: 1.45; }
+.settings-muted { border: 1px dashed var(--border-dark); background: var(--surface2); color: var(--text3); border-radius: 10px; padding: 10px 12px; font-size: 12px; line-height: 1.45; }
+.settings-passkey-list { display: grid; gap: 10px; margin-top: 10px; }
+.settings-passkey-list[aria-busy="true"] { opacity: .76; }
+.settings-passkey-item { border: 1px solid var(--border); border-radius: 10px; background: #fff; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.settings-passkey-item-main { min-width: 0; display: grid; gap: 4px; }
+.settings-passkey-item-title { font-size: 13px; font-weight: 800; color: var(--navy); line-height: 1.35; word-break: break-word; }
+.settings-passkey-item-meta { font-size: 11.5px; color: var(--text3); line-height: 1.45; word-break: break-word; }
+.settings-passkey-delete { min-height: 34px; padding: 0 12px; flex-shrink: 0; }
+
+@media (max-width: 760px) {
+  .settings-row { grid-template-columns: 1fr; }
+  .settings-passkey-item { align-items: flex-start; flex-direction: column; }
+  .settings-passkey-delete { width: 100%; }
+}
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-header">
+  <div>
+    <div class="page-title">Ayarlar</div>
+    <div class="page-meta">Hesap güvenliği, profil ve mobil bildirim tercihleri</div>
+  </div>
+</div>
+
+<div class="settings-grid">
+  {% if settings_demo_available %}
+  <section class="settings-card">
+    <h3>Demo/Test Simülasyon</h3>
+    <div class="settings-warning">
+      Demo modda ayarlar akışları test amaçlı simüle edilebilir. Production ortamında bu alan görünmez ve simülasyon çalışmaz.
+    </div>
+    <div class="settings-actions">
+      {% if settings_demo_enabled %}
+      <a href="{{ url_for('auth.ayarlar', demo_sim=0) }}" class="btn">Demo Simülasyonunu Kapat</a>
+      {% else %}
+      <a href="{{ url_for('auth.ayarlar', demo_sim=1) }}" class="btn btn-primary">Demo Simülasyonunu Aç</a>
+      {% endif %}
+    </div>
+    {% if settings_demo_enabled and demo_email_verify_path %}
+    <div class="settings-muted">
+      Demo doğrulama bağlantısı hazır:
+      <a href="{{ demo_email_verify_path }}">E-posta değişikliğini doğrula</a>
+      {% if demo_email_target %} ({{ demo_email_target }}){% endif %}
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <section class="settings-card">
+    <h3>Hesap / Profil</h3>
+    <div class="hint">Hesap bilgilerinizi buradan güvenli şekilde yönetebilirsiniz.</div>
+    <div class="settings-row">
+      <div class="settings-field">
+        <label>Ad Soyad</label>
+        <input type="text" value="{{ giren_user.tam_ad }}" readonly>
+      </div>
+      <div class="settings-field">
+        <label>Mevcut E-posta</label>
+        <input type="text" value="{{ giren_user.kullanici_adi }}" readonly>
+      </div>
+    </div>
+    <div class="settings-actions">
+      <span class="settings-chip">Rol: {{ rol_etiketi or rol }}</span>
+      <span class="settings-chip">Havalimanı: {{ giren_user.havalimani.kodu if giren_user.havalimani else 'Genel' }}</span>
+    </div>
+  </section>
+
+  <section class="settings-card">
+    <h3>E-posta Güncelleme</h3>
+    <div class="hint">Yeni e-posta adresi doğrulama bağlantısı onaylanmadan hesabınıza uygulanmaz.</div>
+    <form method="POST" action="{{ url_for('auth.ayarlar_email_change_request') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="settings-row">
+        <div class="settings-field">
+          <label for="newEmail">Yeni E-posta</label>
+          <input id="newEmail" type="email" name="yeni_eposta" autocomplete="email" required>
+        </div>
+        <div class="settings-field">
+          <label for="currentPasswordForEmail">Mevcut Şifre</label>
+          <input id="currentPasswordForEmail" type="password" name="mevcut_sifre_email" autocomplete="current-password" required>
+        </div>
+      </div>
+      <div class="settings-actions">
+        <button type="submit" class="btn btn-primary">Doğrulama Maili Gönder</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="settings-card">
+    <h3>Şifre Değiştirme</h3>
+    <div class="hint">Yeni şifre mevcut parola politikasıyla uyumlu olmalı ve eski şifreyle aynı olmamalıdır.</div>
+    <form method="POST" action="{{ url_for('auth.ayarlar_password_change') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="settings-row">
+        <div class="settings-field">
+          <label for="currentPassword">Mevcut Şifre</label>
+          <input id="currentPassword" type="password" name="mevcut_sifre" autocomplete="current-password" required>
+        </div>
+        <div class="settings-field">
+          <label for="newPassword">Yeni Şifre</label>
+          <input id="newPassword" type="password" name="yeni_sifre" autocomplete="new-password" required>
+        </div>
+      </div>
+      <div class="settings-row single">
+        <div class="settings-field">
+          <label for="newPasswordRepeat">Yeni Şifre (Tekrar)</label>
+          <input id="newPasswordRepeat" type="password" name="yeni_sifre_tekrar" autocomplete="new-password" required>
+        </div>
+      </div>
+      <div class="settings-actions">
+        <button type="submit" class="btn btn-primary">Şifreyi Güncelle</button>
+      </div>
+    </form>
+  </section>
+
+  {% if passkey_enabled %}
+  <section class="settings-card" id="passkeySettingsCard">
+    <h3>Biyometrik / Passkey</h3>
+    <div class="hint">Bu cihazda biyometrik giriş ekleyebilir, kayıtlı passkey listeni görüntüleyip tek tıkla kaldırabilirsin.</div>
+    <div class="settings-actions">
+      <button type="button" class="btn btn-primary" id="settingsPasskeyRegisterButton" hidden>Biyometrik Giriş Ekle</button>
+      <button type="button" class="btn" id="settingsPasskeyRefreshButton">Listeyi Yenile</button>
+    </div>
+    <div class="settings-muted" id="settingsPasskeyEmptyState" style="margin-top: 10px;" hidden>Bu hesap için aktif passkey kaydı bulunmuyor.</div>
+    <div class="settings-passkey-list" id="settingsPasskeyList" aria-live="polite"></div>
+  </section>
+  {% endif %}
+
+  <section class="settings-card">
+    <h3>Beden Bilgileri</h3>
+    <div class="hint">Yalnız kendi beden bilgilerinizi güncelleyebilirsiniz.</div>
+    <form method="POST" action="{{ url_for('auth.ayarlar_profile_update') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="settings-row">
+        <div class="settings-field">
+          <label for="ustBeden">Üst Beden</label>
+          <select id="ustBeden" name="ust_beden">
+            <option value="">Seçiniz</option>
+            {% for option in body_size_options %}
+            <option value="{{ option }}" {% if giren_user.ust_beden == option %}selected{% endif %}>{{ option }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="settings-field">
+          <label for="altBeden">Alt Beden</label>
+          <select id="altBeden" name="alt_beden">
+            <option value="">Seçiniz</option>
+            {% for option in body_size_options %}
+            <option value="{{ option }}" {% if giren_user.alt_beden == option %}selected{% endif %}>{{ option }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="settings-row single">
+        <div class="settings-field">
+          <label for="shoeSize">Ayakkabı Numarası</label>
+          {% set selected_shoe_size = '{:g}'.format(giren_user.ayak_numarasi) if giren_user.ayak_numarasi is not none else '' %}
+          <select id="shoeSize" name="ayakkabi_numarasi">
+            <option value="">Seçiniz</option>
+            {% for option in shoe_size_options %}
+            <option value="{{ option }}" {% if selected_shoe_size == option %}selected{% endif %}>{{ option }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="settings-actions">
+        <button type="submit" class="btn btn-primary">Beden Bilgilerini Kaydet</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="settings-card">
+    <h3>Bildirimler</h3>
+    {% if notification_context_active %}
+      {% if notification_demo_simulation %}
+      <div class="hint">Demo simülasyon aktif: mobil/PWA bildirim davranışı test amaçlı bu ekranda etkinleştirildi.</div>
+      {% else %}
+      <div class="hint">Bildirimler bu cihaz için mobil/PWA bağlamında yönetilir. Web masaüstünde push yönetimi aktif değildir.</div>
+      {% endif %}
+      <div class="settings-warning">
+        Sistem kuralı: {{ "%02d:00"|format(push_quiet_hours_start) }}–{{ "%02d:00"|format(push_quiet_hours_end) }} arasında push bildirim gönderimi durdurulur (kritik dahil).
+        {% if push_quiet_hours_active %} Şu an sessiz saat aralığındasınız.{% endif %}
+      </div>
+
+      <form method="POST" action="{{ url_for('auth.ayarlar_notification_preferences') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="device_id" value="{{ current_push_device_id or '' }}" data-settings-device-id>
+        <input type="hidden" name="client_mode" value="" data-settings-client-mode>
+        <input type="hidden" name="client_platform" value="" data-settings-client-platform>
+
+        <div class="settings-checklist" style="margin: 12px 0;">
+          <label class="settings-check">
+            <input type="checkbox" name="device_notifications_enabled" {% if not current_push_device or current_push_device.notification_enabled %}checked{% endif %}>
+            Bu cihazda bildirimleri açık tut
+          </label>
+        </div>
+
+        <div class="hint" style="margin-top:8px;">Rolünüzle ilgili bildirim kategorileri:</div>
+        <div class="settings-checklist" style="margin-bottom:12px;">
+          {% for option in notification_options %}
+          <label class="settings-check">
+            <input type="checkbox" name="pref_{{ option.key }}" {% if notification_preferences.get(option.key, True) %}checked{% endif %}>
+            {{ option.label }}
+          </label>
+          {% else %}
+          <div class="settings-muted">Rolünüz için yönetilebilir bildirim kategorisi bulunmuyor.</div>
+          {% endfor %}
+        </div>
+
+        <div class="settings-actions">
+          <button type="submit" class="btn btn-primary">Bildirim Tercihlerini Kaydet</button>
+        </div>
+      </form>
+
+      <form method="POST" action="{{ url_for('auth.ayarlar_notification_subscription_remove') }}" style="margin-top:10px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="device_id" value="{{ current_push_device_id or '' }}" data-settings-device-id>
+        <input type="hidden" name="client_mode" value="" data-settings-client-mode>
+        <button type="submit" class="btn">Bu Cihaz Aboneliğini Kaldır</button>
+      </form>
+    {% else %}
+      <div class="settings-muted">
+        Bildirim ayarları yalnız mobil/PWA bağlamında aktiftir. Bu ekranda yalnız bilgilendirme gösterilir.
+      </div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+{% if passkey_enabled %}
+(function () {
+  if (!window.SARXPasskey) return;
+
+  var management = window.SARXPasskey.initManagementList({
+    listContainerId: 'settingsPasskeyList',
+    emptyStateId: 'settingsPasskeyEmptyState',
+    refreshButtonId: 'settingsPasskeyRefreshButton',
+    listUrl: '{{ passkey_credentials_url }}',
+    revokeUrl: '{{ passkey_revoke_url }}'
+  });
+
+  window.SARXPasskey.initRegistration({
+    buttonId: 'settingsPasskeyRegisterButton',
+    beginUrl: '{{ passkey_register_begin_url }}',
+    finishUrl: '{{ passkey_register_finish_url }}',
+    onSuccess: function () {
+      if (management && typeof management.refresh === 'function') {
+        management.refresh();
+      }
+    }
+  });
+})();
+{% endif %}
+
+(function () {
+  const notificationDemoSimulation = {{ "true" if notification_demo_simulation else "false" }};
+  const storageKey = 'sarx.push.device.id';
+  const hiddenDeviceInputs = document.querySelectorAll('[data-settings-device-id]');
+  const hiddenModeInputs = document.querySelectorAll('[data-settings-client-mode]');
+  const hiddenPlatformInputs = document.querySelectorAll('[data-settings-client-platform]');
+
+  const standalone = (typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+  const clientMode = notificationDemoSimulation ? 'standalone' : (standalone ? 'standalone' : 'browser');
+  const userAgent = (navigator.userAgent || '').toLowerCase();
+  const mobileLike = /android|iphone|ipad|ipod|mobile/.test(userAgent);
+  const platform = notificationDemoSimulation ? 'standalone' : (standalone ? 'standalone' : (mobileLike ? 'mobile_browser' : 'desktop'));
+
+  const randomPart = function (length) {
+    if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+      const bytes = new Uint8Array(length);
+      window.crypto.getRandomValues(bytes);
+      return Array.from(bytes).map(function (byte) {
+        return (byte % 36).toString(36);
+      }).join('');
+    }
+    return Math.random().toString(36).slice(2, 2 + length);
+  };
+
+  let deviceId = '';
+  try {
+    deviceId = String(window.localStorage.getItem(storageKey) || '').trim();
+    if (!deviceId) {
+      deviceId = ('d' + randomPart(39)).slice(0, 40);
+      window.localStorage.setItem(storageKey, deviceId);
+    }
+  } catch (error) {
+    deviceId = ('d' + randomPart(39)).slice(0, 40);
+  }
+
+  hiddenDeviceInputs.forEach(function (input) {
+    input.value = deviceId;
+  });
+  hiddenModeInputs.forEach(function (input) {
+    input.value = clientMode;
+  });
+  hiddenPlatformInputs.forEach(function (input) {
+    input.value = platform;
+  });
+
+  if (deviceId) {
+    document.cookie = 'sarx_push_device_id=' + encodeURIComponent(deviceId) + '; Path=/; SameSite=Lax';
+  }
+})();
+</script>
+{% endblock %}

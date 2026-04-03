@@ -1,10 +1,13 @@
 import io
 import base64
+import hmac
 import json
 import mimetypes
+import re
+import secrets
 import zipfile
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlparse, urlunsplit
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -13,7 +16,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.datavalidation import DataValidation
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
-from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, session, url_for
+from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 from flask_login import current_user, login_required
 from reportlab.rl_config import TTFSearchPath
 from xhtml2pdf import pisa
@@ -49,6 +52,7 @@ from models import (
     CalibrationSchedule,
     ConsumableItem,
     ConsumableStockMovement,
+    DemoSeedRecord,
     EquipmentTemplate,
     Havalimani,
     InventoryAsset,
@@ -66,6 +70,8 @@ from models import (
     MaintenanceTriggerRule,
     PPERecord,
     PPERecordEvent,
+    PPEAssignmentRecord,
+    PPEAssignmentItem,
     SparePart,
     SparePartStock,
     TatbikatBelgesi,
@@ -77,9 +83,9 @@ from models import (
 from extensions import table_exists
 from qr_logic import generate_qr_data
 from decorators import (
-    CANONICAL_ROLE_ADMIN,
     CANONICAL_ROLE_SYSTEM,
     CANONICAL_ROLE_TEAM_LEAD,
+    CANONICAL_ROLE_TEAM_MEMBER,
     get_effective_role,
     has_permission,
     permission_required,
@@ -87,7 +93,7 @@ from decorators import (
 from google_drive_service import GoogleDriveError, get_drill_drive_service
 from reporting import build_dashboard_kpis
 from storage import get_storage_adapter
-from demo_data import apply_platform_demo_scope
+from demo_data import apply_platform_demo_scope, platform_demo_is_active
 from services.inventory_bulk_import_service import (
     normalize_lookup,
     normalize_person_name,
@@ -103,15 +109,22 @@ from services.inventory_excel_service import (
 )
 from services.inventory_template_service import form_label_map
 from services.qr_service import assign_asset_qr
-from services.text_normalization_service import turkish_contains, turkish_equals
+from services.text_normalization_service import turkish_contains, turkish_equals, turkish_upper
 
 
 inventory_bp = Blueprint("inventory", __name__)
+OFFLINE_MAINTENANCE_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{8,64}$")
+GOOGLE_DRIVE_OAUTH_STATE_SESSION_KEY = "google_drive_oauth_state"
 
 ASSIGNMENT_STATUS_LABELS = {
     "active": "Aktif",
     "returned": "İade Edildi",
     "partial": "Kısmi İade",
+    "cancelled": "İptal",
+}
+PPE_ASSIGNMENT_STATUS_LABELS = {
+    "active": "Aktif",
+    "returned": "İade Edildi",
     "cancelled": "İptal",
 }
 PPE_STATUS_LABELS = {
@@ -210,6 +223,11 @@ def havalimani_filtreli_sorgu(model_sinifi):
 
 
 def _can_view_all_operational_scope():
+    actor_role = get_effective_role(current_user)
+    if actor_role == CANONICAL_ROLE_SYSTEM:
+        return True
+    if actor_role in {CANONICAL_ROLE_TEAM_LEAD, CANONICAL_ROLE_TEAM_MEMBER}:
+        return False
     return has_permission("logs.view") or has_permission("settings.manage")
 
 
@@ -261,6 +279,17 @@ def _can_issue_assignments(actor=None):
     )
 
 
+def _can_delete_assignments():
+    if not getattr(current_user, "is_authenticated", False):
+        return False
+    actor_role = get_effective_role(current_user)
+    if actor_role == CANONICAL_ROLE_SYSTEM:
+        return has_permission("assignment.view")
+    if actor_role == CANONICAL_ROLE_TEAM_LEAD:
+        return has_permission("assignment.manage")
+    return False
+
+
 def _assignment_scope():
     query = AssignmentRecord.query.filter_by(is_deleted=False)
     if _can_view_all_operational_scope():
@@ -270,6 +299,40 @@ def _assignment_scope():
         return apply_platform_demo_scope(scoped, "AssignmentRecord", AssignmentRecord.id)
     scoped = query.join(AssignmentRecipient).filter(AssignmentRecipient.user_id == current_user.id).distinct()
     return apply_platform_demo_scope(scoped, "AssignmentRecord", AssignmentRecord.id)
+
+
+def _can_issue_ppe_assignments(actor=None):
+    actor = actor or current_user
+    return bool(
+        getattr(actor, "is_authenticated", False)
+        and has_permission("ppe.manage", user=actor)
+        and get_effective_role(actor) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_TEAM_LEAD}
+    )
+
+
+def _ppe_assignment_scope():
+    query = PPEAssignmentRecord.query.filter_by(is_deleted=False)
+    if _can_view_all_operational_scope():
+        return apply_platform_demo_scope(query, "PPEAssignmentRecord", PPEAssignmentRecord.id)
+    if _can_issue_ppe_assignments(current_user):
+        scoped = query.filter(PPEAssignmentRecord.airport_id == current_user.havalimani_id)
+        return apply_platform_demo_scope(scoped, "PPEAssignmentRecord", PPEAssignmentRecord.id)
+    scoped = query.filter(PPEAssignmentRecord.recipient_user_id == current_user.id)
+    return apply_platform_demo_scope(scoped, "PPEAssignmentRecord", PPEAssignmentRecord.id)
+
+
+def _ppe_linkable_assignments(airport_id=None):
+    query = _ppe_assignment_scope().filter(PPEAssignmentRecord.status == "active")
+    if airport_id:
+        query = query.filter(PPEAssignmentRecord.airport_id == airport_id)
+    return (
+        query.options(
+            joinedload(PPEAssignmentRecord.recipient_user),
+            joinedload(PPEAssignmentRecord.airport),
+        )
+        .order_by(PPEAssignmentRecord.assignment_date.desc(), PPEAssignmentRecord.created_at.desc())
+        .all()
+    )
 
 
 def _ppe_scope():
@@ -283,9 +346,35 @@ def _ppe_scope():
     return apply_platform_demo_scope(scoped, "PPERecord", PPERecord.id)
 
 
+def _ensure_kkd_schema_ready():
+    missing_parts = []
+    if not table_exists("ppe_record"):
+        missing_parts.append("ppe_record tablosu")
+    elif not column_exists("ppe_record", "ppe_assignment_id"):
+        missing_parts.append("ppe_record.ppe_assignment_id kolonu")
+
+    if not table_exists("ppe_assignment_record"):
+        missing_parts.append("ppe_assignment_record tablosu")
+    elif any(
+        not column_exists("ppe_assignment_record", column_name)
+        for column_name in ("returned_at", "returned_by_id", "returned_note")
+    ):
+        missing_parts.append("ppe_assignment_record iade kolonları")
+    if not table_exists("ppe_assignment_item"):
+        missing_parts.append("ppe_assignment_item tablosu")
+
+    if not missing_parts:
+        return
+
+    detail = ", ".join(missing_parts)
+    raise RuntimeError(
+        f"KKD şeması güncel değil ({detail}). Lütfen `flask db upgrade` çalıştırın."
+    )
+
+
 def _drill_scope():
     query = TatbikatBelgesi.query.filter_by(is_deleted=False)
-    if get_effective_role(current_user) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
+    if get_effective_role(current_user) == CANONICAL_ROLE_SYSTEM:
         return apply_platform_demo_scope(query, "TatbikatBelgesi", TatbikatBelgesi.id)
     if current_user.havalimani_id is None:
         scoped = query.filter(TatbikatBelgesi.havalimani_id.is_(None))
@@ -295,7 +384,7 @@ def _drill_scope():
 
 
 def _can_view_drills_for_airport(airport_id):
-    if get_effective_role(current_user) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
+    if get_effective_role(current_user) == CANONICAL_ROLE_SYSTEM:
         return True
     return bool(current_user.havalimani_id and current_user.havalimani_id == airport_id)
 
@@ -311,7 +400,7 @@ def _can_manage_drills_for_airport(airport_id):
 
 
 def _visible_drill_airports():
-    if get_effective_role(current_user) in {CANONICAL_ROLE_SYSTEM, CANONICAL_ROLE_ADMIN}:
+    if get_effective_role(current_user) == CANONICAL_ROLE_SYSTEM:
         query = Havalimani.query.filter_by(is_deleted=False)
         query = apply_platform_demo_scope(query, "Havalimani", Havalimani.id)
         return query.order_by(Havalimani.kodu.asc()).all()
@@ -434,6 +523,14 @@ def _get_drill_document_or_403(document_id):
     return document
 
 
+def _google_drive_oauth_state_matches(request_state):
+    expected_state = str(session.pop(GOOGLE_DRIVE_OAUTH_STATE_SESSION_KEY, "") or "").strip()
+    provided_state = str(request_state or "").strip()
+    if not expected_state or not provided_state:
+        return False
+    return hmac.compare_digest(expected_state, provided_state)
+
+
 def _redirect_after_google_oauth():
     if current_user.is_authenticated:
         if getattr(current_user, "is_sahip", False) or has_permission("settings.manage"):
@@ -446,6 +543,11 @@ def _redirect_after_google_oauth():
 def _next_assignment_no():
     now = get_tr_now()
     return f"ZMT-{now.strftime('%Y%m%d%H%M%S')}-{now.microsecond % 1000:03d}"
+
+
+def _next_ppe_assignment_no():
+    now = get_tr_now()
+    return f"KKD-{now.strftime('%Y%m%d%H%M%S')}-{now.microsecond % 1000:03d}"
 
 
 def _storage_safe_segment(raw_value, default):
@@ -508,6 +610,72 @@ def _append_assignment_history(assignment, event_type, note):
     )
 
 
+def _register_assignment_for_active_demo_scope(assignment):
+    if not assignment or not getattr(assignment, "id", None):
+        return
+    if not platform_demo_is_active() or not table_exists("demo_seed_record"):
+        return
+    existing = DemoSeedRecord.query.filter_by(
+        seed_tag="demo_seed",
+        model_name="AssignmentRecord",
+        record_id=assignment.id,
+    ).first()
+    if existing:
+        return
+    db.session.add(
+        DemoSeedRecord(
+            seed_tag="demo_seed",
+            model_name="AssignmentRecord",
+            record_id=assignment.id,
+            record_label=getattr(assignment, "assignment_no", None),
+        )
+    )
+
+
+def _register_ppe_record_for_active_demo_scope(record):
+    if not record or not getattr(record, "id", None):
+        return
+    if not platform_demo_is_active() or not table_exists("demo_seed_record"):
+        return
+    existing = DemoSeedRecord.query.filter_by(
+        seed_tag="demo_seed",
+        model_name="PPERecord",
+        record_id=record.id,
+    ).first()
+    if existing:
+        return
+    db.session.add(
+        DemoSeedRecord(
+            seed_tag="demo_seed",
+            model_name="PPERecord",
+            record_id=record.id,
+            record_label=getattr(record, "item_name", None),
+        )
+    )
+
+
+def _register_ppe_assignment_for_active_demo_scope(assignment):
+    if not assignment or not getattr(assignment, "id", None):
+        return
+    if not platform_demo_is_active() or not table_exists("demo_seed_record"):
+        return
+    existing = DemoSeedRecord.query.filter_by(
+        seed_tag="demo_seed",
+        model_name="PPEAssignmentRecord",
+        record_id=assignment.id,
+    ).first()
+    if existing:
+        return
+    db.session.add(
+        DemoSeedRecord(
+            seed_tag="demo_seed",
+            model_name="PPEAssignmentRecord",
+            record_id=assignment.id,
+            record_label=getattr(assignment, "assignment_no", None),
+        )
+    )
+
+
 def _recalculate_assignment_status(assignment):
     if assignment.status == "cancelled":
         return assignment.status
@@ -526,6 +694,125 @@ def _recalculate_assignment_status(assignment):
 
 def _assignment_status_label(value):
     return ASSIGNMENT_STATUS_LABELS.get(value, value)
+
+
+def _work_order_status_label(value):
+    labels = {
+        "acik": "Açık",
+        "atandi": "Atandı",
+        "islemde": "İşlemde",
+        "beklemede_parca": "Parça Bekleniyor",
+        "beklemede_onay": "Onay Bekleniyor",
+        "tamamlandi": "Tamamlandı",
+        "iptal_edildi": "İptal Edildi",
+    }
+    return labels.get(value, value)
+
+
+def _format_assignment_quantity(value):
+    try:
+        numeric_value = float(value or 0)
+    except (TypeError, ValueError):
+        return "0"
+    if abs(numeric_value) < 1e-9:
+        return "0"
+    rounded_value = round(numeric_value)
+    if abs(numeric_value - rounded_value) < 1e-9:
+        return str(int(rounded_value))
+    return f"{numeric_value:.2f}".rstrip("0").rstrip(".")
+
+
+def _ppe_assignment_status_label(value):
+    return PPE_ASSIGNMENT_STATUS_LABELS.get(value, value)
+
+
+def _ppe_assignment_display_name(value):
+    return turkish_upper(guvenli_metin(value or "").strip())
+
+
+def _to_float_safe(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _ppe_available_quantity_map(airport_id=None):
+    ppe_query = _ppe_scope().filter(PPERecord.is_active.is_(True))
+    if airport_id:
+        ppe_query = ppe_query.filter(PPERecord.airport_id == airport_id)
+    ppe_rows = ppe_query.all()
+    if not ppe_rows:
+        return {}, {}
+
+    ppe_rows_by_id = {row.id: row for row in ppe_rows}
+    assignment_rows = (
+        db.session.query(
+            PPEAssignmentItem.ppe_record_id,
+            sa.func.coalesce(sa.func.sum(PPEAssignmentItem.quantity), 0.0),
+        )
+        .join(PPEAssignmentRecord, PPEAssignmentRecord.id == PPEAssignmentItem.assignment_id)
+        .filter(
+            PPEAssignmentItem.is_deleted.is_(False),
+            PPEAssignmentRecord.is_deleted.is_(False),
+            PPEAssignmentRecord.status == "active",
+            PPEAssignmentItem.ppe_record_id.in_(list(ppe_rows_by_id.keys())),
+        )
+        .group_by(PPEAssignmentItem.ppe_record_id)
+        .all()
+    )
+    assigned_map = {row[0]: _to_float_safe(row[1]) for row in assignment_rows}
+    available_map = {}
+    for record_id, record in ppe_rows_by_id.items():
+        available_qty = max(_to_float_safe(record.quantity, 0) - assigned_map.get(record_id, 0.0), 0.0)
+        available_map[record_id] = available_qty
+    return ppe_rows_by_id, available_map
+
+
+def _ppe_assignment_signed_document_folder(assignment):
+    airport_label = (
+        getattr(getattr(assignment, "airport", None), "kodu", "")
+        or getattr(getattr(assignment, "airport", None), "ad", "")
+        or "global"
+    )
+    recipient_name = getattr(getattr(assignment, "recipient_user", None), "tam_ad", "") or "personel"
+    return f"{_storage_safe_segment(airport_label, 'global')}/KKD/{_storage_safe_segment(recipient_name, 'personel')}"
+
+
+def _ppe_assignment_signed_document_filename(assignment):
+    person_slug = _storage_safe_segment(
+        getattr(getattr(assignment, "recipient_user", None), "tam_ad", "") or "personel",
+        "personel",
+    ).lower()
+    timestamp = get_tr_now().strftime("%Y%m%d")
+    return secure_upload_filename(f"kkd_{person_slug}_{timestamp}.pdf")
+
+
+def _upload_ppe_signed_document_to_drive(assignment, upload, safe_name):
+    if not table_exists("havalimani"):
+        return None
+    airport = getattr(assignment, "airport", None)
+    if not airport:
+        return None
+    service = get_drill_drive_service()
+    airport_folder_id = service.ensure_airport_folder(airport)
+    kkd_folder_id = service._find_folder("KKD", airport_folder_id) or service._create_folder("KKD", airport_folder_id)
+    person_slug = _storage_safe_segment(
+        getattr(getattr(assignment, "recipient_user", None), "tam_ad", "") or "personel",
+        "personel",
+    ).lower()
+    date_str = get_tr_now().strftime("%Y%m%d")
+    drive_filename = secure_upload_filename(f"kkd_{person_slug}_{date_str}.pdf") or safe_name
+    upload_result = service.upload_file_to_folder(
+        folder_id=kkd_folder_id,
+        upload=upload,
+        filename=drive_filename,
+        mime_type="application/pdf",
+    )
+    return {
+        "drive_file_id": upload_result.get("drive_file_id"),
+        "drive_folder_id": kkd_folder_id,
+    }
 
 
 def _ppe_status_label(value):
@@ -699,9 +986,34 @@ def _assignment_pdf_font_uris():
     return {"regular": "", "bold": ""}
 
 
+def _assignment_pdf_logo_uri():
+    candidate_paths = [
+        Path(current_app.root_path) / "static" / "img" / "arfflogo.png",
+        Path(current_app.root_path) / "static" / "img" / "logo_guncell.png",
+        Path(current_app.root_path) / "static" / "img" / "logo_guncel.png",
+        Path(current_app.root_path) / "static" / "img" / "icon-512.png",
+        Path(current_app.root_path) / "static" / "img" / "icon-192.png",
+        Path(current_app.root_path) / "static" / "favicon.png",
+    ]
+    seen = set()
+    for candidate in candidate_paths:
+        try:
+            resolved = candidate.resolve()
+        except Exception:
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.exists() and resolved.is_file():
+            # xhtml2pdf bazı ortamlarda file:// URI yerine doğrudan mutlak yol ile
+            # daha stabil render ettiği için logo kaynağını path olarak döndürüyoruz.
+            return str(resolved)
+    return ""
+
+
 def _asset_scope():
     query = InventoryAsset.query.filter_by(is_deleted=False)
-    if has_permission("logs.view") or has_permission("settings.manage"):
+    if _can_view_all_operational_scope():
         scoped = query
     else:
         scoped = query.filter_by(havalimani_id=current_user.havalimani_id)
@@ -1059,6 +1371,34 @@ def _is_valid_url(raw_value):
         return True
     parsed = urlparse(value)
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _safe_internal_redirect_target(raw_target, fallback_target):
+    fallback = str(fallback_target or "/").strip() or "/"
+    target = str(raw_target or "").strip()
+    if not target or target.startswith("//"):
+        return fallback
+
+    parsed = urlparse(target)
+    if parsed.scheme or parsed.netloc:
+        request_origin = urlparse(request.host_url)
+        if (parsed.scheme or "").lower() != (request_origin.scheme or "").lower():
+            return fallback
+        if (parsed.hostname or "").lower() != (request_origin.hostname or "").lower():
+            return fallback
+        try:
+            request_port = request_origin.port
+            parsed_port = parsed.port
+        except ValueError:
+            return fallback
+        if (request_port or None) != (parsed_port or None):
+            return fallback
+        safe_path = parsed.path if str(parsed.path or "").startswith("/") else f"/{parsed.path or ''}"
+        return urlunsplit(("", "", safe_path or "/", parsed.query, parsed.fragment))
+
+    if not target.startswith("/"):
+        return fallback
+    return target
 
 
 def _safe_asset_display_name(asset):
@@ -1526,10 +1866,7 @@ def _create_asset_and_legacy_material(template, kutu, havalimani_id, form_data):
 
 
 def _is_system_owner():
-    raw_role = str(getattr(current_user, "rol", "") or "").strip().lower()
-    if raw_role in {"sahip", "sistem_sahibi", "sistem_sorumlusu"}:
-        return True
-    return bool(getattr(current_user, "is_sahip", False))
+    return get_effective_role(current_user) == CANONICAL_ROLE_SYSTEM
 
 
 def _import_allowed_airports():
@@ -1709,7 +2046,7 @@ def dashboard():
     if _can_view_all_operational_scope():
         h_ad = "Genel Müdürlük / Tüm Birimler"
     else:
-        h_ad = current_user.havalimani.ad
+        h_ad = current_user.havalimani.ad if current_user.havalimani else "Atanmamış Birim"
 
     bugun = datetime.now(TR_TZ).date()
     on_bes_gun_sonra = bugun + timedelta(days=15)
@@ -1750,7 +2087,7 @@ def dashboard():
     low_stock_query = SparePartStock.query.filter_by(is_deleted=False, is_active=True)
     if not _can_view_all_operational_scope():
         low_stock_query = low_stock_query.filter(SparePartStock.airport_id == current_user.havalimani_id)
-    low_stock_items = low_stock_query.all()
+    low_stock_items = low_stock_query.options(joinedload(SparePartStock.spare_part)).all()
     low_stock_count = sum(
         1
         for stock in low_stock_items
@@ -1766,24 +2103,57 @@ def dashboard():
             (MaintenanceTriggerRule.asset_id.is_(None))
             | (InventoryAsset.havalimani_id == current_user.havalimani_id)
         )
-    meter_rules = meter_rule_query.all()
+    meter_rules = meter_rule_query.filter(
+        MaintenanceTriggerRule.asset_id.isnot(None),
+        MaintenanceTriggerRule.meter_definition_id.isnot(None),
+    ).all()
     meter_warning_count = 0
-    for rule in meter_rules:
-        if not rule.meter_definition_id:
-            continue
-        asset = rule.asset_owner
-        if not asset:
-            continue
-        last_reading = AssetMeterReading.query.filter_by(
-            is_deleted=False,
-            asset_id=asset.id,
-            meter_definition_id=rule.meter_definition_id,
-        ).order_by(AssetMeterReading.reading_at.desc()).first()
-        if not last_reading:
-            continue
-        warning_threshold = float(rule.threshold_value or 0) - float(rule.warning_lead_value or 0)
-        if last_reading.reading_value >= max(warning_threshold, 0):
-            meter_warning_count += 1
+    if meter_rules:
+        rule_pairs = {
+            (rule.asset_id, rule.meter_definition_id): rule
+            for rule in meter_rules
+            if rule.asset_id and rule.meter_definition_id
+        }
+        if rule_pairs:
+            pair_asset_ids = {item[0] for item in rule_pairs.keys()}
+            pair_meter_ids = {item[1] for item in rule_pairs.keys()}
+            latest_reading_subquery = (
+                db.session.query(
+                    AssetMeterReading.asset_id.label("asset_id"),
+                    AssetMeterReading.meter_definition_id.label("meter_definition_id"),
+                    sa.func.max(AssetMeterReading.reading_at).label("max_reading_at"),
+                )
+                .filter(
+                    AssetMeterReading.is_deleted.is_(False),
+                    AssetMeterReading.asset_id.in_(pair_asset_ids),
+                    AssetMeterReading.meter_definition_id.in_(pair_meter_ids),
+                )
+                .group_by(AssetMeterReading.asset_id, AssetMeterReading.meter_definition_id)
+                .subquery()
+            )
+            latest_rows = (
+                db.session.query(
+                    AssetMeterReading.asset_id,
+                    AssetMeterReading.meter_definition_id,
+                    AssetMeterReading.reading_value,
+                )
+                .join(
+                    latest_reading_subquery,
+                    sa.and_(
+                        AssetMeterReading.asset_id == latest_reading_subquery.c.asset_id,
+                        AssetMeterReading.meter_definition_id == latest_reading_subquery.c.meter_definition_id,
+                        AssetMeterReading.reading_at == latest_reading_subquery.c.max_reading_at,
+                    ),
+                )
+                .all()
+            )
+            for asset_id, meter_definition_id, reading_value in latest_rows:
+                rule = rule_pairs.get((asset_id, meter_definition_id))
+                if not rule:
+                    continue
+                warning_threshold = float(rule.threshold_value or 0) - float(rule.warning_lead_value or 0)
+                if float(reading_value or 0) >= max(warning_threshold, 0):
+                    meter_warning_count += 1
 
     auto_work_order_query = WorkOrder.query.filter_by(is_deleted=False, source_type="meter_trigger").join(InventoryAsset)
     auto_work_order_query = auto_work_order_query.filter(
@@ -1818,8 +2188,33 @@ def dashboard():
     low_consumable_count = 0
     critical_consumable_count = 0
     if table_exists("consumable_item") and table_exists("consumable_stock_movement") and current_user.havalimani_id:
-        for consumable in _consumable_scope().all():
-            balance = _consumable_balance(consumable.id, current_user.havalimani_id)
+        consumables = _consumable_scope().all()
+        consumable_ids = [consumable.id for consumable in consumables]
+        balance_map = {}
+        if consumable_ids:
+            signed_quantity = sa.case(
+                (
+                    ConsumableStockMovement.movement_type.in_(["in", "adjust", "transfer"]),
+                    sa.func.coalesce(ConsumableStockMovement.quantity, 0.0),
+                ),
+                else_=-sa.func.coalesce(ConsumableStockMovement.quantity, 0.0),
+            )
+            balance_rows = (
+                db.session.query(
+                    ConsumableStockMovement.consumable_id,
+                    sa.func.coalesce(sa.func.sum(signed_quantity), 0.0),
+                )
+                .filter(
+                    ConsumableStockMovement.is_deleted.is_(False),
+                    ConsumableStockMovement.airport_id == current_user.havalimani_id,
+                    ConsumableStockMovement.consumable_id.in_(consumable_ids),
+                )
+                .group_by(ConsumableStockMovement.consumable_id)
+                .all()
+            )
+            balance_map = {consumable_id: float(balance or 0) for consumable_id, balance in balance_rows}
+        for consumable in consumables:
+            balance = balance_map.get(consumable.id, 0.0)
             if balance <= float(consumable.critical_level or 0):
                 critical_consumable_count += 1
             if balance <= float(consumable.min_stock_level or 0):
@@ -1929,20 +2324,29 @@ def envanter():
     )
     if _can_view_all_operational_scope() and selected_airport:
         query = query.filter(Malzeme.havalimani_id == selected_airport)
-    malzemeler = query.order_by(Malzeme.created_at.desc()).all()
+    query = query.outerjoin(Malzeme.linked_asset).outerjoin(InventoryAsset.operational_state).filter(
+        sa.or_(
+            InventoryAsset.id.is_(None),
+            sa.and_(
+                AssetOperationalState.id.isnot(None),
+                AssetOperationalState.lifecycle_status.isnot(None),
+                AssetOperationalState.lifecycle_status.notin_(["disposed", "decommissioned"]),
+            ),
+            sa.and_(
+                sa.or_(
+                    AssetOperationalState.id.is_(None),
+                    AssetOperationalState.lifecycle_status.is_(None),
+                ),
+                sa.or_(
+                    InventoryAsset.status.is_(None),
+                    InventoryAsset.status.notin_(["hurda", "pasif"]),
+                ),
+            ),
+        )
+    )
     if selected_category:
-        malzemeler = [
-            malzeme
-            for malzeme in malzemeler
-            if malzeme.linked_asset
-            and malzeme.linked_asset.equipment_template
-            and turkish_equals(malzeme.linked_asset.equipment_template.category, selected_category)
-        ]
-    malzemeler = [
-        malzeme
-        for malzeme in malzemeler
-        if not malzeme.linked_asset or malzeme.linked_asset.lifecycle_status not in {"disposed", "decommissioned"}
-    ]
+        query = query.join(InventoryAsset.equipment_template).filter(EquipmentTemplate.category == selected_category)
+    malzemeler = query.order_by(Malzeme.created_at.desc()).all()
 
     if _can_view_all_operational_scope():
         h_ad = "Genel Envanter (Tüm Birimler)"
@@ -2523,6 +2927,23 @@ def bakim_kaydet(id):
         flash("Farklı bir birimin malzemesine bakım girişi yapamazsınız.", "danger")
         abort(403)
 
+    offline_sync_mode = (request.headers.get("X-SARX-Offline-Sync") or "").strip() == "1"
+    raw_request_id = str(request.headers.get("X-SARX-Offline-Request-Id") or "").strip()[:64]
+    offline_request_id = raw_request_id if OFFLINE_MAINTENANCE_REQUEST_ID_RE.match(raw_request_id) else ""
+
+    if offline_sync_mode and offline_request_id and table_exists("islem_log"):
+        duplicate_log = (
+            IslemLog.query.filter_by(
+                event_key="inventory.maintenance.offline_sync",
+                request_id=offline_request_id,
+                outcome="success",
+            )
+            .order_by(IslemLog.id.desc())
+            .first()
+        )
+        if duplicate_log:
+            return jsonify({"status": "success", "duplicate": True}), 200
+
     guvenli_not = guvenli_metin(request.form.get("not"))
     yeni_kayit = BakimKaydi(
         malzeme_id=id,
@@ -2555,6 +2976,26 @@ def bakim_kaydet(id):
         db.session.add(history)
 
     db.session.commit()
+
+    if offline_sync_mode:
+        log_kaydet(
+            "Bakım",
+            f"{malzeme.ad} için çevrimdışı bakım kaydı işlendi ({malzeme.havalimani.kodu})",
+            event_key="inventory.maintenance.offline_sync",
+            outcome="success",
+            request_id=offline_request_id or None,
+            target_model="BakimKaydi",
+            target_id=yeni_kayit.id,
+        )
+        audit_log(
+            "inventory.maintenance.offline_sync",
+            outcome="success",
+            maintenance_id=yeni_kayit.id,
+            material_id=malzeme.id,
+            request_id=offline_request_id or None,
+            user_id=current_user.id,
+        )
+        return jsonify({"status": "success", "maintenance_id": yeni_kayit.id}), 200
 
     log_kaydet("Bakım", f"{malzeme.ad} için bakım kaydı girildi ({malzeme.havalimani.kodu})")
     flash("Bakım kaydı başarıyla işlendi.", "success")
@@ -2603,7 +3044,7 @@ def envanter_excel():
 @permission_required("inventory.delete")
 def malzeme_sil_legacy(id):
     flash("Bu işlem yalnızca form gönderimi ile yapılabilir.", "warning")
-    return redirect(request.referrer or url_for("inventory.dashboard"))
+    return redirect(_safe_internal_redirect_target(request.referrer, url_for("inventory.dashboard")))
 
 
 @inventory_bp.route("/malzeme-sil/<int:id>", methods=["POST"])
@@ -2611,7 +3052,7 @@ def malzeme_sil_legacy(id):
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"), methods=["POST"])
 @permission_required("inventory.delete")
 def malzeme_sil(id):
-    malzeme = db.session.get(Malzeme, id)
+    malzeme = havalimani_filtreli_sorgu(Malzeme).filter(Malzeme.id == id).first()
     if malzeme and not malzeme.is_deleted:
         malzeme_adi = malzeme.ad
         malzeme.soft_delete()
@@ -2629,7 +3070,7 @@ def malzeme_sil(id):
     else:
         flash("Hata: Malzeme bulunamadı veya zaten silinmiş.", "danger")
 
-    return redirect(request.referrer or url_for("inventory.dashboard"))
+    return redirect(_safe_internal_redirect_target(request.referrer, url_for("inventory.dashboard")))
 
 
 @inventory_bp.route("/envanter/pdf")
@@ -2668,14 +3109,17 @@ def zimmetler():
         selected_airport = current_user.havalimani_id
 
     can_create_assignment = has_permission("assignment.create") and _can_issue_assignments(current_user)
+    can_delete_assignment = _can_delete_assignments()
 
     if request.method == "POST":
         if not can_create_assignment:
             abort(403)
 
-        airport_id = request.form.get("airport_id", type=int) or current_user.havalimani_id
+        raw_airport_id = request.form.get("airport_id", type=int)
+        airport_id = raw_airport_id or current_user.havalimani_id
+        selected_item_ids = list(dict.fromkeys(_parse_int_list(request.form.getlist("item_ids"))))
         if _can_view_all_operational_scope():
-            airport_allowed = any(airport.id == airport_id for airport in visible_airports)
+            airport_allowed = airport_id is None or any(airport.id == airport_id for airport in visible_airports)
         else:
             airport_allowed = airport_id == current_user.havalimani_id
         if not airport_allowed:
@@ -2685,7 +3129,9 @@ def zimmetler():
         delivered_by_name = guvenli_metin(request.form.get("delivered_by_name") or "").strip()
         if not delivered_by_name:
             delivered_by_name = guvenli_metin(getattr(current_user, "tam_ad", "") or "").strip()
-        visible_user_ids = {user.id for user in _visible_personnel_query(airport_id).all()}
+        recipient_scope_airport = airport_id if not _can_view_all_operational_scope() else None
+        visible_users = {user.id: user for user in _visible_personnel_query(recipient_scope_airport).all()}
+        visible_user_ids = set(visible_users.keys())
 
         recipient_ids = list(dict.fromkeys(_parse_int_list(request.form.getlist("recipient_ids"))))
         recipient_ids = [user_id for user_id in recipient_ids if user_id in visible_user_ids]
@@ -2693,58 +3139,120 @@ def zimmetler():
             flash("En az bir teslim alan personel seçin.", "danger")
             return redirect(url_for("inventory.zimmetler", airport_id=airport_id or None))
 
+        if _can_view_all_operational_scope():
+            recipient_airport_ids = {
+                visible_users[user_id].havalimani_id
+                for user_id in recipient_ids
+                if user_id in visible_users
+            }
+            recipient_airport_ids_non_null = {airport_id for airport_id in recipient_airport_ids if airport_id is not None}
+            if len(recipient_airport_ids_non_null) == 1:
+                # Kullanıcı seçim sırasından bağımsız olarak tek havalimanı kapsamını otomatik hizala.
+                airport_id = next(iter(recipient_airport_ids_non_null))
+            if len(recipient_airport_ids_non_null) > 1:
+                flash("Seçilen personeller tek bir havalimanı kapsamında olmalıdır.", "danger")
+                return redirect(url_for("inventory.zimmetler", airport_id=airport_id or None))
+            if airport_id is None and not selected_item_ids:
+                flash("Zimmet oluşturmak için bir havalimanı seçin.", "danger")
+                return redirect(url_for("inventory.zimmetler"))
+            if airport_id is not None and not any(airport.id == airport_id for airport in visible_airports):
+                flash("Seçilen havalimanı için zimmet oluşturma yetkiniz yok.", "danger")
+                return redirect(url_for("inventory.zimmetler", airport_id=selected_airport or None))
+
+        if _can_view_all_operational_scope() and selected_item_ids:
+            selected_material_rows = (
+                _visible_material_query(None)
+                .filter(Malzeme.id.in_(selected_item_ids))
+                .all()
+            )
+            selected_material_airport_ids = {
+                row.havalimani_id
+                for row in selected_material_rows
+                if row.havalimani_id is not None
+            }
+            if len(selected_material_airport_ids) > 1:
+                flash("Seçilen malzemeler tek bir havalimanı kapsamında olmalıdır.", "danger")
+                return redirect(url_for("inventory.zimmetler", airport_id=airport_id or None))
+
+            recipient_airport_id = next(iter(recipient_airport_ids)) if len(recipient_airport_ids) == 1 else None
+            material_airport_id = next(iter(selected_material_airport_ids)) if len(selected_material_airport_ids) == 1 else None
+            if recipient_airport_id and material_airport_id and recipient_airport_id != material_airport_id:
+                flash("Seçilen personel ve malzemeler aynı havalimanı kapsamında olmalıdır.", "danger")
+                return redirect(url_for("inventory.zimmetler", airport_id=airport_id or None))
+
+            resolved_airport_id = recipient_airport_id or material_airport_id or airport_id
+            if resolved_airport_id is not None:
+                airport_id = resolved_airport_id
+            if airport_id is None:
+                flash("Zimmet oluşturmak için bir havalimanı seçin.", "danger")
+                return redirect(url_for("inventory.zimmetler"))
+            if not any(airport.id == airport_id for airport in visible_airports):
+                flash("Seçilen havalimanı için zimmet oluşturma yetkiniz yok.", "danger")
+                return redirect(url_for("inventory.zimmetler", airport_id=selected_airport or None))
+
         visible_materials = {
             item.id: item
             for item in _visible_material_query(airport_id).order_by(Malzeme.ad.asc()).all()
         }
-        selected_item_ids = list(dict.fromkeys(_parse_int_list(request.form.getlist("item_ids"))))
         selected_items = [visible_materials[item_id] for item_id in selected_item_ids if item_id in visible_materials]
         if not selected_items:
             flash("En az bir malzeme seçin.", "danger")
             return redirect(url_for("inventory.zimmetler", airport_id=airport_id or None))
 
-        assignment = AssignmentRecord(
-            assignment_no=_next_assignment_no(),
-            assignment_date=_parse_date(request.form.get("assignment_date")) or get_tr_now().date(),
-            delivered_by_id=current_user.id,
-            delivered_by_name=delivered_by_name,
-            airport_id=airport_id,
-            note=guvenli_metin(request.form.get("note") or ""),
-            status="active",
-            created_by_id=current_user.id,
-        )
-        db.session.add(assignment)
-        db.session.flush()
-
-        for user_id in recipient_ids:
-            db.session.add(AssignmentRecipient(assignment_id=assignment.id, user_id=user_id))
-
-        created_item_count = 0
-        for material in selected_items:
-            quantity = request.form.get(f"item_qty_{material.id}", type=float) or float(material.stok_miktari or 1)
-            quantity = max(quantity, 0)
-            if quantity <= 0:
-                continue
-            db.session.add(
-                AssignmentItem(
-                    assignment_id=assignment.id,
-                    material_id=material.id,
-                    asset_id=material.linked_asset.id if material.linked_asset else None,
-                    item_name=material.ad,
-                    quantity=quantity,
-                    unit=guvenli_metin(request.form.get(f"item_unit_{material.id}") or "adet") or "adet",
-                    note=guvenli_metin(request.form.get(f"item_note_{material.id}") or ""),
-                )
+        try:
+            assignment = AssignmentRecord(
+                assignment_no=_next_assignment_no(),
+                assignment_date=_parse_date(request.form.get("assignment_date")) or get_tr_now().date(),
+                delivered_by_id=current_user.id,
+                delivered_by_name=delivered_by_name,
+                airport_id=airport_id,
+                note=guvenli_metin(request.form.get("note") or ""),
+                status="active",
+                created_by_id=current_user.id,
             )
-            created_item_count += 1
+            db.session.add(assignment)
+            db.session.flush()
 
-        if created_item_count == 0:
+            for user_id in recipient_ids:
+                db.session.add(AssignmentRecipient(assignment_id=assignment.id, user_id=user_id))
+
+            created_item_count = 0
+            for material in selected_items:
+                quantity = request.form.get(f"item_qty_{material.id}", type=float) or float(material.stok_miktari or 1)
+                quantity = max(quantity, 0)
+                if quantity <= 0:
+                    continue
+                db.session.add(
+                    AssignmentItem(
+                        assignment_id=assignment.id,
+                        material_id=material.id,
+                        asset_id=material.linked_asset.id if material.linked_asset else None,
+                        item_name=material.ad,
+                        quantity=quantity,
+                        unit=guvenli_metin(request.form.get(f"item_unit_{material.id}") or "adet") or "adet",
+                        note=guvenli_metin(request.form.get(f"item_note_{material.id}") or ""),
+                    )
+                )
+                created_item_count += 1
+
+            if created_item_count == 0:
+                db.session.rollback()
+                flash("Seçilen malzemeler için geçerli miktar bulunamadı.", "danger")
+                return redirect(url_for("inventory.zimmetler", airport_id=airport_id or None))
+
+            _append_assignment_history(assignment, "created", "Zimmet kaydı oluşturuldu.")
+            _register_assignment_for_active_demo_scope(assignment)
+            db.session.commit()
+        except Exception:
             db.session.rollback()
-            flash("Seçilen malzemeler için geçerli miktar bulunamadı.", "danger")
+            current_app.logger.exception(
+                "Zimmet olusturma basarisiz | user_id=%s airport_id=%s",
+                getattr(current_user, "id", None),
+                airport_id,
+            )
+            flash("Zimmet kaydı oluşturulamadı. Lütfen tekrar deneyin.", "danger")
+            audit_log("assignment.create", outcome="failed", airport_id=airport_id, user_id=getattr(current_user, "id", None))
             return redirect(url_for("inventory.zimmetler", airport_id=airport_id or None))
-
-        _append_assignment_history(assignment, "created", "Zimmet kaydı oluşturuldu.")
-        db.session.commit()
         log_kaydet(
             "Zimmet",
             f"Zimmet oluşturuldu: {assignment.assignment_no}",
@@ -2754,8 +3262,8 @@ def zimmetler():
         )
         audit_log("assignment.create", outcome="success", assignment_id=assignment.id, airport_id=airport_id)
         flash("Zimmet kaydı oluşturuldu.", "success")
-        flash("Zimmet formu PDF olarak indirilebilir.", "info")
-        return redirect(url_for("inventory.zimmet_detay", assignment_id=assignment.id))
+        flash("Zimmet formu PDF olarak otomatik indiriliyor.", "info")
+        return redirect(url_for("inventory.zimmet_detay", assignment_id=assignment.id, auto_pdf=1))
 
     query = _assignment_scope()
     if selected_status:
@@ -2804,6 +3312,8 @@ def zimmetler():
         selected_recipient_user=selected_recipient_user,
         recipient_active_assignments=recipient_active_assignments,
         can_create_assignment=can_create_assignment,
+        can_delete_assignment=can_delete_assignment,
+        format_assignment_qty=_format_assignment_quantity,
     )
 
 
@@ -2811,22 +3321,37 @@ def zimmetler():
 @login_required
 @permission_required("assignment.view")
 def zimmet_detay(assignment_id):
-    assignment = _assignment_scope().filter(AssignmentRecord.id == assignment_id).first_or_404()
+    assignment = _assignment_scope().filter(AssignmentRecord.id == assignment_id).first()
+    if assignment is None:
+        flash("Zimmet kaydı bulunamadı veya erişim izniniz yok.", "warning")
+        return redirect(url_for("inventory.zimmetler"))
     return render_template(
         "zimmet_detay.html",
         assignment=assignment,
         assignment_status_label=_assignment_status_label,
         can_manage_assignment=has_permission("assignment.manage"),
+        can_delete_assignment=_can_delete_assignments(),
         can_upload_assignment_document=has_permission("assignment.document.upload"),
         can_download_assignment_pdf=has_permission("assignment.pdf"),
+        format_assignment_qty=_format_assignment_quantity,
     )
+
+
+@inventory_bp.route("/zimmet/<int:assignment_id>")
+@login_required
+@permission_required("assignment.view")
+def zimmet_detay_legacy(assignment_id):
+    return redirect(url_for("inventory.zimmet_detay", assignment_id=assignment_id), code=302)
 
 
 @inventory_bp.route("/zimmetler/<int:assignment_id>/pdf")
 @login_required
 @permission_required("assignment.pdf")
 def zimmet_pdf(assignment_id):
-    assignment = _assignment_scope().filter(AssignmentRecord.id == assignment_id).first_or_404()
+    assignment = _assignment_scope().filter(AssignmentRecord.id == assignment_id).first()
+    if assignment is None:
+        flash("PDF oluşturulacak zimmet kaydı bulunamadı.", "warning")
+        return redirect(url_for("inventory.zimmetler"))
     font_uris = _assignment_pdf_font_uris()
     html = render_template(
         "zimmet_pdf.html",
@@ -2835,6 +3360,8 @@ def zimmet_pdf(assignment_id):
         generated_at=get_tr_now(),
         pdf_font_regular=font_uris["regular"],
         pdf_font_bold=font_uris["bold"],
+        pdf_logo_uri=_assignment_pdf_logo_uri(),
+        format_assignment_qty=_format_assignment_quantity,
     )
     output = io.BytesIO()
     pdf_result = pisa.CreatePDF(
@@ -2854,6 +3381,13 @@ def zimmet_pdf(assignment_id):
         as_attachment=True,
         mimetype="application/pdf",
     )
+
+
+@inventory_bp.route("/zimmet/<int:assignment_id>/pdf")
+@login_required
+@permission_required("assignment.pdf")
+def zimmet_pdf_legacy(assignment_id):
+    return redirect(url_for("inventory.zimmet_pdf", assignment_id=assignment_id), code=302)
 
 
 @inventory_bp.route("/zimmetler/<int:assignment_id>/signed-document", methods=["POST"])
@@ -2976,6 +3510,29 @@ def zimmet_iade(assignment_id):
     return redirect(url_for("inventory.zimmet_detay", assignment_id=assignment.id))
 
 
+@inventory_bp.route("/zimmetler/<int:assignment_id>/sil", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required("assignment.view")
+def zimmet_sil(assignment_id):
+    if not _can_delete_assignments():
+        abort(403)
+    assignment = _assignment_scope().filter(AssignmentRecord.id == assignment_id).first_or_404()
+    assignment_no = assignment.assignment_no
+    assignment.soft_delete()
+    db.session.commit()
+    log_kaydet(
+        "Zimmet",
+        f"Zimmet kaydı arşive taşındı: {assignment_no}",
+        event_key="assignment.delete",
+        target_model="AssignmentRecord",
+        target_id=assignment.id,
+    )
+    audit_log("assignment.delete", outcome="success", assignment_id=assignment.id)
+    flash("Zimmet kaydı silindi ve arşive taşındı.", "warning")
+    return redirect(url_for("inventory.zimmetler"))
+
+
 @inventory_bp.route("/zimmetler/<int:assignment_id>/durum", methods=["POST"])
 @login_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
@@ -3030,10 +3587,10 @@ def _ppe_form_get(source, key, *, default=None, cast=None):
     return value
 
 
-def _normalize_ppe_form_payload(form, *, visible_users):
+def _normalize_ppe_form_payload(form, *, visible_users, allow_unassigned=False, default_airport_id=None):
     user_id = _ppe_form_get(form, "user_id", cast=int)
-    user = visible_users.get(user_id)
-    if not user:
+    user = visible_users.get(user_id) if user_id else None
+    if not user and not allow_unassigned:
         raise ValueError("KKD kaydı için geçerli bir personel seçin.")
 
     category = guvenli_metin(_ppe_form_get(form, "category") or "").strip()
@@ -3077,17 +3634,37 @@ def _normalize_ppe_form_payload(form, *, visible_users):
     if production_date and expiry_date and expiry_date < production_date:
         raise ValueError("Son kullanma tarihi üretim tarihinden önce olamaz.")
 
-    assignment_id = _ppe_form_get(form, "assignment_id", cast=int)
-    if assignment_id:
-        assignment = _assignment_scope().filter(AssignmentRecord.id == assignment_id).first()
-        if not assignment:
-            assignment_id = None
+    ppe_assignment_id = _ppe_form_get(form, "ppe_assignment_id", cast=int)
+    linked_ppe_assignment = None
+    if ppe_assignment_id:
+        linked_ppe_assignment = (
+            _ppe_assignment_scope()
+            .filter(
+                PPEAssignmentRecord.id == ppe_assignment_id,
+                PPEAssignmentRecord.status == "active",
+            )
+            .first()
+        )
+        if linked_ppe_assignment is None:
+            ppe_assignment_id = None
+
+    resolved_airport_id = (
+        (user.havalimani_id if user else None)
+        or (linked_ppe_assignment.airport_id if linked_ppe_assignment else None)
+        or default_airport_id
+        or current_user.havalimani_id
+    )
+    if not resolved_airport_id:
+        raise ValueError("KKD kaydı için geçerli bir havalimanı seçin.")
+    if linked_ppe_assignment and linked_ppe_assignment.airport_id and linked_ppe_assignment.airport_id != resolved_airport_id:
+        raise ValueError("Bağlı aktif KKD zimmeti seçilen havalimanı ile uyumlu olmalıdır.")
 
     return {
         "user": user,
-        "user_id": user.id,
-        "airport_id": user.havalimani_id or current_user.havalimani_id,
-        "assignment_id": assignment_id,
+        "user_id": user.id if user else None,
+        "airport_id": resolved_airport_id,
+        "assignment_id": None,
+        "ppe_assignment_id": ppe_assignment_id,
         "category": category,
         "subcategory": subcategory,
         "item_name": item_name,
@@ -3114,6 +3691,7 @@ def _ppe_group_records(records, visible_users, selected_user):
     grouped = {}
     for record in records:
         grouped.setdefault(record.user_id, []).append(record)
+    unassigned_records = grouped.get(None, [])
     items = []
     for user_id, user in user_lookup.items():
         user_records = grouped.get(user_id, [])
@@ -3126,10 +3704,33 @@ def _ppe_group_records(records, visible_users, selected_user):
                 "open": bool(selected_user == user_id),
             }
         )
+    if unassigned_records and not selected_user:
+        pool_airport = None
+        for row in unassigned_records:
+            if getattr(row, "airport", None):
+                pool_airport = row.airport
+                break
+        pool_user = type(
+            "PPEPoolGroup",
+            (),
+            {
+                "tam_ad": "Havuza Eklenen KKD Kayıtları",
+                "havalimani": pool_airport,
+                "rol": "kkd_havuz",
+            },
+        )()
+        items.insert(
+            0,
+            {
+                "user": pool_user,
+                "records": unassigned_records,
+                "open": False,
+            },
+        )
     if selected_user and selected_user not in grouped and selected_user in user_lookup:
         return items
     if not items and not selected_user and current_user.is_authenticated and getattr(current_user, "id", None) in grouped:
-        items.append({"user": current_user, "records": grouped.get(current_user.id, []), "open": True})
+        items.append({"user": current_user, "records": grouped.get(current_user.id, []), "open": False})
     return items
 
 
@@ -3271,24 +3872,38 @@ def _resolve_ppe_import_user(raw_value, users, airport_id=None):
 @login_required
 @permission_required("ppe.view")
 def kkd_listesi():
+    try:
+        _ensure_kkd_schema_ready()
+    except RuntimeError as exc:
+        current_app.logger.error("KKD ekranı şema kontrolü başarısız: %s", exc)
+        flash(str(exc), "danger")
+        return redirect(url_for("inventory.envanter"))
+
     selected_status = (request.args.get("status") or "").strip()
     selected_user = request.args.get("user_id", type=int)
     selected_airport = request.args.get("airport_id", type=int)
 
     visible_airports = _visible_operational_airports()
-    if not _can_view_all_operational_scope() and has_permission("ppe.manage"):
+    can_manage_ppe = has_permission("ppe.manage")
+    can_create_ppe_assignment = _can_issue_ppe_assignments(current_user)
+    if not _can_view_all_operational_scope() and can_manage_ppe:
         selected_airport = current_user.havalimani_id
     visible_users_list = _ppe_visible_users(selected_airport)
     visible_users = {item.id: item for item in visible_users_list}
-    if selected_user and selected_user not in visible_users and not has_permission("ppe.manage"):
+    if selected_user and selected_user not in visible_users and not can_manage_ppe:
         selected_user = current_user.id
 
     if request.method == "POST":
-        if not has_permission("ppe.manage"):
+        if not can_manage_ppe:
             abort(403)
 
         try:
-            payload = _normalize_ppe_form_payload(request.form, visible_users=visible_users)
+            payload = _normalize_ppe_form_payload(
+                request.form,
+                visible_users=visible_users,
+                allow_unassigned=True,
+                default_airport_id=selected_airport,
+            )
         except ValueError as exc:
             flash(str(exc), "danger")
             return redirect(url_for("inventory.kkd_listesi", airport_id=selected_airport or None, user_id=selected_user or None))
@@ -3305,7 +3920,8 @@ def kkd_listesi():
             if error:
                 flash(error, "danger")
                 return redirect(url_for("inventory.kkd_listesi", airport_id=selected_airport or None, user_id=payload["user_id"]))
-            filename = f"ppe_{payload['user_id']}_{int(get_tr_now().timestamp())}_{safe_name}"
+            user_token = payload["user_id"] or "pool"
+            filename = f"ppe_{user_token}_{int(get_tr_now().timestamp())}_{safe_name}"
             stored = get_storage_adapter().save_upload(upload, folder="ppe", filename=filename)
             photo_key = stored.storage_key
             photo_url = stored.public_url
@@ -3314,6 +3930,7 @@ def kkd_listesi():
             user_id=payload["user_id"],
             airport_id=payload["airport_id"],
             assignment_id=payload["assignment_id"],
+            ppe_assignment_id=payload["ppe_assignment_id"],
             category=payload["category"],
             subcategory=payload["subcategory"],
             item_name=payload["item_name"],
@@ -3339,23 +3956,31 @@ def kkd_listesi():
 
         db.session.add(record)
         db.session.flush()
+        _register_ppe_record_for_active_demo_scope(record)
         db.session.add(
             PPERecordEvent(
                 ppe_record_id=record.id,
                 event_type="create",
                 status_after=record.status,
-                event_note="KKD tahsis kaydı oluşturuldu.",
+                event_note="KKD havuz kaydı oluşturuldu.",
                 created_by_id=current_user.id,
             )
         )
         db.session.commit()
         flash("KKD kaydı oluşturuldu.", "success")
-        return redirect(url_for("inventory.kkd_listesi", user_id=payload["user_id"], airport_id=payload["airport_id"]))
+        return redirect(
+            url_for(
+                "inventory.kkd_listesi",
+                user_id=payload["user_id"] or None,
+                airport_id=payload["airport_id"],
+            )
+        )
 
     query = _ppe_scope().options(
         joinedload(PPERecord.user),
         joinedload(PPERecord.airport),
         joinedload(PPERecord.assignment),
+        joinedload(PPERecord.ppe_assignment),
         joinedload(PPERecord.events).joinedload(PPERecordEvent.created_by),
     )
     if selected_status:
@@ -3366,7 +3991,36 @@ def kkd_listesi():
         query = query.filter(PPERecord.airport_id == selected_airport)
     records = query.order_by(PPERecord.delivered_at.desc(), PPERecord.created_at.desc()).all()
     grouped_records = _ppe_group_records(records, visible_users_list, selected_user)
+    ppe_rows_by_id, available_qty_map = _ppe_available_quantity_map(selected_airport)
+    available_ppe_records = []
+    for row in sorted(
+        ppe_rows_by_id.values(),
+        key=lambda item: (str(item.category or ""), str(item.item_name or ""), int(item.id or 0)),
+    ):
+        available_quantity = available_qty_map.get(row.id, 0)
+        if available_quantity <= 0:
+            continue
+        if selected_user and row.user_id and row.user_id != selected_user:
+            continue
+        available_ppe_records.append(
+            {
+                "record": row,
+                "available_quantity": _format_assignment_quantity(available_quantity),
+            }
+        )
     import_feedback = session.pop(_ppe_import_feedback_session_key(), None)
+    ppe_assignments = (
+        _ppe_assignment_scope()
+        .options(
+            joinedload(PPEAssignmentRecord.recipient_user),
+            joinedload(PPEAssignmentRecord.airport),
+            joinedload(PPEAssignmentRecord.items),
+        )
+        .order_by(PPEAssignmentRecord.assignment_date.desc(), PPEAssignmentRecord.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    active_ppe_assignments = _ppe_linkable_assignments(selected_airport)
 
     return render_template(
         "kkd.html",
@@ -3374,7 +4028,7 @@ def kkd_listesi():
         grouped_records=grouped_records,
         visible_users=visible_users_list,
         visible_airports=visible_airports,
-        active_assignments=_assignment_scope().filter(AssignmentRecord.status.in_(["active", "partial"])).order_by(AssignmentRecord.assignment_date.desc()).all(),
+        active_ppe_assignments=active_ppe_assignments,
         ppe_status_labels=PPE_STATUS_LABELS,
         ppe_condition_labels=PPE_PHYSICAL_CONDITION_LABELS,
         ppe_categories=_ppe_category_options(),
@@ -3387,9 +4041,429 @@ def kkd_listesi():
         selected_status=selected_status,
         selected_user=selected_user,
         selected_airport=selected_airport,
-        can_manage_ppe=has_permission("ppe.manage"),
+        can_manage_ppe=can_manage_ppe,
+        can_create_ppe_assignment=can_create_ppe_assignment,
         can_request_ppe=has_permission("ppe.request"),
         import_feedback=import_feedback,
+        available_ppe_records=available_ppe_records,
+        assignment_recipients=visible_users_list,
+        ppe_assignments=ppe_assignments,
+        ppe_assignment_status_label=_ppe_assignment_status_label,
+        ppe_assignment_display_name=_ppe_assignment_display_name,
+    )
+
+
+@inventory_bp.route("/kkd/tahsis", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required("ppe.manage")
+def kkd_tahsis_olustur():
+    try:
+        _ensure_kkd_schema_ready()
+    except RuntimeError as exc:
+        current_app.logger.error("KKD tahsis oluşturma şema kontrolü başarısız: %s", exc)
+        flash(str(exc), "danger")
+        return redirect(url_for("inventory.kkd_listesi"))
+
+    if not _can_issue_ppe_assignments(current_user):
+        abort(403)
+
+    selected_airport = request.form.get("airport_id", type=int) or current_user.havalimani_id
+    visible_users = {user.id: user for user in _ppe_visible_users(selected_airport)}
+    recipient_user_id = request.form.get("recipient_user_id", type=int)
+    recipient_user = visible_users.get(recipient_user_id)
+    if not recipient_user:
+        flash("Teslim alan personel seçimi zorunludur.", "danger")
+        return redirect(url_for("inventory.kkd_listesi", airport_id=selected_airport or None))
+
+    if selected_airport and recipient_user.havalimani_id and recipient_user.havalimani_id != selected_airport:
+        flash("Teslim alan personel seçilen havalimanı ile uyumlu olmalıdır.", "danger")
+        return redirect(url_for("inventory.kkd_listesi", airport_id=selected_airport or None))
+
+    delivered_by_name = guvenli_metin(request.form.get("delivered_by_name") or "").strip()
+    if not delivered_by_name:
+        delivered_by_name = guvenli_metin(getattr(current_user, "tam_ad", "") or "").strip()
+    if not delivered_by_name:
+        flash("Teslim eden bilgisi zorunludur.", "danger")
+        return redirect(url_for("inventory.kkd_listesi", airport_id=selected_airport or None))
+
+    selected_item_ids = list(dict.fromkeys(_parse_int_list(request.form.getlist("ppe_record_ids"))))
+    if not selected_item_ids:
+        flash("Tahsis için en az bir aktif KKD kaydı seçin.", "danger")
+        return redirect(url_for("inventory.kkd_listesi", airport_id=selected_airport or None))
+
+    ppe_rows_by_id, available_qty_map = _ppe_available_quantity_map(selected_airport)
+    selected_records = []
+    for record_id in selected_item_ids:
+        record = ppe_rows_by_id.get(record_id)
+        if not record:
+            continue
+        if recipient_user.havalimani_id and record.airport_id and recipient_user.havalimani_id != record.airport_id:
+            flash("KKD tahsisinde seçilen kalemler, teslim alan personel ile aynı havalimanında olmalıdır.", "danger")
+            return redirect(url_for("inventory.kkd_listesi", airport_id=selected_airport or None))
+        available_quantity = _to_float_safe(available_qty_map.get(record_id))
+        if available_quantity <= 0:
+            continue
+        requested_quantity = request.form.get(f"ppe_qty_{record_id}", type=float)
+        if requested_quantity is None:
+            requested_quantity = 1.0
+        requested_quantity = max(min(_to_float_safe(requested_quantity, 1.0), available_quantity), 0.0)
+        if requested_quantity <= 0:
+            continue
+        selected_records.append(
+            {
+                "record": record,
+                "quantity": requested_quantity,
+                "unit": guvenli_metin(request.form.get(f"ppe_unit_{record_id}") or "adet").strip() or "adet",
+                "note": guvenli_metin(request.form.get(f"ppe_note_{record_id}") or ""),
+            }
+        )
+
+    if not selected_records:
+        flash("Seçilen KKD kalemleri için geçerli miktar bulunamadı.", "danger")
+        return redirect(url_for("inventory.kkd_listesi", airport_id=selected_airport or None))
+
+    assignment_date = _parse_date(request.form.get("assignment_date")) or get_tr_now().date()
+    airport_id = recipient_user.havalimani_id or selected_airport
+    note = guvenli_metin(request.form.get("note") or "")
+
+    try:
+        assignment = PPEAssignmentRecord(
+            assignment_no=_next_ppe_assignment_no(),
+            assignment_date=assignment_date,
+            delivered_by_id=current_user.id,
+            delivered_by_name=delivered_by_name,
+            recipient_user_id=recipient_user.id,
+            airport_id=airport_id,
+            note=note,
+            status="active",
+            created_by_id=current_user.id,
+        )
+        db.session.add(assignment)
+        db.session.flush()
+        _register_ppe_assignment_for_active_demo_scope(assignment)
+
+        for item in selected_records:
+            record = item["record"]
+            db.session.add(
+                PPEAssignmentItem(
+                    assignment_id=assignment.id,
+                    ppe_record_id=record.id,
+                    item_name=record.item_name,
+                    category=record.category,
+                    subcategory=record.subcategory,
+                    brand=record.brand,
+                    model_name=record.model_name,
+                    serial_no=record.serial_no,
+                    size_info=record.size_info,
+                    quantity=item["quantity"],
+                    unit=item["unit"],
+                    note=item["note"],
+                )
+            )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception(
+            "KKD tahsisi olusturma basarisiz | user_id=%s recipient_id=%s",
+            getattr(current_user, "id", None),
+            recipient_user_id,
+        )
+        flash("KKD tahsisi oluşturulamadı. Lütfen tekrar deneyin.", "danger")
+        return redirect(url_for("inventory.kkd_listesi", airport_id=selected_airport or None))
+
+    log_kaydet(
+        "KKD",
+        f"KKD tahsisi oluşturuldu: {assignment.assignment_no}",
+        event_key="ppe.assignment.create",
+        target_model="PPEAssignmentRecord",
+        target_id=assignment.id,
+    )
+    audit_log(
+        "ppe.assignment.create",
+        outcome="success",
+        assignment_id=assignment.id,
+        recipient_user_id=assignment.recipient_user_id,
+    )
+    flash("KKD tahsisi oluşturuldu.", "success")
+    flash("KKD teslim formu PDF olarak otomatik indiriliyor.", "info")
+    return redirect(url_for("inventory.kkd_tahsis_detay", assignment_id=assignment.id, auto_pdf=1))
+
+
+@inventory_bp.route("/kkd/tahsisler/<int:assignment_id>")
+@login_required
+@permission_required("ppe.view")
+def kkd_tahsis_detay(assignment_id):
+    try:
+        _ensure_kkd_schema_ready()
+    except RuntimeError as exc:
+        current_app.logger.error("KKD tahsis detay şema kontrolü başarısız: %s", exc)
+        flash(str(exc), "danger")
+        return redirect(url_for("inventory.kkd_listesi"))
+
+    assignment = _ppe_assignment_scope().filter(PPEAssignmentRecord.id == assignment_id).first()
+    if assignment is None:
+        flash("KKD tahsis kaydı bulunamadı veya erişim izniniz yok.", "warning")
+        return redirect(url_for("inventory.kkd_listesi"))
+    return render_template(
+        "kkd_tahsis_detay.html",
+        assignment=assignment,
+        ppe_assignment_status_label=_ppe_assignment_status_label,
+        ppe_assignment_display_name=_ppe_assignment_display_name,
+        format_assignment_qty=_format_assignment_quantity,
+        can_manage_ppe_assignment=_can_issue_ppe_assignments(current_user),
+    )
+
+
+@inventory_bp.route("/kkd/tahsisler/<int:assignment_id>/iade", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required("ppe.manage")
+def kkd_tahsis_iade(assignment_id):
+    try:
+        _ensure_kkd_schema_ready()
+    except RuntimeError as exc:
+        current_app.logger.error("KKD tahsis iade şema kontrolü başarısız: %s", exc)
+        flash(str(exc), "danger")
+        return redirect(url_for("inventory.kkd_listesi"))
+
+    if not _can_issue_ppe_assignments(current_user):
+        abort(403)
+
+    assignment = _ppe_assignment_scope().filter(PPEAssignmentRecord.id == assignment_id).first_or_404()
+    if assignment.status != "active":
+        flash("Sadece aktif KKD tahsisleri iade edilebilir.", "warning")
+        return redirect(url_for("inventory.kkd_tahsis_detay", assignment_id=assignment.id))
+
+    assignment.status = "returned"
+    assignment.returned_at = get_tr_now()
+    assignment.returned_by_id = current_user.id
+    assignment.returned_note = guvenli_metin(request.form.get("return_note") or "") or None
+    db.session.commit()
+
+    log_kaydet(
+        "KKD",
+        f"KKD tahsisi iade edildi: {assignment.assignment_no}",
+        event_key="ppe.assignment.return",
+        target_model="PPEAssignmentRecord",
+        target_id=assignment.id,
+    )
+    audit_log("ppe.assignment.return", outcome="success", assignment_id=assignment.id)
+    flash("KKD tahsisi iade edildi.", "success")
+    return redirect(url_for("inventory.kkd_tahsis_detay", assignment_id=assignment.id))
+
+
+@inventory_bp.route("/kkd/tahsisler/<int:assignment_id>/sil", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required("ppe.manage")
+def kkd_tahsis_sil(assignment_id):
+    try:
+        _ensure_kkd_schema_ready()
+    except RuntimeError as exc:
+        current_app.logger.error("KKD tahsis silme şema kontrolü başarısız: %s", exc)
+        flash(str(exc), "danger")
+        return redirect(url_for("inventory.kkd_listesi"))
+
+    if not _can_issue_ppe_assignments(current_user):
+        abort(403)
+
+    assignment = _ppe_assignment_scope().filter(PPEAssignmentRecord.id == assignment_id).first_or_404()
+    if assignment.status == "active":
+        flash("Aktif KKD tahsisi silinemez. Önce iade işlemi yapın.", "danger")
+        return redirect(url_for("inventory.kkd_tahsis_detay", assignment_id=assignment.id))
+
+    assignment_no = assignment.assignment_no
+    assignment.soft_delete()
+    db.session.commit()
+
+    log_kaydet(
+        "KKD",
+        f"KKD tahsis kaydı arşive taşındı: {assignment_no}",
+        event_key="ppe.assignment.delete",
+        target_model="PPEAssignmentRecord",
+        target_id=assignment.id,
+    )
+    audit_log("ppe.assignment.delete", outcome="success", assignment_id=assignment.id)
+    flash("KKD tahsis kaydı silindi ve arşive taşındı.", "warning")
+    return redirect(url_for("inventory.kkd_listesi"))
+
+
+@inventory_bp.route("/kkd/tahsisler/<int:assignment_id>/pdf")
+@login_required
+@permission_required("ppe.view")
+def kkd_tahsis_pdf(assignment_id):
+    try:
+        _ensure_kkd_schema_ready()
+    except RuntimeError as exc:
+        current_app.logger.error("KKD tahsis pdf şema kontrolü başarısız: %s", exc)
+        flash(str(exc), "danger")
+        return redirect(url_for("inventory.kkd_listesi"))
+
+    assignment = _ppe_assignment_scope().filter(PPEAssignmentRecord.id == assignment_id).first()
+    if assignment is None:
+        flash("PDF oluşturulacak KKD tahsis kaydı bulunamadı.", "warning")
+        return redirect(url_for("inventory.kkd_listesi"))
+
+    font_uris = _assignment_pdf_font_uris()
+    if not font_uris.get("regular"):
+        current_app.logger.error("KKD tahsis PDF fontu bulunamadi | assignment_id=%s", assignment.id)
+        abort(500)
+
+    html = render_template(
+        "kkd_tahsis_pdf.html",
+        assignment=assignment,
+        generated_at=get_tr_now(),
+        ppe_assignment_status_label=_ppe_assignment_status_label,
+        ppe_assignment_display_name=_ppe_assignment_display_name,
+        format_assignment_qty=_format_assignment_quantity,
+        pdf_font_regular=font_uris["regular"],
+        pdf_font_bold=font_uris["bold"],
+        pdf_logo_uri=_assignment_pdf_logo_uri(),
+    )
+    output = io.BytesIO()
+    pdf_result = pisa.CreatePDF(
+        html,
+        dest=output,
+        encoding="utf-8",
+        link_callback=_pdf_link_callback,
+    )
+    if pdf_result.err:
+        current_app.logger.error("KKD tahsis PDF olusturulamadi | assignment_id=%s", assignment.id)
+        abort(500)
+    output.seek(0)
+    audit_log("ppe.assignment.pdf", outcome="success", assignment_id=assignment.id)
+    return send_file(
+        output,
+        download_name=f"{assignment.assignment_no}.pdf",
+        as_attachment=True,
+        mimetype="application/pdf",
+    )
+
+
+@inventory_bp.route("/kkd/tahsisler/<int:assignment_id>/signed-document", methods=["POST"])
+@login_required
+@limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
+@permission_required("ppe.manage")
+def kkd_tahsis_imzali_belge_yukle(assignment_id):
+    try:
+        _ensure_kkd_schema_ready()
+    except RuntimeError as exc:
+        current_app.logger.error("KKD imzalı belge yükleme şema kontrolü başarısız: %s", exc)
+        flash(str(exc), "danger")
+        return redirect(url_for("inventory.kkd_listesi"))
+
+    if not _can_issue_ppe_assignments(current_user):
+        abort(403)
+    assignment = _ppe_assignment_scope().filter(PPEAssignmentRecord.id == assignment_id).first_or_404()
+    upload = request.files.get("signed_document")
+    safe_name, error = _validate_upload(
+        upload,
+        SIGNED_ASSIGNMENT_ALLOWED_EXTENSIONS,
+        ("application/pdf",),
+    )
+    if error:
+        flash(error, "danger")
+        return redirect(url_for("inventory.kkd_tahsis_detay", assignment_id=assignment.id))
+
+    filename = _ppe_assignment_signed_document_filename(assignment)
+    display_name = safe_display_filename(
+        getattr(upload, "filename", "") or filename,
+        fallback=filename,
+        default_extension=".pdf",
+        max_length=180,
+    )
+    folder = _ppe_assignment_signed_document_folder(assignment)
+    stored = get_storage_adapter().save_upload(upload, folder=folder, filename=filename)
+    assignment.signed_document_key = stored.storage_key
+    assignment.signed_document_url = stored.public_url
+    assignment.signed_document_name = display_name
+
+    drive_payload = None
+    try:
+        stream = getattr(upload, "stream", None)
+        if stream is not None:
+            stream.seek(0)
+        drive_payload = _upload_ppe_signed_document_to_drive(assignment, upload, safe_name)
+    except GoogleDriveError as exc:
+        current_app.logger.warning(
+            "KKD imzali belge Drive yuklemesi basarisiz | assignment_id=%s reason=%s",
+            assignment.id,
+            exc,
+        )
+        flash("Belge yerel depoya kaydedildi, Drive yüklemesi tamamlanamadı.", "warning")
+    except Exception:
+        current_app.logger.exception(
+            "KKD imzali belge Drive yuklemesinde beklenmeyen hata | assignment_id=%s",
+            assignment.id,
+        )
+        flash("Belge yerel depoya kaydedildi, Drive yüklemesinde hata oluştu.", "warning")
+
+    if drive_payload:
+        assignment.signed_document_drive_file_id = drive_payload.get("drive_file_id")
+        assignment.signed_document_drive_folder_id = drive_payload.get("drive_folder_id")
+    db.session.commit()
+
+    log_kaydet(
+        "KKD",
+        f"KKD imzalı teslim belgesi yüklendi: {assignment.assignment_no}",
+        event_key="ppe.assignment.document.upload",
+        target_model="PPEAssignmentRecord",
+        target_id=assignment.id,
+    )
+    flash("İmzalı KKD teslim belgesi yüklendi.", "success")
+    return redirect(url_for("inventory.kkd_tahsis_detay", assignment_id=assignment.id))
+
+
+@inventory_bp.route("/kkd/tahsisler/<int:assignment_id>/signed-document/download")
+@login_required
+@permission_required("ppe.view")
+def kkd_tahsis_imzali_belge_indir(assignment_id):
+    try:
+        _ensure_kkd_schema_ready()
+    except RuntimeError as exc:
+        current_app.logger.error("KKD imzalı belge indirme şema kontrolü başarısız: %s", exc)
+        flash(str(exc), "danger")
+        return redirect(url_for("inventory.kkd_listesi"))
+
+    assignment = _ppe_assignment_scope().filter(PPEAssignmentRecord.id == assignment_id).first_or_404()
+    storage_adapter = get_storage_adapter()
+    storage_key = (assignment.signed_document_key or "").strip()
+    if not storage_key and assignment.signed_document_url:
+        storage_key = storage_adapter.storage_key_from_public_url(assignment.signed_document_url) or ""
+    if not storage_key:
+        flash("Bu KKD tahsisi için yüklü imzalı belge bulunmuyor.", "warning")
+        return redirect(url_for("inventory.kkd_tahsis_detay", assignment_id=assignment.id))
+    try:
+        signed_document = storage_adapter.read_bytes(storage_key)
+    except FileNotFoundError:
+        current_app.logger.warning(
+            "KKD tahsis imzali belge bulunamadi | assignment_id=%s storage_key=%s",
+            assignment.id,
+            storage_key,
+        )
+        flash("Bu KKD tahsisi için yüklü imzalı belgeye erişilemiyor.", "warning")
+        return redirect(url_for("inventory.kkd_tahsis_detay", assignment_id=assignment.id))
+    except Exception:
+        current_app.logger.exception(
+            "KKD tahsis imzali belge indirilirken hata | assignment_id=%s storage_key=%s",
+            assignment.id,
+            storage_key,
+        )
+        flash("Bu KKD tahsisi için yüklü imzalı belgeye erişilemiyor.", "warning")
+        return redirect(url_for("inventory.kkd_tahsis_detay", assignment_id=assignment.id))
+
+    download_name = safe_display_filename(
+        assignment.signed_document_name,
+        fallback=f"{assignment.assignment_no}.pdf",
+        default_extension=".pdf",
+        max_length=180,
+    )
+    return send_file(
+        io.BytesIO(signed_document),
+        download_name=download_name,
+        as_attachment=True,
+        mimetype="application/pdf",
     )
 
 
@@ -3665,10 +4739,26 @@ def kkd_export(fmt):
     if selected_user:
         query = query.filter(PPERecord.user_id == selected_user)
 
-    records = query.order_by(PPERecord.delivered_at.desc()).all()
+    records = query.options(
+        joinedload(PPERecord.user),
+        joinedload(PPERecord.airport),
+    ).order_by(PPERecord.delivered_at.desc()).all()
+
+    airport_label = "Tüm görünür havalimanları"
+    if selected_airport:
+        selected_airport_obj = next((item for item in _visible_operational_airports() if item.id == selected_airport), None)
+        if selected_airport_obj:
+            airport_label = f"{selected_airport_obj.kodu} - {selected_airport_obj.ad}"
+
+    user_label = "Tüm personel / havuz"
+    if selected_user:
+        selected_user_obj = _visible_personnel_query(selected_airport).filter(Kullanici.id == selected_user).first()
+        if selected_user_obj:
+            user_label = selected_user_obj.tam_ad
+
     rows = [
         {
-            "Personel": record.user.tam_ad if record.user else "-",
+            "Personel": record.user.tam_ad if record.user else "Havuz Kaydı",
             "Havalimanı": record.airport.ad if record.airport else "-",
             "Kategori": record.category or "-",
             "Alt Tür": record.subcategory or "-",
@@ -3701,15 +4791,35 @@ def kkd_export(fmt):
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
     if fmt == "pdf":
+        font_uris = _assignment_pdf_font_uris()
+        if not font_uris.get("regular"):
+            current_app.logger.error("KKD rapor PDF fontu bulunamadi")
+            abort(500)
         html = render_template(
             "kkd_report_pdf.html",
             records=records,
             ppe_status_label=_ppe_status_label,
             ppe_condition_label=_ppe_condition_label,
             generated_at=get_tr_now(),
+            selected_status=selected_status,
+            selected_status_label=_ppe_status_label(selected_status) if selected_status else "Tüm durumlar",
+            selected_airport_label=airport_label,
+            selected_user_label=user_label,
+            total_records=len(records),
+            pdf_font_regular=font_uris["regular"],
+            pdf_font_bold=font_uris["bold"],
+            pdf_logo_uri=_assignment_pdf_logo_uri(),
         )
         payload = io.BytesIO()
-        pisa.CreatePDF(html, dest=payload)
+        pdf_result = pisa.CreatePDF(
+            html,
+            dest=payload,
+            encoding="utf-8",
+            link_callback=_pdf_link_callback,
+        )
+        if pdf_result.err:
+            current_app.logger.error("KKD rapor PDF olusturulamadi")
+            abort(500)
         payload.seek(0)
         return send_file(
             payload,
@@ -3932,8 +5042,34 @@ def tatbikat_sil(document_id):
     return redirect(url_for("inventory.tatbikat_listesi", airport_id=document.havalimani_id))
 
 
+@inventory_bp.route("/google-drive/oauth/baslat")
+@login_required
+def google_drive_oauth_start():
+    oauth_state = secrets.token_urlsafe(32)
+    session[GOOGLE_DRIVE_OAUTH_STATE_SESSION_KEY] = oauth_state
+    session.modified = True
+    try:
+        auth_url = get_drill_drive_service().build_authorization_url(oauth_state)
+    except GoogleDriveError as exc:
+        current_app.logger.warning(
+            "Google Drive OAuth başlatılamadı: %s",
+            compact_log_detail(exc, limit=160),
+        )
+        flash("Google Drive yetkilendirme bağlantısı oluşturulamadı.", "danger")
+        return _redirect_after_google_oauth()
+    return redirect(auth_url)
+
+
 @inventory_bp.route("/google-drive/oauth/callback")
+@login_required
 def google_drive_oauth_callback():
+    require_state = bool(current_app.config.get("GOOGLE_DRIVE_OAUTH_REQUIRE_STATE", True))
+    request_state = request.args.get("state")
+    if require_state and not _google_drive_oauth_state_matches(request_state):
+        current_app.logger.warning("Google Drive OAuth callback state doğrulaması başarısız.")
+        flash("Google Drive oturum doğrulaması başarısız oldu. Lütfen işlemi tekrar başlatın.", "danger")
+        return _redirect_after_google_oauth()
+
     error_code = str(request.args.get("error") or "").strip()
     if error_code:
         current_app.logger.warning("Google Drive OAuth reddedildi: %s", error_code)
@@ -4356,6 +5492,8 @@ def _asset_detail_view(asset_id, detail_mode=False):
         assignment_history=assignment_history,
         maintenance_instruction=asset.equipment_template.maintenance_instruction if asset.equipment_template else None,
         assignment_status_label=_assignment_status_label,
+        work_order_status_label=_work_order_status_label,
+        format_assignment_qty=_format_assignment_quantity,
         qr_context=_asset_qr_context(asset),
         open_work_order=open_work_order,
         detail_mode=detail_mode,

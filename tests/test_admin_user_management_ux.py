@@ -1,3 +1,8 @@
+import io
+
+from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
+
 from decorators import update_user_permission_overrides
 from extensions import db
 from models import Kullanici
@@ -906,6 +911,8 @@ def test_user_management_renders_blood_and_measurement_fields(client, app):
             boy_cm=181,
             kilo_kg=79,
             ayak_numarasi=42.5,
+            ust_beden="L",
+            alt_beden="M",
             beden="L",
         )
         db.session.add_all([airport, owner, staff])
@@ -923,7 +930,8 @@ def test_user_management_renders_blood_and_measurement_fields(client, app):
     assert 'name="boy_cm"' in html
     assert 'name="kilo_kg"' in html
     assert 'name="ayak_numarasi"' in html
-    assert 'name="beden"' in html
+    assert 'name="ust_beden"' in html
+    assert 'name="alt_beden"' in html
     assert '<option value="+" selected>+</option>' in html
     assert "Kan Grubu:" in html
     assert "A Rh+" in html
@@ -961,7 +969,8 @@ def test_user_measurement_fields_are_saved_with_profile_update(client, app):
             "boy_cm": "182",
             "kilo_kg": "84",
             "ayak_numarasi": "42.5",
-            "beden": "XL",
+            "ust_beden": "XL",
+            "alt_beden": "L",
         },
         follow_redirects=True,
     )
@@ -978,6 +987,8 @@ def test_user_measurement_fields_are_saved_with_profile_update(client, app):
         assert updated.kilo_kg == 84
         assert updated.ayak_numarasi == 42.5
         assert updated.beden == "XL"
+        assert updated.ust_beden == "XL"
+        assert updated.alt_beden == "L"
 
 
 def test_user_permission_override_helper_does_not_clear_pending_profile_changes(app):
@@ -1279,6 +1290,102 @@ def test_common_email_is_trimmed_normalized_and_accepted_in_user_create_form(cli
         created = Kullanici.query.filter_by(kullanici_adi="emre.baykan54@gmail.com").first()
         assert created is not None
         assert created.tam_ad == "EMRE BAYKAN"
+
+
+def test_user_import_template_includes_profile_columns_and_dropdown_validations(client, app):
+    with app.app_context():
+        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-template@sarx.com")
+        airport = HavalimaniFactory(ad="Erzurum Havalimanı", kodu="ERZ")
+        db.session.add_all([owner, airport])
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+    response = client.get("/kullanicilar/template.xlsx")
+    assert response.status_code == 200
+
+    workbook = load_workbook(io.BytesIO(response.data))
+    sheet = workbook["Kullanicilar"]
+    headers = [cell.value for cell in sheet[1]]
+
+    assert "kan_grubu_harf" in headers
+    assert "kan_grubu_rh" in headers
+    assert "boy_cm" in headers
+    assert "kilo_kg" in headers
+    assert "ayak_numarasi" in headers
+    assert "ust_beden" in headers
+    assert "alt_beden" in headers
+    assert sheet.freeze_panes == "A2"
+    assert sheet.auto_filter.ref == f"A1:{get_column_letter(len(headers))}1"
+
+    formulas = sorted({validation.formula1 for validation in sheet.data_validations.dataValidation if validation.formula1})
+    assert "'Listeler'!$A$2:$A$5000" in formulas  # rol
+    assert "'Listeler'!$B$2:$B$3" in formulas  # aktif/pasif
+    assert "'Listeler'!$E$2:$E$5000" in formulas  # ayak_numarasi
+    assert "'Listeler'!$F$2:$F$5000" in formulas  # ust_beden
+    assert "'Listeler'!$G$2:$G$5000" in formulas  # alt_beden
+
+
+def test_bulk_user_import_applies_optional_profile_fields(client, app):
+    with app.app_context():
+        owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="owner-bulk-profile@sarx.com")
+        airport = HavalimaniFactory(ad="Erzurum Havalimanı", kodu="ERZ")
+        db.session.add_all([owner, airport])
+        db.session.commit()
+        owner_id = owner.id
+
+    _login(client, owner_id)
+    template_response = client.get("/kullanicilar/template.xlsx")
+    workbook = load_workbook(io.BytesIO(template_response.data))
+    sheet = workbook["Kullanicilar"]
+    headers = [cell.value for cell in sheet[1]]
+    row_payload = {
+        "ad": "Selin",
+        "soyad": "Yılmaz",
+        "e-posta": "selin.bulk@sarx.com",
+        "telefon": "+90 555 111 22 33",
+        "rol": "ekip_uyesi",
+        "havalimani": "ERZ",
+        "aktif/pasif": "aktif",
+        "not": "toplu içe aktarma",
+        "gecici_sifre": "Gecici@123",
+        "kan_grubu_harf": "A",
+        "kan_grubu_rh": "+",
+        "boy_cm": "171",
+        "kilo_kg": "63",
+        "ayak_numarasi": "39",
+        "ust_beden": "M",
+        "alt_beden": "S",
+    }
+    for column_index, header in enumerate(headers, start=1):
+        sheet.cell(row=2, column=column_index, value=row_payload.get(header, ""))
+    payload = io.BytesIO()
+    workbook.save(payload)
+    payload.seek(0)
+
+    preview_response = client.post(
+        "/kullanicilar/import/preview",
+        data={"import_file": (payload, "kullanici_import_sablonu.xlsx")},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert preview_response.status_code == 200
+    assert "1 satır önizleme için hazırlandı." in preview_response.data.decode("utf-8")
+
+    commit_response = client.post("/kullanicilar/import/commit", follow_redirects=True)
+    assert commit_response.status_code == 200
+    assert "1 kullanıcı içe aktarıldı." in commit_response.data.decode("utf-8")
+
+    with app.app_context():
+        created = Kullanici.query.filter_by(kullanici_adi="selin.bulk@sarx.com").first()
+        assert created is not None
+        assert created.kan_grubu_harf == "A"
+        assert created.kan_grubu_rh == "+"
+        assert created.boy_cm == 171
+        assert created.kilo_kg == 63
+        assert created.ayak_numarasi == 39.0
+        assert created.ust_beden == "M"
+        assert created.alt_beden == "S"
 
 
 def test_roles_page_renders_row_action_alignment_fix(client, app):

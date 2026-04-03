@@ -70,7 +70,9 @@ DEMO_IMAGE_LIBRARY = {
 
 
 def homepage_demo_tools_enabled():
-    return bool(current_app.config.get("DEMO_TOOLS_ENABLED", False))
+    if not current_app.config.get("DEMO_TOOLS_ENABLED", False):
+        return False
+    return str(current_app.config.get("ENV") or "").strip().lower() != "production"
 
 
 def _guard_homepage_demo_tools():
@@ -499,34 +501,34 @@ def _announcement_payloads():
 def _stat_payloads():
     return [
         {
-            "title": "Hazır Ekip",
+            "title": "Toplam Malzeme",
             "value_text": "0",
-            "subtitle": "Görev çağrısına hazır tim personeli.",
-            "icon": "●",
+            "subtitle": "Toplam Malzeme simgesi",
+            "icon": "/static/img/sayisal-ozet/simge_1_malzeme.png",
             "order_index": 0,
             "is_active": True,
         },
         {
-            "title": "Ekipman",
+            "title": "Toplam Personel",
             "value_text": "0",
-            "subtitle": "Kontrolü tamamlanan kritik malzeme.",
-            "icon": "▲",
+            "subtitle": "Toplam Personel simgesi",
+            "icon": "/static/img/sayisal-ozet/simge_2_personel.png",
             "order_index": 1,
             "is_active": True,
         },
         {
-            "title": "Eğitim",
+            "title": "Aktif Tim",
             "value_text": "0",
-            "subtitle": "Tamamlanan eğitim ve tekrar oturumu.",
-            "icon": "■",
+            "subtitle": "Aktif Tim simgesi",
+            "icon": "/static/img/sayisal-ozet/simge_3_aktif_tim.png",
             "order_index": 2,
             "is_active": True,
         },
         {
-            "title": "Gönüllü Destek",
+            "title": "Tamamlanan Eğitimler",
             "value_text": "0",
-            "subtitle": "Koordinasyona aktif destek veren gönüllü.",
-            "icon": "✦",
+            "subtitle": "Tamamlanan Eğitimler simgesi",
+            "icon": "/static/img/sayisal-ozet/simge_4_egitim.png",
             "order_index": 3,
             "is_active": True,
         },

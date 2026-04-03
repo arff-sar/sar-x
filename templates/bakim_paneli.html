@@ -88,7 +88,7 @@
                     {% for order in open_orders[:10] %}
                     <tr>
                         <td><a href="{{ url_for('maintenance.is_emri_detay', work_order_id=order.id) }}">{{ order.work_order_no }}</a></td>
-                        <td>{{ tr_upper(order.status|replace('_',' ')) }}</td>
+                        <td>{{ status_label(order.status) if status_label else tr_upper(order.status|replace('_',' ')) }}</td>
                         <td>{{ tr_upper(order.priority) }}</td>
                     </tr>
                     {% else %}

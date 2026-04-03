@@ -7,10 +7,7 @@
         <div class="page-title">Bildirim Merkezi</div>
         <div class="page-meta">Operasyon, approval ve güvenlik olayları</div>
     </div>
-    <form method="POST" action="{{ url_for('admin.notifications_read_all') }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn btn-secondary" type="submit">Tümünü Okundu Yap</button>
-    </form>
+    <div class="page-meta">Bildirimler, üst bardan açıldığında otomatik okundu kabul edilir.</div>
 </div>
 
 <div class="panel">
@@ -28,12 +25,6 @@
             <div style="display:flex; gap:8px; margin-top:12px;">
                 {% if item.link_url %}
                 <a class="row-btn" href="{{ item.link_url }}">Aç</a>
-                {% endif %}
-                {% if not item.is_read %}
-                <form method="POST" action="{{ url_for('admin.notifications_read', id=item.id) }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="row-btn" type="submit">Okundu</button>
-                </form>
                 {% endif %}
             </div>
         </div>

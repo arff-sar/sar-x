@@ -15,7 +15,13 @@ from tests.factories import (
 from extensions import db, safe_display_filename
 from datetime import date
 
-from models import AssignmentRecord, AssignmentRecipient, InventoryAsset, Malzeme, PPERecord # ✅ Sorgular için ekledik
+from models import AssignmentRecord, AssignmentRecipient, BakimKaydi, InventoryAsset, Malzeme, PPERecord # ✅ Sorgular için ekledik
+
+
+def _login(client, user_id):
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(user_id)
+        sess["_fresh"] = True
 
 
 def test_safe_display_filename_preserves_turkish_names_for_visible_downloads():
@@ -35,7 +41,7 @@ def test_envanter_access_required_login(client):
 
 # 2. SOFT DELETE KONTROLÜ: Silinmiş (Arşivlenmiş) malzemeler listede çıkmaz
 def test_envanter_list_active_only(client, app):
-    user = KullaniciFactory(rol="sahip")
+    user = KullaniciFactory(rol="sistem_sorumlusu")
     m1 = MalzemeFactory(ad="Aktif Ekipman", is_deleted=False)
     m2 = MalzemeFactory(ad="Arşivlenmiş Ekipman", is_deleted=True)
     
@@ -63,7 +69,7 @@ def test_havalimani_isolation(client, app):
     m1 = MalzemeFactory(ad="Ankara Cihazı", havalimani=h1)
     m2 = MalzemeFactory(ad="İstanbul Cihazı", havalimani=h2)
     
-    user = KullaniciFactory(rol="personel", havalimani=h1)
+    user = KullaniciFactory(rol="ekip_uyesi", havalimani=h1)
     
     db.session.add_all([h1, h2, m1, m2, user])
     db.session.commit() 
@@ -79,10 +85,47 @@ def test_havalimani_isolation(client, app):
     assert "Ankara Cihazı" in data_str
     assert "İstanbul Cihazı" not in data_str
 
+
+def test_malzeme_sil_restricts_deletion_to_user_airport_scope(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    airport_a = HavalimaniFactory(kodu="AAA")
+    airport_b = HavalimaniFactory(kodu="BBB")
+    box_b = KutuFactory(havalimani=airport_b)
+    scoped_manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport_a, is_deleted=False)
+    foreign_material = MalzemeFactory(ad="Kapsam Dışı Malzeme", kutu=box_b, is_deleted=False)
+    db.session.add_all([airport_a, airport_b, box_b, scoped_manager, foreign_material])
+    db.session.commit()
+
+    _login(client, scoped_manager.id)
+    response = client.post(f"/malzeme-sil/{foreign_material.id}", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert "Hata: Malzeme bulunamadı veya zaten silinmiş." in response.data.decode("utf-8")
+    db.session.refresh(foreign_material)
+    assert foreign_material.is_deleted is False
+
+
+def test_malzeme_sil_rejects_external_referrer_redirect(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False)
+    material = MalzemeFactory(ad="Redirect Test Malzeme", is_deleted=False)
+    db.session.add_all([owner, material])
+    db.session.commit()
+
+    _login(client, owner.id)
+    response = client.post(
+        f"/malzeme-sil/{material.id}",
+        headers={"Referer": "https://attacker.example/phish"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/dashboard")
+
 # 4. YAZMA YETKİSİ: Yetkili kullanıcı malzeme ekleyebilir (Kapsam Artırıcı)
 def test_malzeme_ekle_success(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
-    user = KullaniciFactory(rol="sahip")
+    user = KullaniciFactory(rol="sistem_sorumlusu")
     h = HavalimaniFactory(kodu="IST")
     db.session.add_all([user, h])
     db.session.commit()
@@ -108,7 +151,7 @@ def test_malzeme_ekle_success(client, app):
 
 def test_single_create_assigns_asset_code_and_qr(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
-    user = KullaniciFactory(rol="sahip")
+    user = KullaniciFactory(rol="sistem_sorumlusu")
     airport = HavalimaniFactory(kodu="ESB")
     box = KutuFactory(kodu="ESB-KUTU-11", havalimani=airport)
     template = EquipmentTemplateFactory(name="Kod QR Test", category="Elektronik")
@@ -142,7 +185,7 @@ def test_single_create_assigns_asset_code_and_qr(client, app):
 
 
 def test_asset_qr_image_endpoint_returns_png(client, app):
-    user = KullaniciFactory(rol="sahip")
+    user = KullaniciFactory(rol="sistem_sorumlusu")
     airport = HavalimaniFactory(kodu="GZT")
     template = EquipmentTemplateFactory(name="QR Endpoint Template")
     asset = InventoryAssetFactory(equipment_template=template, airport=airport, status="aktif")
@@ -161,8 +204,8 @@ def test_asset_qr_image_endpoint_returns_png(client, app):
 def test_kkd_page_renders_catalog_and_keeps_pool_outside_general_inventory(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Antalya Havalimanı", kodu="AYT")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-owner@sarx.com")
-        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="KKD Personeli")
+        owner = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-owner@sarx.com")
+        recipient = KullaniciFactory(rol="ekip_uyesi", havalimani=airport, is_deleted=False, tam_ad="KKD Personeli")
         db.session.add_all([airport, owner, recipient])
         db.session.flush()
         record = PPERecord(
@@ -203,9 +246,9 @@ def test_kkd_page_renders_catalog_and_keeps_pool_outside_general_inventory(clien
 def test_kkd_personnel_flow_starts_compact_until_selection(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Esenboğa Havalimanı", kodu="ESB")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-compact@sarx.com")
-        first_user = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Birinci Personel")
-        second_user = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="İkinci Personel")
+        owner = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-compact@sarx.com")
+        first_user = KullaniciFactory(rol="ekip_uyesi", havalimani=airport, is_deleted=False, tam_ad="Birinci Personel")
+        second_user = KullaniciFactory(rol="ekip_uyesi", havalimani=airport, is_deleted=False, tam_ad="İkinci Personel")
         db.session.add_all([airport, owner, first_user, second_user])
         db.session.flush()
         db.session.add_all(
@@ -255,9 +298,9 @@ def test_kkd_personnel_flow_starts_compact_until_selection(client, app):
 def test_kkd_personnel_selection_opens_only_selected_accordion(client, app):
     with app.app_context():
         airport = HavalimaniFactory(ad="Adana Havalimanı", kodu="ADA")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-selected@sarx.com")
-        selected_person = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Seçili KKD Personeli")
-        other_person = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Kapalı KKD Personeli")
+        owner = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-selected@sarx.com")
+        selected_person = KullaniciFactory(rol="ekip_uyesi", havalimani=airport, is_deleted=False, tam_ad="Seçili KKD Personeli")
+        other_person = KullaniciFactory(rol="ekip_uyesi", havalimani=airport, is_deleted=False, tam_ad="Kapalı KKD Personeli")
         db.session.add_all([airport, owner, selected_person, other_person])
         db.session.flush()
         selected_record = PPERecord(
@@ -298,15 +341,16 @@ def test_kkd_personnel_selection_opens_only_selected_accordion(client, app):
     html = response.data.decode("utf-8")
 
     assert response.status_code == 200
-    assert html.count('class="ppe-user-accordion" open') == 1
+    assert html.count('class="ppe-user-accordion" open') == 0
     assert "Seçili Vizör" in html
+    assert "Kapalı Yağmurluk" not in html
     assert "İmzalı PDF" in html
     assert "Hasarlı" in html
 
 
 def test_inventory_excel_upload_rejects_fake_xlsx_payload(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
-    owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="inventory-fake-xlsx@sarx.com")
+    owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="inventory-fake-xlsx@sarx.com")
     db.session.add(owner)
     db.session.commit()
 
@@ -329,8 +373,8 @@ def test_kkd_create_validates_manufacturer_url_and_size_rules(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         airport = HavalimaniFactory(ad="İzmir Havalimanı", kodu="ADB")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-create@sarx.com")
-        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="URL Test Personeli")
+        owner = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-create@sarx.com")
+        recipient = KullaniciFactory(rol="ekip_uyesi", havalimani=airport, is_deleted=False, tam_ad="URL Test Personeli")
         db.session.add_all([airport, owner, recipient])
         db.session.commit()
         owner_id = owner.id
@@ -396,8 +440,8 @@ def test_kkd_excel_template_and_import_flow(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         airport = HavalimaniFactory(ad="Muğla Dalaman Havalimanı", kodu="DLM")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-excel@sarx.com")
-        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Excel Personeli")
+        owner = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-excel@sarx.com")
+        recipient = KullaniciFactory(rol="ekip_uyesi", havalimani=airport, is_deleted=False, tam_ad="Excel Personeli")
         db.session.add_all([airport, owner, recipient])
         db.session.commit()
         owner_id = owner.id
@@ -476,8 +520,8 @@ def test_kkd_signed_document_upload_uses_pdf_only_folder_standard(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         airport = HavalimaniFactory(ad="Antalya Havalimanı", kodu="AYT")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-pdf@sarx.com")
-        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Belge Alan")
+        owner = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-pdf@sarx.com")
+        recipient = KullaniciFactory(rol="ekip_uyesi", havalimani=airport, is_deleted=False, tam_ad="Belge Alan")
         db.session.add_all([airport, owner, recipient])
         db.session.flush()
         record = PPERecord(
@@ -535,7 +579,7 @@ def test_kkd_signed_document_upload_uses_pdf_only_folder_standard(client, app):
 
 def test_kkd_excel_upload_rejects_fake_xlsx_payload(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
-    owner = KullaniciFactory(rol="sahip", is_deleted=False, kullanici_adi="kkd-fake-xlsx@sarx.com")
+    owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False, kullanici_adi="kkd-fake-xlsx@sarx.com")
     db.session.add(owner)
     db.session.commit()
 
@@ -561,8 +605,8 @@ def test_kkd_signed_document_download_streams_pdf_for_manager_scope_user(client,
 
     with app.app_context():
         airport = HavalimaniFactory(ad="Antalya Havalimanı", kodu="AYT")
-        manager = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-manager@sarx.com")
-        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="KKD Alan")
+        manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-manager@sarx.com")
+        recipient = KullaniciFactory(rol="ekip_uyesi", havalimani=airport, is_deleted=False, tam_ad="KKD Alan")
         db.session.add_all([airport, manager, recipient])
         db.session.flush()
         record = PPERecord(
@@ -611,8 +655,8 @@ def test_kkd_signed_document_download_uses_person_scope_and_local_public_url_fal
 
     with app.app_context():
         airport = HavalimaniFactory(ad="Adana Havalimanı", kodu="ADA")
-        manager = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-owner@sarx.com")
-        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="KKD Belge Sahibi")
+        manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-owner@sarx.com")
+        recipient = KullaniciFactory(rol="ekip_uyesi", havalimani=airport, is_deleted=False, tam_ad="KKD Belge Sahibi")
         db.session.add_all([airport, manager, recipient])
         db.session.flush()
         record = PPERecord(
@@ -657,9 +701,9 @@ def test_kkd_signed_document_download_denies_unrelated_user(client, app, tmp_pat
 
     with app.app_context():
         airport = HavalimaniFactory(ad="İzmir Havalimanı", kodu="ADB")
-        manager = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="kkd-manager-2@sarx.com")
-        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Yetkili KKD")
-        unrelated = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Yetkisiz KKD")
+        manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="kkd-manager-2@sarx.com")
+        recipient = KullaniciFactory(rol="ekip_uyesi", havalimani=airport, is_deleted=False, tam_ad="Yetkili KKD")
+        unrelated = KullaniciFactory(rol="ekip_uyesi", havalimani=airport, is_deleted=False, tam_ad="Yetkisiz KKD")
         db.session.add_all([airport, manager, recipient, unrelated])
         db.session.flush()
         record = PPERecord(
@@ -702,8 +746,8 @@ def test_assignment_signed_document_download_streams_pdf_for_airport_scope_user(
 
     with app.app_context():
         airport = HavalimaniFactory(ad="Antalya Havalimanı", kodu="AYT")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="zimmet-owner@sarx.com")
-        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Belge Alan")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="zimmet-owner@sarx.com")
+        recipient = KullaniciFactory(rol="ekip_uyesi", havalimani=airport, is_deleted=False, tam_ad="Belge Alan")
         db.session.add_all([airport, owner, recipient])
         db.session.flush()
         assignment = AssignmentRecord(
@@ -747,8 +791,8 @@ def test_assignment_signed_document_download_uses_recipient_scope_and_local_publ
 
     with app.app_context():
         airport = HavalimaniFactory(ad="Adana Havalimanı", kodu="ADA")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="zimmet-manager@sarx.com")
-        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Belge Alıcısı")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="zimmet-manager@sarx.com")
+        recipient = KullaniciFactory(rol="ekip_uyesi", havalimani=airport, is_deleted=False, tam_ad="Belge Alıcısı")
         db.session.add_all([airport, owner, recipient])
         db.session.flush()
         assignment = AssignmentRecord(
@@ -788,9 +832,9 @@ def test_assignment_signed_document_download_denies_unrelated_user(client, app, 
 
     with app.app_context():
         airport = HavalimaniFactory(ad="İzmir Havalimanı", kodu="ADB")
-        owner = KullaniciFactory(rol="sahip", havalimani=airport, is_deleted=False, kullanici_adi="zimmet-owner-2@sarx.com")
-        recipient = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Yetkili Personel")
-        unrelated = KullaniciFactory(rol="personel", havalimani=airport, is_deleted=False, tam_ad="Yetkisiz Personel")
+        owner = KullaniciFactory(rol="sistem_sorumlusu", havalimani=airport, is_deleted=False, kullanici_adi="zimmet-owner-2@sarx.com")
+        recipient = KullaniciFactory(rol="ekip_uyesi", havalimani=airport, is_deleted=False, tam_ad="Yetkili Personel")
+        unrelated = KullaniciFactory(rol="ekip_uyesi", havalimani=airport, is_deleted=False, tam_ad="Yetkisiz Personel")
         db.session.add_all([airport, owner, recipient, unrelated])
         db.session.flush()
         assignment = AssignmentRecord(
@@ -822,7 +866,7 @@ def test_assignment_signed_document_download_denies_unrelated_user(client, app, 
 
 
 def test_asset_qr_image_payload_uses_detail_url_even_when_legacy_qr_code_exists(client, app, monkeypatch):
-    user = KullaniciFactory(rol="sahip")
+    user = KullaniciFactory(rol="sistem_sorumlusu")
     airport = HavalimaniFactory(kodu="ESB")
     template = EquipmentTemplateFactory(name="QR Legacy Template")
     asset = InventoryAssetFactory(
@@ -856,7 +900,7 @@ def test_asset_qr_image_payload_uses_detail_url_even_when_legacy_qr_code_exists(
 def test_personel_cannot_add_material(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
     
-    user = KullaniciFactory(rol="personel")
+    user = KullaniciFactory(rol="ekip_uyesi")
     db.session.add(user)
     db.session.commit() 
     
@@ -874,7 +918,7 @@ def test_personel_cannot_add_material(client, app):
 # 6. BAKIM KAYDI: Bakım kaydı başarıyla girilebilir (Kapsam Artırıcı)
 def test_bakim_kaydet_success(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
-    user = KullaniciFactory(rol="sahip")
+    user = KullaniciFactory(rol="sistem_sorumlusu")
     m = MalzemeFactory(ad="Bakım Cihazı")
     db.session.add_all([user, m])
     db.session.commit()
@@ -891,9 +935,47 @@ def test_bakim_kaydet_success(client, app):
     assert response.status_code == 200
     assert "Bakım kaydı başarıyla işlendi" in response.data.decode('utf-8')
 
+
+def test_bakim_kaydet_offline_sync_idempotent_by_request_id(client, app):
+    app.config['WTF_CSRF_ENABLED'] = False
+    user = KullaniciFactory(rol="sistem_sorumlusu")
+    m = MalzemeFactory(ad="Offline Bakım Cihazı")
+    db.session.add_all([user, m])
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess['_user_id'] = str(user.id)
+        sess['_fresh'] = True
+
+    request_id = "offline-test-req-001"
+    headers = {
+        "X-SARX-Offline-Sync": "1",
+        "X-SARX-Offline-Request-Id": request_id,
+    }
+
+    first = client.post(
+        f'/bakim-kaydet/{m.id}',
+        data={'not': 'Offline bakım denemesi', 'maliyet': '10'},
+        headers=headers,
+        follow_redirects=False,
+    )
+    second = client.post(
+        f'/bakim-kaydet/{m.id}',
+        data={'not': 'Offline bakım denemesi', 'maliyet': '10'},
+        headers=headers,
+        follow_redirects=False,
+    )
+
+    assert first.status_code == 200
+    assert first.get_json()["status"] == "success"
+    assert second.status_code == 200
+    assert second.get_json()["status"] == "success"
+    assert second.get_json().get("duplicate") is True
+    assert BakimKaydi.query.filter_by(malzeme_id=m.id).count() == 1
+
 # 7. RAPORLAMA: Excel ve PDF çıktıları (Kapsam Artırıcı)
 def test_export_routes(client, app):
-    user = KullaniciFactory(rol="sahip")
+    user = KullaniciFactory(rol="sistem_sorumlusu")
     airport = HavalimaniFactory(kodu="ERZ", ad="Erzurum Havalimanı")
     box = KutuFactory(kodu="ERZ-SAR-01", havalimani=airport)
     m = MalzemeFactory(
@@ -929,7 +1011,7 @@ def test_kutu_bul_manual(client, app):
     
     h1 = HavalimaniFactory(kodu="ESB")
     kutu = KutuFactory(kodu="K-99", havalimani=h1)
-    user = KullaniciFactory(rol="personel", havalimani=h1)
+    user = KullaniciFactory(rol="ekip_uyesi", havalimani=h1)
     
     db.session.add_all([h1, kutu, user])
     db.session.commit() 
@@ -946,7 +1028,7 @@ def test_kutu_bul_manual(client, app):
 
 # 9. QR API: QR resim üretme rotası (Kapsam Artırıcı)
 def test_qr_api_route(client, app):
-    user = KullaniciFactory(rol="sahip")
+    user = KullaniciFactory(rol="sistem_sorumlusu")
     k = KutuFactory(kodu="QR-TEST")
     db.session.add_all([user, k])
     db.session.commit()
@@ -962,7 +1044,7 @@ def test_qr_api_route(client, app):
 
 def test_malzeme_ekle_accepts_canonical_keys(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
-    user = KullaniciFactory(rol="sahip")
+    user = KullaniciFactory(rol="sistem_sorumlusu")
     airport = HavalimaniFactory(kodu="AYT")
     box = KutuFactory(kodu="AYT-BOX-1", havalimani=airport)
     template = EquipmentTemplateFactory(name="Gaz Dedektörü", category="Elektronik")
@@ -1000,7 +1082,7 @@ def test_malzeme_ekle_accepts_canonical_keys(client, app):
 def test_asset_duzenle_accepts_canonical_status_and_notes(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
     airport = HavalimaniFactory(kodu="RZE")
-    manager = KullaniciFactory(rol="yetkili", havalimani=airport)
+    manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport)
     template = EquipmentTemplateFactory(name="Kamera", category="Elektronik")
     asset = InventoryAssetFactory(equipment_template=template, airport=airport, status="aktif", serial_no="UPD-001", unit_count=1)
     db.session.add_all([airport, manager, template, asset])
@@ -1031,7 +1113,7 @@ def test_asset_duzenle_accepts_canonical_status_and_notes(client, app):
 def test_asset_duzenle_accepts_legacy_keys(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
     airport = HavalimaniFactory(kodu="ERZ")
-    manager = KullaniciFactory(rol="yetkili", havalimani=airport)
+    manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport)
     template = EquipmentTemplateFactory(name="Pompa", category="Mekanik")
     asset = InventoryAssetFactory(
         equipment_template=template,
@@ -1068,7 +1150,7 @@ def test_asset_duzenle_accepts_legacy_keys(client, app):
 def test_quick_detail_accepts_legacy_and_canonical_note_keys(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
     airport = HavalimaniFactory(kodu="ADA")
-    manager = KullaniciFactory(rol="yetkili", havalimani=airport)
+    manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport)
     template = EquipmentTemplateFactory(name="Projektör")
     asset = InventoryAssetFactory(equipment_template=template, airport=airport, status="aktif", notes="ilk")
     db.session.add_all([airport, manager, template, asset])
@@ -1098,7 +1180,7 @@ def test_quick_detail_accepts_legacy_and_canonical_note_keys(client, app):
 def test_quick_detail_accepts_legacy_durum_key(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
     airport = HavalimaniFactory(kodu="ASR")
-    manager = KullaniciFactory(rol="yetkili", havalimani=airport)
+    manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport)
     template = EquipmentTemplateFactory(name="Termal Kamera")
     asset = InventoryAssetFactory(equipment_template=template, airport=airport, status="aktif")
     db.session.add_all([airport, manager, template, asset])
@@ -1121,7 +1203,7 @@ def test_quick_detail_accepts_legacy_durum_key(client, app):
 def test_quick_detail_merges_maintenance_date_aliases(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
     airport = HavalimaniFactory(kodu="GZT")
-    manager = KullaniciFactory(rol="yetkili", havalimani=airport)
+    manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport)
     template = EquipmentTemplateFactory(name="Kompresor")
     asset = InventoryAssetFactory(equipment_template=template, airport=airport, status="aktif")
     db.session.add_all([airport, manager, template, asset])
@@ -1158,7 +1240,7 @@ def test_quick_detail_merges_maintenance_date_aliases(client, app):
 
 def test_malzeme_ekle_accepts_legacy_kutu_id_resolution(client, app):
     app.config['WTF_CSRF_ENABLED'] = False
-    user = KullaniciFactory(rol="sahip")
+    user = KullaniciFactory(rol="sistem_sorumlusu")
     airport = HavalimaniFactory(kodu="BJV")
     box = KutuFactory(kodu="BJV-BOX-7", havalimani=airport)
     template = EquipmentTemplateFactory(name="Hortum", category="Kurtarma")
@@ -1191,7 +1273,7 @@ def test_malzeme_ekle_accepts_legacy_kutu_id_resolution(client, app):
 
 
 def test_envanter_renders_accordion_and_no_work_order_filter(client, app):
-    user = KullaniciFactory(rol="sahip")
+    user = KullaniciFactory(rol="sistem_sorumlusu")
     airport = HavalimaniFactory(kodu="KCO", ad="Kocaeli Cengiz Topel")
     box = KutuFactory(kodu="KCO-SAR-01", havalimani=airport)
     material = MalzemeFactory(ad="Akordiyon Test", kutu=box, havalimani=airport, is_deleted=False)
@@ -1230,6 +1312,15 @@ def test_envanter_renders_accordion_and_no_work_order_filter(client, app):
     assert "function closeAll(exceptId)" in html
     assert "panel.setAttribute('aria-hidden'" in html
     assert "toggle.setAttribute('aria-expanded'" in html
+    assert "const OFFLINE_DB_NAME = 'SAR_Offline_DB';" in html
+    assert "const OFFLINE_STORE_NAME = 'bekleyen_bakimlar';" in html
+    assert "const OFFLINE_SYNC_TAG = 'bakim-senkronize-et';" in html
+    assert "X-SARX-Offline-Sync" in html
+    assert "X-SARX-Offline-Request-Id" in html
+    assert "Bağlantı yok" in html
+    assert "tbody tr.inventory-summary-row:hover" in html
+    assert "window.location.assign(qrHref);" in html
+    assert "QR kullanılamıyor" in html
     assert "inventory-table-compact" in html
     assert 'col-no' in html and 'col-material' in html and 'col-airport' in html and 'col-code' in html and 'col-status' in html and 'col-maintenance' in html and 'col-action' in html
 
@@ -1240,7 +1331,7 @@ def test_envanter_renders_accordion_and_no_work_order_filter(client, app):
 
 
 def test_envanter_airport_abbreviation_has_title_tooltip(client, app):
-    user = KullaniciFactory(rol="sahip")
+    user = KullaniciFactory(rol="sistem_sorumlusu")
     airport = HavalimaniFactory(kodu="KCO", ad="Kocaeli Cengiz Topel")
     box = KutuFactory(kodu="KCO-SAR-22", havalimani=airport)
     material = MalzemeFactory(ad="Tooltip Test", kutu=box, havalimani=airport, is_deleted=False)
@@ -1260,7 +1351,7 @@ def test_envanter_airport_abbreviation_has_title_tooltip(client, app):
 def test_status_options_hide_hurda_in_create_and_detail(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
     airport = HavalimaniFactory(kodu="ERZ")
-    manager = KullaniciFactory(rol="yetkili", havalimani=airport)
+    manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport)
     box = KutuFactory(kodu="ERZ-SAR-41", havalimani=airport)
     template = EquipmentTemplateFactory(name="Durum Test")
     asset = InventoryAssetFactory(equipment_template=template, airport=airport, status="aktif")
@@ -1284,7 +1375,7 @@ def test_status_options_hide_hurda_in_create_and_detail(client, app):
 
 
 def test_envanter_status_labels_render_only_aktif_pasif(client, app):
-    user = KullaniciFactory(rol="sahip")
+    user = KullaniciFactory(rol="sistem_sorumlusu")
     airport = HavalimaniFactory(kodu="AYT", ad="Antalya Havalimanı")
     box = KutuFactory(kodu="AYT-SAR-11", havalimani=airport)
     material = MalzemeFactory(ad="Legacy Durum", kutu=box, havalimani=airport, durum="Arızalı", is_deleted=False)
@@ -1305,7 +1396,7 @@ def test_envanter_status_labels_render_only_aktif_pasif(client, app):
 
 def test_malzeme_ekle_page_renders_bulk_excel_panel_and_ordered_labels(client, app):
     airport = HavalimaniFactory(kodu="ESB")
-    manager = KullaniciFactory(rol="yetkili", havalimani=airport)
+    manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport)
     box = KutuFactory(kodu="ESB-KUTU-9", havalimani=airport)
     template = EquipmentTemplateFactory(name="Label Test", category="Elektronik")
     db.session.add_all([airport, manager, box, template])

@@ -268,8 +268,11 @@ def role_update(role_key):
 @permission_required('roles.manage')
 def role_delete(role_key):
     _require_system_role_manager()
+    if is_core_role(role_key):
+        flash("Çekirdek roller silinemez.", "warning")
+        return redirect(url_for('admin.site_yonetimi', tab='organizasyon'))
     role = Role.query.filter_by(key=role_key).first_or_404()
-    if role.is_system or is_core_role(role_key):
+    if role.is_system:
         flash("Çekirdek roller silinemez.", "warning")
         return redirect(url_for('admin.site_yonetimi', tab='organizasyon'))
 

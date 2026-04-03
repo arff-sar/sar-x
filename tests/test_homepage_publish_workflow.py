@@ -10,7 +10,7 @@ def _login(client, user):
 
 
 def test_draft_slider_not_visible_until_published(client, app):
-    owner = KullaniciFactory(rol="sahip")
+    owner = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(owner)
     db.session.commit()
     _login(client, owner)
@@ -41,7 +41,7 @@ def test_draft_slider_not_visible_until_published(client, app):
 
     public_before = client.get("/")
     assert public_before.status_code == 200
-    assert "Taslak Hero İçeriği" not in public_before.data.decode("utf-8")
+    assert "https://example.com/hero.jpg" not in public_before.data.decode("utf-8")
 
     publish_resp = client.post(
         "/admin/homepage/slider/bulk",
@@ -57,11 +57,11 @@ def test_draft_slider_not_visible_until_published(client, app):
 
     public_after = client.get("/")
     assert public_after.status_code == 200
-    assert "Taslak Hero İçeriği" in public_after.data.decode("utf-8")
+    assert "https://example.com/hero.jpg" in public_after.data.decode("utf-8")
 
 
 def test_reorder_updates_slider_order_indices(client, app):
-    owner = KullaniciFactory(rol="sahip")
+    owner = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(owner)
     db.session.commit()
     _login(client, owner)
@@ -92,7 +92,7 @@ def test_reorder_updates_slider_order_indices(client, app):
 
 
 def test_bulk_archive_sets_quick_links_passive(client, app):
-    owner = KullaniciFactory(rol="sahip")
+    owner = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(owner)
     db.session.commit()
     _login(client, owner)
@@ -126,7 +126,7 @@ def test_bulk_archive_sets_quick_links_passive(client, app):
 
 def test_editor_publish_falls_back_to_draft_when_disabled(client, app):
     app.config["HOMEPAGE_EDITOR_CAN_PUBLISH"] = False
-    owner = KullaniciFactory(rol="sahip")
+    owner = KullaniciFactory(rol="sistem_sorumlusu")
     db.session.add(owner)
     db.session.commit()
     _login(client, owner)

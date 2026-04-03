@@ -1,7 +1,18 @@
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 
-from decorators import has_permission
+from sqlalchemy import and_, func
+from sqlalchemy.orm import joinedload
+
+from decorators import (
+    CANONICAL_ROLE_SYSTEM,
+    CANONICAL_ROLE_TEAM_LEAD,
+    CANONICAL_ROLE_TEAM_MEMBER,
+    ROLE_OWNER,
+    ROLE_SYSTEM_OWNER,
+    get_effective_role,
+    has_permission,
+)
 from extensions import table_exists
 from models import (
     AssetMeterReading,
@@ -430,14 +441,22 @@ def manager_summary(user, filters):
 
 
 def _asset_rows(user, filters):
-    query = InventoryAsset.query.filter_by(is_deleted=False)
-    if not _can_view_all(user):
+    can_view_all = _can_view_all(user)
+    query = InventoryAsset.query.filter_by(is_deleted=False).options(
+        joinedload(InventoryAsset.equipment_template),
+        joinedload(InventoryAsset.airport),
+        joinedload(InventoryAsset.operational_state),
+    )
+    if not can_view_all:
         query = query.filter_by(havalimani_id=user.havalimani_id)
     rows = query.all()
     demo_scope = (filters.get("demo_scope") or "all") if isinstance(filters, dict) else "all"
     rows = _filter_demo_rows(rows, "InventoryAsset", demo_scope)
-    if filters.get("airport_id"):
-        rows = [row for row in rows if row.havalimani_id == filters["airport_id"]]
+    requested_airport_id = filters.get("airport_id")
+    if requested_airport_id and can_view_all:
+        rows = [row for row in rows if row.havalimani_id == requested_airport_id]
+    elif requested_airport_id and not can_view_all and getattr(user, "havalimani_id", None):
+        rows = [row for row in rows if row.havalimani_id == user.havalimani_id]
     if filters.get("category"):
         rows = [
             row for row in rows
@@ -463,14 +482,22 @@ def _asset_rows(user, filters):
 
 
 def _work_order_rows(user, filters):
-    query = WorkOrder.query.filter_by(is_deleted=False)
-    if not _can_view_all(user):
+    can_view_all = _can_view_all(user)
+    query = WorkOrder.query.filter_by(is_deleted=False).options(
+        joinedload(WorkOrder.asset).joinedload(InventoryAsset.airport),
+        joinedload(WorkOrder.asset).joinedload(InventoryAsset.equipment_template),
+        joinedload(WorkOrder.assigned_user),
+    )
+    if not can_view_all:
         query = query.join(InventoryAsset).filter(InventoryAsset.havalimani_id == user.havalimani_id)
     rows = query.all()
     demo_scope = (filters.get("demo_scope") or "all") if isinstance(filters, dict) else "all"
     rows = _filter_demo_rows(rows, "WorkOrder", demo_scope)
-    if filters.get("airport_id"):
-        rows = [row for row in rows if row.asset and row.asset.havalimani_id == filters["airport_id"]]
+    requested_airport_id = filters.get("airport_id")
+    if requested_airport_id and can_view_all:
+        rows = [row for row in rows if row.asset and row.asset.havalimani_id == requested_airport_id]
+    elif requested_airport_id and not can_view_all and getattr(user, "havalimani_id", None):
+        rows = [row for row in rows if row.asset and row.asset.havalimani_id == user.havalimani_id]
     if filters.get("category"):
         rows = [
             row for row in rows
@@ -490,14 +517,21 @@ def _work_order_rows(user, filters):
 
 
 def _stock_rows(user, filters):
-    query = SparePartStock.query.filter_by(is_deleted=False, is_active=True)
-    if not _can_view_all(user):
+    can_view_all = _can_view_all(user)
+    query = SparePartStock.query.filter_by(is_deleted=False, is_active=True).options(
+        joinedload(SparePartStock.spare_part),
+        joinedload(SparePartStock.airport_stock),
+    )
+    if not can_view_all:
         query = query.filter_by(airport_id=user.havalimani_id)
     rows = query.all()
     demo_scope = (filters.get("demo_scope") or "all") if isinstance(filters, dict) else "all"
     rows = _filter_demo_rows(rows, "SparePartStock", demo_scope)
-    if filters.get("airport_id"):
-        rows = [row for row in rows if row.airport_id == filters["airport_id"]]
+    requested_airport_id = filters.get("airport_id")
+    if requested_airport_id and can_view_all:
+        rows = [row for row in rows if row.airport_id == requested_airport_id]
+    elif requested_airport_id and not can_view_all and getattr(user, "havalimani_id", None):
+        rows = [row for row in rows if row.airport_id == user.havalimani_id]
     if filters.get("stock_level") == "low":
         rows = [row for row in rows if row.is_low_stock()]
     elif filters.get("stock_level") == "critical":
@@ -515,12 +549,16 @@ def _stock_rows(user, filters):
 def _consumable_rows(user, filters):
     if not table_exists("consumable_item") or not table_exists("consumable_stock_movement"):
         return []
+    can_view_all = _can_view_all(user)
     items = ConsumableItem.query.filter_by(is_deleted=False, is_active=True).order_by(ConsumableItem.title.asc()).all()
     movements = ConsumableStockMovement.query.filter_by(is_deleted=False).order_by(ConsumableStockMovement.created_at.asc()).all()
-    if not _can_view_all(user):
+    if not can_view_all:
         movements = [row for row in movements if row.airport_id == user.havalimani_id]
-    if filters.get("airport_id"):
-        movements = [row for row in movements if row.airport_id == filters["airport_id"]]
+    requested_airport_id = filters.get("airport_id")
+    if requested_airport_id and can_view_all:
+        movements = [row for row in movements if row.airport_id == requested_airport_id]
+    elif requested_airport_id and not can_view_all and getattr(user, "havalimani_id", None):
+        movements = [row for row in movements if row.airport_id == user.havalimani_id]
     demo_scope = (filters.get("demo_scope") or "all") if isinstance(filters, dict) else "all"
     items = _filter_demo_rows(items, "ConsumableItem", demo_scope)
 
@@ -604,7 +642,17 @@ def _visible_airports(user):
 
 
 def _can_view_all(user):
-    return getattr(user, "rol", "") in {"sahip", "genel_mudurluk", "admin"} or has_permission("logs.view", user=user) or has_permission("settings.manage", user=user)
+    actor_role = get_effective_role(user)
+    if actor_role == CANONICAL_ROLE_SYSTEM:
+        raw_role = str(getattr(user, "rol", "") or "").strip().lower()
+        if raw_role == CANONICAL_ROLE_SYSTEM:
+            return True
+        if raw_role in {ROLE_OWNER, ROLE_SYSTEM_OWNER}:
+            return not getattr(user, "havalimani_id", None)
+        return False
+    if actor_role in {CANONICAL_ROLE_TEAM_LEAD, CANONICAL_ROLE_TEAM_MEMBER}:
+        return False
+    return has_permission("logs.view", user=user) or has_permission("settings.manage", user=user)
 
 
 def _filter_demo_rows(rows, model_name, demo_scope):
@@ -728,20 +776,57 @@ def _meter_upcoming_count(assets, filters):
     asset_ids = {asset.id for asset in assets}
     if not asset_ids:
         return 0
-    rules = MaintenanceTriggerRule.query.filter_by(is_deleted=False, is_active=True).all()
+    rules = [
+        row
+        for row in MaintenanceTriggerRule.query.filter_by(is_deleted=False, is_active=True).all()
+        if row.asset_id and row.asset_id in asset_ids and row.meter_definition_id
+    ]
+    if not rules:
+        return 0
+
+    rule_pairs = {(row.asset_id, row.meter_definition_id): row for row in rules}
+    pair_asset_ids = {item[0] for item in rule_pairs.keys()}
+    pair_meter_ids = {item[1] for item in rule_pairs.keys()}
+
+    base_reading_query = AssetMeterReading.query.filter(
+        AssetMeterReading.is_deleted.is_(False),
+        AssetMeterReading.asset_id.in_(pair_asset_ids),
+        AssetMeterReading.meter_definition_id.in_(pair_meter_ids),
+    )
+    latest_reading_subquery = (
+        base_reading_query.with_entities(
+            AssetMeterReading.asset_id.label("asset_id"),
+            AssetMeterReading.meter_definition_id.label("meter_definition_id"),
+            func.max(AssetMeterReading.reading_at).label("max_reading_at"),
+        )
+        .group_by(AssetMeterReading.asset_id, AssetMeterReading.meter_definition_id)
+        .subquery()
+    )
+
+    latest_rows = (
+        AssetMeterReading.query.join(
+            latest_reading_subquery,
+            and_(
+                AssetMeterReading.asset_id == latest_reading_subquery.c.asset_id,
+                AssetMeterReading.meter_definition_id == latest_reading_subquery.c.meter_definition_id,
+                AssetMeterReading.reading_at == latest_reading_subquery.c.max_reading_at,
+            ),
+        )
+        .with_entities(
+            AssetMeterReading.asset_id,
+            AssetMeterReading.meter_definition_id,
+            AssetMeterReading.reading_value,
+        )
+        .all()
+    )
+
     count = 0
-    for rule in rules:
-        if not rule.asset_id or rule.asset_id not in asset_ids or not rule.meter_definition_id:
-            continue
-        last_reading = AssetMeterReading.query.filter_by(
-            is_deleted=False,
-            asset_id=rule.asset_id,
-            meter_definition_id=rule.meter_definition_id,
-        ).order_by(AssetMeterReading.reading_at.desc()).first()
-        if not last_reading:
+    for asset_id, meter_definition_id, reading_value in latest_rows:
+        rule = rule_pairs.get((asset_id, meter_definition_id))
+        if not rule:
             continue
         warning_threshold = float(rule.threshold_value or 0) - float(rule.warning_lead_value or 0)
-        if last_reading.reading_value >= max(warning_threshold, 0):
+        if float(reading_value or 0) >= max(warning_threshold, 0):
             count += 1
     return count
 

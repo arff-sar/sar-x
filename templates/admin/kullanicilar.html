@@ -582,8 +582,13 @@
                         {% if selected_user.ayak_numarasi is not none %}
                         <span class="selection-pill"><strong>Ayak No:</strong> {{ '{:g}'.format(selected_user.ayak_numarasi) }}</span>
                         {% endif %}
-                        {% if selected_user.beden %}
-                        <span class="selection-pill"><strong>Beden:</strong> {{ selected_user.beden }}</span>
+                        {% if selected_user.ust_beden %}
+                        <span class="selection-pill"><strong>Üst Beden:</strong> {{ selected_user.ust_beden }}</span>
+                        {% endif %}
+                        {% if selected_user.alt_beden %}
+                        <span class="selection-pill"><strong>Alt Beden:</strong> {{ selected_user.alt_beden }}</span>
+                        {% elif selected_user.beden and not selected_user.ust_beden %}
+                        <span class="selection-pill"><strong>Üst Beden:</strong> {{ selected_user.beden }}</span>
                         {% endif %}
                     </div>
                 </div>
@@ -751,11 +756,20 @@
                                     </select>
                                 </div>
                                 <div class="form-group">
-                                    <label>Beden</label>
-                                    <select name="beden" class="form-control">
+                                    <label>Üst Beden</label>
+                                    <select name="ust_beden" class="form-control">
                                         <option value="">Seçin</option>
                                         {% for option in body_size_options %}
-                                        <option value="{{ option }}" {% if selected_user.beden == option %}selected{% endif %}>{{ option }}</option>
+                                        <option value="{{ option }}" {% if selected_user.ust_beden == option or (not selected_user.ust_beden and selected_user.beden == option) %}selected{% endif %}>{{ option }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Alt Beden</label>
+                                    <select name="alt_beden" class="form-control">
+                                        <option value="">Seçin</option>
+                                        {% for option in body_size_options %}
+                                        <option value="{{ option }}" {% if selected_user.alt_beden == option %}selected{% endif %}>{{ option }}</option>
                                         {% endfor %}
                                     </select>
                                 </div>
@@ -1135,8 +1149,17 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>Beden</label>
-                            <select name="beden" class="form-control">
+                            <label>Üst Beden</label>
+                            <select name="ust_beden" class="form-control">
+                                <option value="">Seçin</option>
+                                {% for option in body_size_options %}
+                                <option value="{{ option }}">{{ option }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Alt Beden</label>
+                            <select name="alt_beden" class="form-control">
                                 <option value="">Seçin</option>
                                 {% for option in body_size_options %}
                                 <option value="{{ option }}">{{ option }}</option>
