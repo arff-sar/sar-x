@@ -131,19 +131,7 @@ jobs:
           passkey_rp_name="${PASSKEY_RP_NAME:-SAR-X ARFF}"
 
           if [ "${passkey_enabled_value}" = "1" ]; then
-            readarray -t _passkey_defaults < <(PUBLIC_BASE_URL="${PUBLIC_BASE_URL}" python - <<'PY'
-from urllib.parse import urlsplit
-import os
-
-public_base_url = os.environ["PUBLIC_BASE_URL"].strip()
-parsed = urlsplit(public_base_url)
-if parsed.scheme != "https" or not parsed.hostname:
-    raise SystemExit("PASSKEY vars türetmek için PUBLIC_BASE_URL https ve geçerli host içermelidir.")
-origin = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
-print(origin)
-print(parsed.hostname.lower())
-PY
-)
+            readarray -t _passkey_defaults < <(PUBLIC_BASE_URL="${PUBLIC_BASE_URL}" python -c 'from urllib.parse import urlsplit; import os, sys; parsed = urlsplit(os.environ["PUBLIC_BASE_URL"].strip()); (parsed.scheme == "https" and parsed.hostname) or sys.exit("PASSKEY vars turetmek icin PUBLIC_BASE_URL https ve gecerli host icermelidir."); print(f"{parsed.scheme}://{parsed.netloc}".rstrip("/")); print(parsed.hostname.lower())')
             derived_origin="${_passkey_defaults[0]:-}"
             derived_rp_id="${_passkey_defaults[1]:-}"
             if [ -z "${passkey_origin}" ]; then
