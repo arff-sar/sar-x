@@ -1216,7 +1216,13 @@ def get_effective_permissions(user=None):
     permission_profile_role = override_role or (raw_role if raw_role in LEGACY_ROLE_DEFAULT_PERMISSIONS else get_effective_role(user))
     # Legacy bakım rolü, request bağlamında canonical ekip üyesi davranışıyla çalışmaya devam eder.
     if has_request_context() and not override_role and raw_role == ROLE_MAINTENANCE:
-        permission_profile_role = get_effective_role(user)
+        is_same_request_user = user is current_user
+        if not is_same_request_user:
+            user_id = getattr(user, "id", None)
+            current_id = getattr(current_user, "id", None) if getattr(current_user, "is_authenticated", False) else None
+            is_same_request_user = bool(user_id is not None and current_id is not None and user_id == current_id)
+        if is_same_request_user:
+            permission_profile_role = get_effective_role(user)
     permissions = set(get_role_permissions(permission_profile_role))
     overrides = get_user_permission_overrides(user)
     permissions.update(overrides["allow"])
