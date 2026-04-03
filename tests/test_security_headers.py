@@ -14,7 +14,9 @@ def test_security_headers_added(client):
     assert response.headers.get("X-Content-Type-Options") == "nosniff"
     assert response.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
     assert response.headers.get("X-Frame-Options") == "DENY"
+    permissions_policy = response.headers.get("Permissions-Policy", "")
     assert "Permissions-Policy" in response.headers
+    assert "camera=(self)" in permissions_policy
 
 
 def test_production_config_enables_secure_cookie_flags(monkeypatch):

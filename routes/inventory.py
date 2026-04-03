@@ -6072,6 +6072,52 @@ def qr_uret(asset_id):
     return render_template("qr_yazdir.html", asset=asset, qr_context=_asset_qr_context(asset))
 
 
+@inventory_bp.route("/qr-uret/toplu/envanter", methods=["POST"])
+@login_required
+@permission_required("qr.generate")
+def qr_uret_toplu_envanter():
+    selected_ids = []
+    for raw_id in request.form.getlist("asset_ids"):
+        try:
+            parsed_id = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if parsed_id > 0 and parsed_id not in selected_ids:
+            selected_ids.append(parsed_id)
+
+    if not selected_ids:
+        flash("Toplu QR yazdırmak için en az bir ekipman seçin.", "warning")
+        return redirect(url_for("inventory.envanter"))
+    if len(selected_ids) > 18:
+        flash("Toplu yazdırmada bir sayfada en fazla 18 ekipman seçilebilir.", "danger")
+        return redirect(url_for("inventory.envanter"))
+
+    rows = (
+        _asset_scope()
+        .options(
+            joinedload(InventoryAsset.equipment_template),
+            joinedload(InventoryAsset.legacy_material),
+        )
+        .filter(InventoryAsset.id.in_(selected_ids))
+        .all()
+    )
+    row_by_id = {row.id: row for row in rows}
+    selected_assets = [row_by_id[row_id] for row_id in selected_ids if row_id in row_by_id]
+    if not selected_assets:
+        flash("Seçilen ekipmanlar için erişilebilir QR kaydı bulunamadı.", "danger")
+        return redirect(url_for("inventory.envanter"))
+
+    if len(selected_assets) != len(selected_ids):
+        flash("Bazı ekipmanlar kapsam dışında olduğu için yazdırma listesine alınmadı.", "warning")
+
+    log_kaydet("QR", f"Toplu envanter QR etiketi görüntülendi (adet: {len(selected_assets)})", event_key="inventory.qr.bulk.render")
+    audit_log("inventory.qr.bulk.render", outcome="success", item_count=len(selected_assets))
+    return render_template(
+        "qr_toplu_envanter_yazdir.html",
+        assets=selected_assets[:18],
+    )
+
+
 @inventory_bp.route("/qr-yenile/asset/<int:asset_id>", methods=["POST"])
 @login_required
 @permission_required("qr.generate")
@@ -6122,6 +6168,44 @@ def kutu_qr_uret(box_id):
     log_kaydet("QR", f"Kutu QR etiketi görüntülendi: {kutu.qr_code_label}", event_key="box.qr.render", target_model="Kutu", target_id=kutu.id)
     audit_log("box.qr.render", outcome="success", box_id=kutu.id, box_code=kutu.qr_code_label)
     return render_template("kutu_qr_yazdir.html", kutu=kutu, qr_context=_box_qr_context(kutu))
+
+
+@inventory_bp.route("/qr-uret/toplu/kutular", methods=["POST"])
+@login_required
+@permission_required("qr.generate")
+def qr_uret_toplu_kutular():
+    selected_ids = []
+    for raw_id in request.form.getlist("box_ids"):
+        try:
+            parsed_id = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if parsed_id > 0 and parsed_id not in selected_ids:
+            selected_ids.append(parsed_id)
+
+    if not selected_ids:
+        flash("Toplu QR yazdırmak için en az bir kutu seçin.", "warning")
+        return redirect(url_for("inventory.kutular"))
+    if len(selected_ids) > 10:
+        flash("Toplu yazdırmada bir sayfada en fazla 10 kutu seçilebilir.", "danger")
+        return redirect(url_for("inventory.kutular"))
+
+    rows = _box_scope().filter(Kutu.id.in_(selected_ids)).all()
+    row_by_id = {row.id: row for row in rows}
+    selected_boxes = [row_by_id[row_id] for row_id in selected_ids if row_id in row_by_id]
+    if not selected_boxes:
+        flash("Seçilen kutular için erişilebilir QR kaydı bulunamadı.", "danger")
+        return redirect(url_for("inventory.kutular"))
+
+    if len(selected_boxes) != len(selected_ids):
+        flash("Bazı kutular kapsam dışında olduğu için yazdırma listesine alınmadı.", "warning")
+
+    log_kaydet("QR", f"Toplu kutu QR etiketi görüntülendi (adet: {len(selected_boxes)})", event_key="box.qr.bulk.render")
+    audit_log("box.qr.bulk.render", outcome="success", item_count=len(selected_boxes))
+    return render_template(
+        "qr_toplu_kutu_yazdir.html",
+        boxes=selected_boxes[:10],
+    )
 
 
 @inventory_bp.route("/api/qr-img/kutu/<int:box_id>")

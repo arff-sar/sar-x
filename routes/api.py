@@ -327,6 +327,10 @@ def api_airport_messages():
     _prune_expired_airport_messages()
 
     summary_only = str(request.args.get("summary") or "").strip().lower() in {"1", "true", "yes"}
+    try:
+        last_seen_id = max(int(request.args.get("last_seen_id", type=int) or 0), 0)
+    except (TypeError, ValueError):
+        last_seen_id = 0
     selected_airport_id = _resolve_message_airport_id(request.args.get("airport_id"), for_write=False)
     query = (
         AirportMessage.query.options(joinedload(AirportMessage.user), joinedload(AirportMessage.havalimani))
@@ -338,11 +342,17 @@ def api_airport_messages():
         query = query.filter(AirportMessage.havalimani_id == getattr(current_user, "havalimani_id", None))
 
     count_query = query.order_by(None)
-    recent_cutoff = get_tr_now().replace(tzinfo=None) - timedelta(hours=24)
-    new_message_count = count_query.filter(
-        AirportMessage.created_at.isnot(None),
-        AirportMessage.created_at >= recent_cutoff,
-    ).count()
+    latest_message_id = int(
+        (count_query.with_entities(sa.func.max(AirportMessage.id)).scalar() or 0)
+    )
+    if last_seen_id > 0:
+        new_message_count = count_query.filter(AirportMessage.id > last_seen_id).count()
+    else:
+        recent_cutoff = get_tr_now().replace(tzinfo=None) - timedelta(hours=24)
+        new_message_count = count_query.filter(
+            AirportMessage.created_at.isnot(None),
+            AirportMessage.created_at >= recent_cutoff,
+        ).count()
     total_message_count = count_query.count()
     rows = [] if summary_only else list(reversed(query.limit(80).all()))
     airports = _visible_message_airports()
@@ -355,6 +365,7 @@ def api_airport_messages():
         "can_view_all": _can_view_all(),
         "new_count": int(new_message_count or 0),
         "total_count": int(total_message_count or 0),
+        "latest_message_id": latest_message_id,
     }
     return jsonify(payload)
 

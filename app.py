@@ -1225,7 +1225,7 @@ def create_app(config_name=None):
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("X-Frame-Options", "DENY")
-        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(), geolocation=()")
         if _response_requires_private_cache_busting():
             response = _apply_private_no_store_headers(response)
         if app.config.get("SESSION_COOKIE_SECURE"):

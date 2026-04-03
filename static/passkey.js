@@ -1,5 +1,6 @@
 (function (window) {
     "use strict";
+    var LAST_PASSKEY_IDENTIFIER_STORAGE_KEY = "sarx-passkey-login-identifier";
 
     function getCsrfToken() {
         var meta = document.querySelector('meta[name="csrf-token"]');
@@ -173,6 +174,18 @@
         if (!(await supportsPasskeys())) {
             return;
         }
+
+        try {
+            if (usernameInput && !String(usernameInput.value || "").trim() && window.localStorage) {
+                var rememberedIdentifier = String(window.localStorage.getItem(LAST_PASSKEY_IDENTIFIER_STORAGE_KEY) || "").trim();
+                if (rememberedIdentifier) {
+                    usernameInput.value = rememberedIdentifier;
+                }
+            }
+        } catch (_storageError) {
+            // localStorage desteklenmiyorsa sessiz devam.
+        }
+
         button.hidden = false;
 
         button.addEventListener("click", async function () {
@@ -190,14 +203,22 @@
             if (usernameInput) {
                 usernameInput.setCustomValidity("");
             }
+            if (!loginIdentifier) {
+                var requiredIdentifierMessage = "Biyometrik giriş için önce kullanıcı adınızı (e-posta) girin.";
+                if (usernameInput) {
+                    usernameInput.setCustomValidity(requiredIdentifierMessage);
+                    usernameInput.reportValidity();
+                    usernameInput.focus();
+                }
+                showToast(requiredIdentifierMessage, "warning");
+                return;
+            }
             setLoadingState(button, true);
             try {
                 var beginPayload = {
-                    remember_me: Boolean(rememberInput && rememberInput.checked)
+                    remember_me: Boolean(rememberInput && rememberInput.checked),
+                    login_identifier: loginIdentifier
                 };
-                if (loginIdentifier) {
-                    beginPayload.login_identifier = loginIdentifier;
-                }
                 var begin = await postJson(settings.beginUrl, beginPayload);
                 var assertion = await navigator.credentials.get({
                     publicKey: normalizeRequestOptions(begin.public_key || {})
@@ -223,6 +244,13 @@
                     finishPayload.security_verification_token = String(captchaTokenInput.value || "").trim();
                 }
                 var finish = await postJson(settings.finishUrl, finishPayload);
+                try {
+                    if (window.localStorage) {
+                        window.localStorage.setItem(LAST_PASSKEY_IDENTIFIER_STORAGE_KEY, loginIdentifier);
+                    }
+                } catch (_storageWriteError) {
+                    // localStorage desteklenmiyorsa sessiz devam.
+                }
                 if (finish.redirect_url) {
                     window.location.assign(finish.redirect_url);
                     return;

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="tr">
+<head>
+    <meta charset="utf-8">
+    <title>Toplu Kutu QR Yazdır</title>
+    <style>
+        @page { size: A4; margin: 0; }
+        * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        body { margin: 0; background: #ffffff; color: #000000; font-family: "Arial", "Helvetica", sans-serif; }
+        .print-actions { position: sticky; top: 0; z-index: 2; display: flex; justify-content: center; padding: 12px; background: #fff; border-bottom: 1px solid #d1d5db; }
+        .print-actions button { min-height: 40px; padding: 0 14px; border: 1px solid #111827; border-radius: 8px; background: #fff; color: #111827; font-size: 13px; font-weight: 700; cursor: pointer; }
+        .sheet {
+            width: 210mm;
+            height: 297mm;
+            margin: 0 auto;
+            padding-top: 6mm;
+            padding-left: 4.65mm;
+            overflow: hidden;
+            background: #fff;
+        }
+        .label-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 99.1mm);
+            grid-auto-rows: 57mm;
+            column-gap: 2.5mm;
+            row-gap: 0;
+        }
+        .label {
+            width: 99.1mm;
+            height: 57mm;
+            border: 0.25mm dashed #b0b0b0;
+            position: relative;
+            overflow: hidden;
+        }
+        .content-wrapper {
+            position: absolute;
+            left: 0;
+            top: 57mm;
+            width: 57mm;
+            height: 99.1mm;
+            transform-origin: top left;
+            transform: rotate(-90deg);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding: 2.4mm 3.4mm 2.2mm;
+            gap: 1.2mm;
+            color: #000;
+        }
+        .system-line {
+            width: 100%;
+            font-size: 3.1mm;
+            font-weight: 700;
+            line-height: 1.2;
+            text-align: center;
+            letter-spacing: 0.02em;
+        }
+        .qr-holder {
+            width: 100%;
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.2mm 2.2mm;
+        }
+        .qr-holder img {
+            width: 100%;
+            max-width: 50mm;
+            max-height: 50mm;
+            object-fit: contain;
+            display: block;
+        }
+        .box-code {
+            width: 100%;
+            font-size: 6.2mm;
+            font-weight: 800;
+            line-height: 1.08;
+            letter-spacing: 0.03em;
+            text-align: center;
+            word-break: break-word;
+        }
+        .airport-name {
+            width: 100%;
+            font-size: 3.1mm;
+            font-weight: 700;
+            line-height: 1.2;
+            text-align: center;
+            letter-spacing: 0.01em;
+            word-break: break-word;
+        }
+
+        @media print {
+            body { margin: 0; background: #fff; }
+            .print-actions { display: none !important; }
+            .label { border: none !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="print-actions">
+        <button type="button" onclick="window.print()">Toplu Kutu Etiketi Yazdır</button>
+    </div>
+
+    <div class="sheet">
+        <div class="label-grid">
+            {% for box in boxes %}
+            <article class="label">
+                <div class="content-wrapper">
+                    <div class="system-line">SAR-X ENVANTER YÖNETİM SİSTEMİ</div>
+                    <div class="qr-holder">
+                        <img src="{{ url_for('inventory.kutu_qr_img', box_id=box.id) }}" alt="{{ box.qr_code_label }} QR">
+                    </div>
+                    <div class="box-code">{{ box.qr_code_label }}</div>
+                    <div class="airport-name">{{ box.qr_label_airport_name }}</div>
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+    </div>
+</body>
+</html>
