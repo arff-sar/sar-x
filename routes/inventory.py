@@ -2490,18 +2490,14 @@ def malzeme_ekle():
         can_manage_template_catalog = bool(current_user.is_sahip)
         template = _ensure_template_from_form(request.form, template_id, allow_create=can_manage_template_catalog and central_catalog_flag)
 
-        if not template and central_catalog_flag:
+        if central_catalog_flag and not can_manage_template_catalog:
             flash("Merkezi kataloga yeni şablon ekleme yetkisi sadece sahip rolünde.", "danger")
             return redirect(url_for("inventory.malzeme_ekle"))
 
         if not template:
-            if can_manage_template_catalog:
-                template = _ensure_template_from_form(request.form, None, allow_create=True)
-            else:
-                flash("Bu işlem için mevcut merkezi şablon seçimi zorunludur.", "danger")
-                return redirect(url_for("inventory.malzeme_ekle"))
+            template = _ensure_template_from_form(request.form, None, allow_create=True)
         if template is None:
-            flash("Şablon bulunamadı veya oluşturulamadı.", "danger")
+            flash("Şablon bulunamadı. Şablon seçin veya malzeme adı/kategori alanlarını doldurun.", "danger")
             return redirect(url_for("inventory.malzeme_ekle"))
 
         try:
@@ -2734,6 +2730,36 @@ def merkezi_katalog():
     )
 
 
+def _find_active_inventory_category(name):
+    normalized_name = normalize_lookup(name)
+    if not normalized_name:
+        return None
+    for item in InventoryCategory.query.filter(InventoryCategory.is_deleted.is_(False)).all():
+        if normalize_lookup(item.name) == normalized_name:
+            return item
+    return None
+
+
+def _ensure_inventory_category_exists(name, *, description="", created_by_user_id=None):
+    cleaned_name = guvenli_metin(name or "").strip()
+    if not cleaned_name:
+        return None
+
+    existing = _find_active_inventory_category(cleaned_name)
+    if existing:
+        return existing
+
+    created = InventoryCategory(
+        name=cleaned_name,
+        description=guvenli_metin(description or "").strip(),
+        created_by_user_id=created_by_user_id,
+        is_active=True,
+    )
+    db.session.add(created)
+    db.session.flush()
+    return created
+
+
 @inventory_bp.route("/envanter/kategori-ekle", methods=["POST"])
 @login_required
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
@@ -2746,28 +2772,15 @@ def envanter_kategori_ekle():
         flash("Kategori adı zorunludur.", "danger")
         return redirect(url_for("inventory.malzeme_ekle"))
 
-    normalized_name = normalize_lookup(name)
-    exists = next(
-        (
-            item
-            for item in InventoryCategory.query.filter(
-                InventoryCategory.is_deleted.is_(False)
-            ).all()
-            if normalize_lookup(item.name) == normalized_name
-        ),
-        None,
-    )
+    exists = _find_active_inventory_category(name)
     if exists:
         flash("Bu kategori zaten mevcut.", "warning")
         return redirect(url_for("inventory.malzeme_ekle"))
 
-    db.session.add(
-        InventoryCategory(
-            name=name,
-            description=guvenli_metin(request.form.get("description") or "").strip(),
-            created_by_user_id=current_user.id,
-            is_active=True,
-        )
+    _ensure_inventory_category_exists(
+        name,
+        description=request.form.get("description"),
+        created_by_user_id=current_user.id,
     )
     db.session.commit()
     flash("Kategori eklendi.", "success")
@@ -2787,9 +2800,22 @@ def merkezi_sablon_ekle():
         flash("Şablon adı zorunludur.", "danger")
         return redirect(url_for("inventory.malzeme_ekle"))
 
-    category = guvenli_metin(request.form.get("category") or "").strip()
-    if not category:
-        category = "Diğer"
+    selected_category = guvenli_metin(request.form.get("category") or "").strip()
+    new_category_name = guvenli_metin(request.form.get("new_category_name") or "").strip()
+    if selected_category == "__new__":
+        category = new_category_name
+        if not category:
+            flash("Yeni kategori adı zorunludur.", "danger")
+            return redirect(url_for("inventory.malzeme_ekle"))
+    else:
+        category = selected_category or "Diğer"
+
+    if selected_category == "__new__":
+        _ensure_inventory_category_exists(
+            category,
+            description="Merkezi şablon oluşturma ekranından eklendi.",
+            created_by_user_id=current_user.id,
+        )
     period_months = _parse_month_period(request.form.get("maintenance_period_months"), default=6)
     maintenance_form_id = request.form.get("default_maintenance_form_id", type=int) or None
 

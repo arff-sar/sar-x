@@ -57,11 +57,19 @@
             <form method="POST" action="{{ url_for('inventory.merkezi_sablon_ekle') }}" style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="text" name="name" class="form-control" placeholder="Şablon adı" required>
-                <select name="category" class="form-control" required>
+                <select name="category" id="centralTemplateCategory" class="form-control" required>
+                    <option value="">Kategori seçin</option>
                     {% for c in categories %}
+                    {% if c != 'Diğer' %}
                     <option value="{{ c }}">{{ c }}</option>
+                    {% endif %}
                     {% endfor %}
+                    <option value="__new__">+ Yeni kategori ekle</option>
                 </select>
+                <div id="centralTemplateCategoryNewBlock" class="hidden-block" style="grid-column:1 / -1;">
+                    <label>Yeni kategori adı</label>
+                    <input type="text" name="new_category_name" id="centralTemplateNewCategoryInput" class="form-control" placeholder="Örn: Solunum Sistemleri">
+                </div>
                 <input type="text" name="brand" class="form-control" placeholder="Marka">
                 <input type="text" name="model_code" class="form-control" placeholder="Model">
                 <select name="maintenance_period_months" class="form-control">
@@ -115,7 +123,7 @@
 
                 <div class="form-group">
                     <label>{{ field_labels['merkezi_sablon'] }}</label>
-                    <select name="template_id" id="template_id" class="form-control" {% if not can_manage_template_catalog %}required{% endif %}>
+                    <select name="template_id" id="template_id" class="form-control">
                         <option value="">Şablon seçin</option>
                         {% for t in templates %}
                         <option value="{{ t.id }}"
@@ -130,7 +138,7 @@
                         </option>
                         {% endfor %}
                     </select>
-                    <div class="muted-help">Sahip dışı roller için şablon seçimi zorunludur.</div>
+                    <div class="muted-help">Şablon seçmezseniz, form alanlarından yeni bir şablon otomatik oluşturulur.</div>
                 </div>
 
                 {% if giren_user.is_sahip %}
@@ -330,6 +338,9 @@
     const calibrationBlock = document.getElementById("calibration_block");
     const airportSelect = document.getElementById("havalimani_id");
     const boxSelect = document.getElementById("kutu_id");
+    const centralTemplateCategorySelect = document.getElementById("centralTemplateCategory");
+    const centralTemplateNewCategoryBlock = document.getElementById("centralTemplateCategoryNewBlock");
+    const centralTemplateNewCategoryInput = document.getElementById("centralTemplateNewCategoryInput");
     const assetType = "{{ preselected_asset_type or 'equipment' }}";
     const parentSelect = document.getElementById("parent_asset_id");
 
@@ -416,6 +427,23 @@
         airportSelect.addEventListener("change", filterBoxesByAirport);
     }
     filterBoxesByAirport();
+
+    if (centralTemplateCategorySelect) {
+        const syncCentralTemplateCategoryCreateMode = function () {
+            const wantsNewCategory = centralTemplateCategorySelect.value === "__new__";
+            if (centralTemplateNewCategoryBlock) {
+                centralTemplateNewCategoryBlock.classList.toggle("hidden-block", !wantsNewCategory);
+            }
+            if (centralTemplateNewCategoryInput) {
+                centralTemplateNewCategoryInput.required = wantsNewCategory;
+                if (!wantsNewCategory) {
+                    centralTemplateNewCategoryInput.value = "";
+                }
+            }
+        };
+        centralTemplateCategorySelect.addEventListener("change", syncCentralTemplateCategoryCreateMode);
+        syncCentralTemplateCategoryCreateMode();
+    }
 
     if (assetType === "spare_part" && parentSelect && !parentSelect.value) {
         parentSelect.focus();

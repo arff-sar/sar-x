@@ -15,7 +15,16 @@ from tests.factories import (
 from extensions import db, safe_display_filename
 from datetime import date
 
-from models import AssignmentRecord, AssignmentRecipient, BakimKaydi, InventoryAsset, Malzeme, PPERecord # ✅ Sorgular için ekledik
+from models import (
+    AssignmentRecord,
+    AssignmentRecipient,
+    BakimKaydi,
+    EquipmentTemplate,
+    InventoryAsset,
+    InventoryCategory,
+    Malzeme,
+    PPERecord,
+)
 
 
 def _login(client, user_id):
@@ -147,6 +156,75 @@ def test_malzeme_ekle_success(client, app):
     assert "Malzeme başarıyla eklendi" in response.data.decode('utf-8')
     # Veritabanına gerçekten yazılmış mı kontrol et
     assert Malzeme.query.filter_by(ad="Test Malzemesi").first() is not None
+
+
+def test_malzeme_ekle_allows_non_owner_without_template_selection(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    airport = HavalimaniFactory(kodu="ADB")
+    manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False)
+    box = KutuFactory(kodu="ADB-K-21", havalimani=airport)
+    db.session.add_all([airport, manager, box])
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(manager.id)
+        sess["_fresh"] = True
+
+    response = client.post(
+        "/malzeme-ekle",
+        data={
+            "kategori": "Elektronik",
+            "ad": "Şablonsuz Ekipman",
+            "marka": "Demo",
+            "model": "X1",
+            "seri_no": "ADB-NO-TEMPLATE-001",
+            "kutu_id": box.id,
+            "stok": 1,
+            "durum": "aktif",
+            "bakim_periyodu_ay": 6,
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    html = response.data.decode("utf-8")
+    assert "Malzeme başarıyla eklendi" in html
+    asset = InventoryAsset.query.filter_by(serial_no="ADB-NO-TEMPLATE-001").first()
+    assert asset is not None
+    assert asset.equipment_template is not None
+    assert asset.equipment_template.name == "Şablonsuz Ekipman"
+
+
+def test_merkezi_sablon_ekle_accepts_new_category_option(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False)
+    db.session.add(owner)
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(owner.id)
+        sess["_fresh"] = True
+
+    response = client.post(
+        "/envanter/merkezi-sablon-ekle",
+        data={
+            "name": "Yeni Kategori Şablonu",
+            "category": "__new__",
+            "new_category_name": "Robotik Sistemler",
+            "brand": "ARFF",
+            "model_code": "RX-1",
+            "maintenance_period_months": 6,
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Merkezi şablon eklendi." in response.data.decode("utf-8")
+    created_template = EquipmentTemplate.query.filter_by(name="Yeni Kategori Şablonu", is_deleted=False).first()
+    assert created_template is not None
+    assert created_template.category == "Robotik Sistemler"
+    created_category = InventoryCategory.query.filter_by(name="Robotik Sistemler", is_deleted=False).first()
+    assert created_category is not None
 
 
 def test_single_create_assigns_asset_code_and_qr(client, app):

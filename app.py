@@ -171,6 +171,49 @@ def _redact_runtime_value(value):
     return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
 
 
+def _parse_canonical_public_base_url(raw_value):
+    candidate = str(raw_value or "").strip()
+    if not candidate:
+        return None
+    try:
+        parsed = urlsplit(candidate)
+    except Exception:
+        return None
+
+    scheme = str(parsed.scheme or "").strip().lower()
+    host = str(parsed.hostname or "").strip().lower()
+    if scheme not in {"http", "https"} or not host:
+        return None
+
+    netloc = host
+    if parsed.port:
+        netloc = f"{host}:{parsed.port}"
+
+    base_path = str(parsed.path or "").strip()
+    if base_path and base_path != "/":
+        base_path = "/" + base_path.strip("/")
+    else:
+        base_path = ""
+
+    return {
+        "scheme": scheme,
+        "host": host,
+        "port": parsed.port,
+        "netloc": netloc,
+        "base_path": base_path,
+    }
+
+
+def _normalize_port(scheme, port):
+    if port is not None:
+        return int(port)
+    if scheme == "https":
+        return 443
+    if scheme == "http":
+        return 80
+    return None
+
+
 def _log_production_runtime_risks(app):
     if str(app.config.get("ENV") or "").lower() != "production":
         return
@@ -793,6 +836,7 @@ def create_app(config_name=None):
     config_class = config_by_name[selected_env]
     app.config.from_object(config_class)
     _apply_runtime_env_overrides(app)
+    app.config["_CANONICAL_PUBLIC_BASE"] = _parse_canonical_public_base_url(app.config.get("PUBLIC_BASE_URL"))
 
     _configure_logging(app)
 
@@ -1089,6 +1133,46 @@ def create_app(config_name=None):
         incoming = str(request.headers.get("X-Request-ID") or "").strip()
         g.request_id = incoming[:64] if incoming else f"sarx-{uuid.uuid4().hex[:20]}"
         return None
+
+    @app.before_request
+    def enforce_public_canonical_host():
+        if str(app.config.get("ENV") or "").lower() != "production":
+            return None
+
+        canonical = app.config.get("_CANONICAL_PUBLIC_BASE") or {}
+        if not canonical:
+            return None
+
+        if request.method not in {"GET", "HEAD"}:
+            return None
+        if request.path in {"/health", "/ready"}:
+            return None
+
+        forwarded_proto = str(request.headers.get("X-Forwarded-Proto") or "").split(",", 1)[0].strip().lower()
+        request_scheme = forwarded_proto or str(request.scheme or "").strip().lower()
+        request_host_info = urlsplit(f"//{request.host}", scheme=request_scheme or canonical["scheme"])
+        request_host = str(request_host_info.hostname or "").strip().lower()
+        request_port = request_host_info.port
+
+        if not request_host:
+            return None
+
+        canonical_port = _normalize_port(canonical["scheme"], canonical.get("port"))
+        current_port = _normalize_port(request_scheme, request_port)
+        same_origin = (
+            request_host == canonical["host"]
+            and current_port == canonical_port
+            and request_scheme == canonical["scheme"]
+        )
+        if same_origin:
+            return None
+
+        current_path = request.path if str(request.path or "").startswith("/") else f"/{request.path or ''}"
+        base_path = canonical.get("base_path") or ""
+        target_path = f"{base_path}{current_path}" if base_path else current_path
+        query = request.query_string.decode("utf-8", "ignore")
+        target_url = urlunsplit((canonical["scheme"], canonical["netloc"], target_path, query, ""))
+        return redirect(target_url, code=302)
 
     @app.before_request
     def apply_role_override_guard():
