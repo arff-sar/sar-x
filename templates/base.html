@@ -1236,6 +1236,10 @@ body[data-display-mode="standalone"] .logo-text-main {
         const messageInput = document.getElementById('airportMessageInput');
         let messagePollTimer = 0;
         let messageBadgeTimer = 0;
+        let messageListRequestInFlight = false;
+        let messageBadgeRequestInFlight = false;
+        const messagePanelPollMs = 30000;
+        const messageBadgePollMs = 45000;
         let messageState = {
             canViewAll: false,
             canModerate: false,
@@ -1381,7 +1385,7 @@ body[data-display-mode="standalone"] .logo-text-main {
                 setMessagePanelOpen(true);
                 fetchMessages().then(function () {
                     if (!messagePollTimer) {
-                        messagePollTimer = window.setInterval(fetchMessages, 25000);
+                        messagePollTimer = window.setInterval(fetchMessages, messagePanelPollMs);
                     }
                 });
             };
@@ -1496,8 +1500,15 @@ body[data-display-mode="standalone"] .logo-text-main {
             }
             fetchMessageBadge();
             if (!messageBadgeTimer) {
-                messageBadgeTimer = window.setInterval(fetchMessageBadge, 30000);
+                messageBadgeTimer = window.setInterval(fetchMessageBadge, messageBadgePollMs);
             }
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState !== 'visible') return;
+                fetchMessageBadge();
+                if (messagePanel && !messagePanel.hidden) {
+                    fetchMessages();
+                }
+            });
         }
 
         const qrScanButton = document.getElementById('qrScanLaunchButton');
@@ -1667,6 +1678,8 @@ body[data-display-mode="standalone"] .logo-text-main {
 
         function fetchMessages() {
             if (!messagePanel || messagePanel.hidden) return Promise.resolve();
+            if (document.visibilityState === 'hidden') return Promise.resolve();
+            if (messageListRequestInFlight) return Promise.resolve();
             const airportId = currentMessageAirportId();
             const params = new URLSearchParams();
             if (airportId) {
@@ -1678,9 +1691,19 @@ body[data-display-mode="standalone"] .logo-text-main {
             }
             const query = params.toString() ? ('?' + params.toString()) : '';
             updateMessageStatus('Mesajlar yenileniyor.', 'info');
+            messageListRequestInFlight = true;
             return window.fetch('/api/mesajlar' + query)
-                .then(function (response) { return response.json(); })
+                .then(function (response) {
+                    if (response.status === 429) {
+                        return { status: 'rate_limited' };
+                    }
+                    return response.json();
+                })
                 .then(function (data) {
+                    if (data && data.status === 'rate_limited') {
+                        updateMessageStatus('Mesaj akışı yoğun. Kısa süre sonra yeniden denenecek.', 'warning');
+                        return;
+                    }
                     if (!data || data.status !== 'success') {
                         throw new Error('Mesajlar alınamadı.');
                     }
@@ -1695,11 +1718,16 @@ body[data-display-mode="standalone"] .logo-text-main {
                 })
                 .catch(function () {
                     updateMessageStatus('Mesajlar yüklenemedi. Lütfen tekrar deneyin.', 'danger');
+                })
+                .finally(function () {
+                    messageListRequestInFlight = false;
                 });
         }
 
         function fetchMessageBadge() {
             if (!messageLaunchButton) return Promise.resolve();
+            if (document.visibilityState === 'hidden') return Promise.resolve();
+            if (messageBadgeRequestInFlight) return Promise.resolve();
             const airportId = currentMessageAirportId();
             const params = new URLSearchParams();
             params.set('summary', '1');
@@ -1710,8 +1738,14 @@ body[data-display-mode="standalone"] .logo-text-main {
             if (lastSeenId > 0) {
                 params.set('last_seen_id', String(lastSeenId));
             }
+            messageBadgeRequestInFlight = true;
             return window.fetch('/api/mesajlar?' + params.toString())
-                .then(function (response) { return response.json(); })
+                .then(function (response) {
+                    if (response.status === 429) {
+                        return null;
+                    }
+                    return response.json();
+                })
                 .then(function (data) {
                     if (!data || data.status !== 'success') return;
                     renderMessageAirports(data);
@@ -1719,6 +1753,9 @@ body[data-display-mode="standalone"] .logo-text-main {
                 })
                 .catch(function () {
                     // Badge yüklenemediğinde sessiz devam.
+                })
+                .finally(function () {
+                    messageBadgeRequestInFlight = false;
                 });
         }
 

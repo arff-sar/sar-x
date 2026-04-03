@@ -323,6 +323,11 @@ def api_asset_meter_history(asset_id):
 
 @api_bp.route("/api/mesajlar", methods=["GET"])
 @login_required
+@limiter.limit(
+    lambda: current_app.config.get("MESSAGE_READ_RATE_LIMIT", "30 per minute"),
+    methods=["GET"],
+    override_defaults=True,
+)
 def api_airport_messages():
     _prune_expired_airport_messages()
 
