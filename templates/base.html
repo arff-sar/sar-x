@@ -948,10 +948,33 @@ body[data-display-mode="standalone"] .logo-text-main {
         const pwaInstallButton = document.getElementById('pwaInstallButton');
         const pwaInstallHint = document.getElementById('pwaInstallHint');
         const pwaInstallAction = document.getElementById('pwaInstallAction');
+        const canonicalPublicBaseUrl = {{ (config.PUBLIC_BASE_URL or '')|tojson }};
+        const canonicalPublicOrigin = (function () {
+            if (!canonicalPublicBaseUrl) return '';
+            try {
+                return new URL(canonicalPublicBaseUrl).origin;
+            } catch (error) {
+                return '';
+            }
+        })();
+        const userAgent = String(window.navigator.userAgent || '');
+        const isIOSDevice = /iphone|ipad|ipod/i.test(userAgent)
+            || (userAgent.includes('Mac') && 'ontouchend' in document);
         let deferredInstallPrompt = null;
 
         const isStandaloneMode = function () {
             return document.body && document.body.getAttribute('data-display-mode') === 'standalone';
+        };
+
+        const buildCanonicalInstallUrl = function () {
+            if (!canonicalPublicOrigin) return '';
+            const suffix = `${window.location.pathname || '/'}${window.location.search || ''}${window.location.hash || ''}`;
+            return `${canonicalPublicOrigin}${suffix}`;
+        };
+
+        const isAlreadyCanonicalOrigin = function () {
+            if (!canonicalPublicOrigin) return true;
+            return window.location.origin === canonicalPublicOrigin;
         };
 
         const syncSidebarState = function (isOpen) {
@@ -976,6 +999,11 @@ body[data-display-mode="standalone"] .logo-text-main {
             if (deferredInstallPrompt) {
                 pwaInstallAction.textContent = 'Yükle';
                 pwaInstallHint.textContent = 'Telefona ekleyin, hızlı erişim sağlayın.';
+                return;
+            }
+            if (isIOSDevice) {
+                pwaInstallAction.textContent = 'Paylaş';
+                pwaInstallHint.textContent = 'iOS: Paylaş menüsü > Ana Ekrana Ekle.';
                 return;
             }
             pwaInstallAction.textContent = 'Yardım';
@@ -1015,6 +1043,25 @@ body[data-display-mode="standalone"] .logo-text-main {
                         syncPwaInstallState();
                     }
                     return;
+                }
+
+                const canonicalInstallUrl = buildCanonicalInstallUrl();
+                if (!isAlreadyCanonicalOrigin() && canonicalInstallUrl) {
+                    window.location.assign(canonicalInstallUrl);
+                    return;
+                }
+
+                if (isIOSDevice && typeof window.navigator.share === 'function') {
+                    try {
+                        await window.navigator.share({
+                            title: 'SAR-X',
+                            text: 'SAR-X saha modunu ana ekrana ekleyin.',
+                            url: canonicalInstallUrl || window.location.href,
+                        });
+                        return;
+                    } catch (shareError) {
+                        // Kullanıcı paylaşımı kapatırsa yönerge toast'u gösterilir.
+                    }
                 }
 
                 if (typeof window.showToast === 'function') {
