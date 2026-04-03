@@ -119,6 +119,30 @@ def test_expired_airport_messages_are_pruned_without_archive(client, app):
         assert IslemLogArchive.query.count() == 0
 
 
+def test_airport_message_summary_honors_last_seen_id_for_badge_count(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Sivas Havalimanı", kodu="VAS")
+        user = KullaniciFactory(rol="personel", is_deleted=False, kullanici_adi="badge-user@sarx.com", havalimani=airport)
+        db.session.add_all([airport, user])
+        db.session.flush()
+        first = AirportMessage(havalimani_id=airport.id, user_id=user.id, message_text="Vardiya-1")
+        second = AirportMessage(havalimani_id=airport.id, user_id=user.id, message_text="Vardiya-2")
+        db.session.add_all([first, second])
+        db.session.commit()
+        user_id = user.id
+        first_id = first.id
+        second_id = second.id
+
+    _login(client, user_id)
+    summary = client.get(f"/api/mesajlar?summary=1&last_seen_id={first_id}")
+    payload = summary.get_json()
+
+    assert summary.status_code == 200
+    assert payload["status"] == "success"
+    assert payload["latest_message_id"] == second_id
+    assert payload["new_count"] == 1
+
+
 def test_error_report_is_created_manually_from_error_screen(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
 

@@ -12,9 +12,13 @@
   .box-filter-actions .btn { min-height:44px; display:inline-flex; align-items:center; justify-content:center; }
   .box-create-form .btn { min-height:44px; display:inline-flex; align-items:center; justify-content:center; }
   .box-content-col { width:92px; text-align:center; }
+  .box-select-col { width:72px; text-align:center; }
   .box-content-count { text-align:center; font-weight:700; }
   .box-airport-code { font-family:var(--mono); font-size:12.5px; font-weight:700; }
   .box-actions-shell { display:flex; justify-content:flex-end; width:100%; }
+  .box-bulk-checkbox { width:18px; height:18px; accent-color:#1d4ed8; cursor:pointer; }
+  .box-toolbar-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+  .box-toolbar-actions form { display:inline-flex; }
   @media (max-width: 900px) {
     .box-toolbar-row,
     .box-filter-grid,
@@ -22,6 +26,8 @@
     .box-actions-shell { justify-content:stretch; }
     .box-filter-actions .btn,
     .box-create-form .btn { width:100%; }
+    .box-toolbar-actions { justify-content:stretch; }
+    .box-toolbar-actions .btn { width:100%; }
   }
 </style>
 {% endblock %}
@@ -67,24 +73,33 @@
                 </div>
             </form>
 
-            {% if can_create_box %}
             <div class="box-actions-shell">
-                <form method="POST" action="{{ url_for('inventory.kutu_olustur') }}" class="box-create-form">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input
-                        type="hidden"
-                        name="havalimani_id"
-                        id="boxCreateAirportInput"
-                        value="{{ selected_airport or current_user.havalimani_id or (havalimanlari[0].id if havalimanlari else '') }}"
-                    >
-                    <div class="form-group" style="margin:0;">
-                        <label>Marka</label>
-                        <input type="text" name="marka" class="form-control" placeholder="Örn. Pelican">
-                    </div>
-                    <button type="submit" class="btn btn-primary">➕ Yeni Kutu Oluştur</button>
-                </form>
+                <div class="box-toolbar-actions">
+                    {% if can_create_box %}
+                    <form method="POST" action="{{ url_for('inventory.kutu_olustur') }}" class="box-create-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input
+                            type="hidden"
+                            name="havalimani_id"
+                            id="boxCreateAirportInput"
+                            value="{{ selected_airport or current_user.havalimani_id or (havalimanlari[0].id if havalimanlari else '') }}"
+                        >
+                        <div class="form-group" style="margin:0;">
+                            <label>Marka</label>
+                            <input type="text" name="marka" class="form-control" placeholder="Örn. Pelican">
+                        </div>
+                        <button type="submit" class="btn btn-primary">➕ Yeni Kutu Oluştur</button>
+                    </form>
+                    {% endif %}
+                    {% if has_permission('qr.generate') %}
+                    <form id="boxBulkQrForm" method="POST" action="{{ url_for('inventory.qr_uret_toplu_kutular') }}" target="_blank">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div id="boxBulkQrSelectedInputs"></div>
+                        <button type="submit" class="btn btn-secondary" id="boxBulkQrPrintButton" disabled>🖨️ Toplu Kutu QR (0/10)</button>
+                    </form>
+                    {% endif %}
+                </div>
             </div>
-            {% endif %}
         </div>
     </div>
 </div>
@@ -98,6 +113,7 @@
             <table class="data-table">
                 <thead>
                     <tr>
+                        <th class="box-select-col">Seç</th>
                         <th>Kod</th>
                         <th>Marka</th>
                         <th>Havalimanı</th>
@@ -108,6 +124,13 @@
                 <tbody>
                     {% for kutu in kutular %}
                     <tr>
+                        <td class="box-select-col">
+                            {% if has_permission('qr.generate') %}
+                            <input type="checkbox" class="box-bulk-checkbox" data-box-id="{{ kutu.id }}" aria-label="{{ kutu.kodu }} toplu yazdırma seçimi">
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
                         <td style="font-family:var(--mono); font-weight:700;">{{ kutu.kodu }}</td>
                         <td>{{ kutu.marka or '-' }}</td>
                         <td>
@@ -131,7 +154,7 @@
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="5" style="text-align:center; color:var(--text3); padding:28px;">Kayıtlı kutu bulunmuyor.</td>
+                        <td colspan="6" style="text-align:center; color:var(--text3); padding:28px;">Kayıtlı kutu bulunmuyor.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -146,14 +169,92 @@
     (function () {
         const airportFilter = document.getElementById('boxAirportFilter');
         const createAirportInput = document.getElementById('boxCreateAirportInput');
-        if (!airportFilter || !createAirportInput) return;
+        if (airportFilter && createAirportInput) {
+            const syncAirportSelection = function () {
+                createAirportInput.value = airportFilter.value || createAirportInput.defaultValue || '';
+            };
+            airportFilter.addEventListener('change', syncAirportSelection);
+            syncAirportSelection();
+        }
 
-        const syncAirportSelection = function () {
-            createAirportInput.value = airportFilter.value || createAirportInput.defaultValue || '';
-        };
+        const bulkQrForm = document.getElementById('boxBulkQrForm');
+        const bulkQrButton = document.getElementById('boxBulkQrPrintButton');
+        const bulkQrInputs = document.getElementById('boxBulkQrSelectedInputs');
+        const bulkQrCheckboxes = Array.from(document.querySelectorAll('.box-bulk-checkbox[data-box-id]'));
+        const bulkQrLimit = 10;
 
-        airportFilter.addEventListener('change', syncAirportSelection);
-        syncAirportSelection();
+        if (bulkQrForm && bulkQrButton && bulkQrInputs && bulkQrCheckboxes.length) {
+            const listSelectedBoxIds = function () {
+                const selected = [];
+                bulkQrCheckboxes.forEach(function (checkbox) {
+                    if (!checkbox.checked) return;
+                    const boxId = String(checkbox.dataset.boxId || '').trim();
+                    if (boxId && !selected.includes(boxId)) {
+                        selected.push(boxId);
+                    }
+                });
+                return selected;
+            };
+
+            const renderBulkHiddenInputs = function (boxIds) {
+                bulkQrInputs.innerHTML = '';
+                boxIds.forEach(function (boxId) {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'box_ids';
+                    input.value = boxId;
+                    bulkQrInputs.appendChild(input);
+                });
+            };
+
+            const refreshBulkButtonState = function () {
+                const selectedIds = listSelectedBoxIds();
+                renderBulkHiddenInputs(selectedIds);
+                bulkQrButton.disabled = !selectedIds.length;
+                bulkQrButton.textContent = '🖨️ Toplu Kutu QR (' + selectedIds.length + '/' + bulkQrLimit + ')';
+            };
+
+            bulkQrCheckboxes.forEach(function (checkbox) {
+                checkbox.addEventListener('change', function () {
+                    if (checkbox.checked && listSelectedBoxIds().length > bulkQrLimit) {
+                        checkbox.checked = false;
+                        if (typeof window.showToast === 'function') {
+                            window.showToast({
+                                type: 'warning',
+                                title: 'Seçim sınırı',
+                                message: 'Bir sayfada en fazla 10 kutu seçebilirsiniz.',
+                                duration: 2800,
+                            });
+                        }
+                        return;
+                    }
+                    refreshBulkButtonState();
+                });
+            });
+
+            bulkQrForm.addEventListener('submit', function (event) {
+                const selectedIds = listSelectedBoxIds();
+                if (!selectedIds.length) {
+                    event.preventDefault();
+                    if (typeof window.showToast === 'function') {
+                        window.showToast({
+                            type: 'warning',
+                            title: 'Seçim gerekli',
+                            message: 'Toplu yazdırma için en az bir kutu seçin.',
+                            duration: 2600,
+                        });
+                    }
+                    return;
+                }
+                if (selectedIds.length > bulkQrLimit) {
+                    event.preventDefault();
+                    return;
+                }
+                renderBulkHiddenInputs(selectedIds);
+            });
+
+            refreshBulkButtonState();
+        }
     })();
 </script>
 {% endblock %}

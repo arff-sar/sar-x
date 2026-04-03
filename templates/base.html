@@ -202,6 +202,25 @@ body.message-panel-open .message-launch-btn { opacity: 0; pointer-events: none; 
 .qr-scan-status[data-level="warning"]::before { background: #ea580c; }
 .qr-scan-status[data-level="danger"]::before { background: #dc2626; }
 .qr-scan-status[data-level="success"]::before { background: #16a34a; }
+.passkey-onboarding-panel[hidden] { display: none !important; }
+.passkey-onboarding-panel {
+  position: fixed;
+  right: 18px;
+  bottom: 20px;
+  z-index: 235;
+  width: min(380px, calc(100vw - 24px));
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.24);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+.passkey-onboarding-title { font-size: 14px; font-weight: 800; color: var(--navy); }
+.passkey-onboarding-copy { font-size: 12px; color: var(--text2); line-height: 1.45; }
+.passkey-onboarding-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.passkey-onboarding-actions .btn { min-height: 38px; }
 
 @keyframes qrScanLine {
   0% { transform: translateY(14%); opacity: 0; }
@@ -414,6 +433,12 @@ td.row-actions > * + *, .data-table td.row-actions > * + * { margin-left: 8px; }
   .qr-scan-guide { font-size: 10.5px; max-width: calc(100% - 20px); text-align: center; white-space: normal; }
   .qr-scan-frame { width: min(72vw, 220px); }
   .qr-scan-status { font-size: 11.5px; }
+  .passkey-onboarding-panel {
+    right: 12px;
+    left: 12px;
+    bottom: 12px;
+    width: auto;
+  }
   table, .data-table { min-width: 520px; }
   .topbar-end { gap: 8px; }
   .message-launch-btn { min-width: 52px; padding: 0 14px; }
@@ -516,7 +541,7 @@ body[data-display-mode="standalone"] .logo-text-main {
             <div style="font-size:11px; color:var(--text3); margin-top:4px; line-height:1.45;">{{ item.message }}</div>
           </a>
           {% else %}
-          <div style="padding:12px; font-size:12px; color:var(--text3);">Yeni bildirim yok.</div>
+          <div class="notification-empty-state" style="padding:12px; font-size:12px; color:var(--text3);">Yeni bildirim yok.</div>
           {% endfor %}
         </div>
       </div>
@@ -719,6 +744,7 @@ body[data-display-mode="standalone"] .logo-text-main {
   </main>
 </div>
 
+<script src="{{ url_for('static', filename='vendor/jsqr.min.js') }}"></script>
 <script>
     (function () {
         const standaloneMedia = typeof window.matchMedia === 'function'
@@ -1216,6 +1242,53 @@ body[data-display-mode="standalone"] .logo-text-main {
             selectedAirportId: '',
             airports: []
         };
+        const MESSAGE_BADGE_STORAGE_PREFIX = 'sarx-airport-message-last-seen';
+        const currentMessageUserId = {{ current_user.id if current_user.is_authenticated else 0 }};
+
+        function getMessageScopeKey(airportId) {
+            const normalized = String(airportId || '').trim();
+            return normalized || 'all';
+        }
+
+        function getMessageSeenStorageKey(scopeKey) {
+            return MESSAGE_BADGE_STORAGE_PREFIX + ':' + String(currentMessageUserId || 0) + ':' + String(scopeKey || 'all');
+        }
+
+        function readStoredMessageLastSeenId(scopeKey) {
+            try {
+                if (!window.localStorage) return 0;
+                const rawValue = window.localStorage.getItem(getMessageSeenStorageKey(scopeKey));
+                const parsed = Number.parseInt(String(rawValue || '0'), 10);
+                return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+            } catch (_error) {
+                return 0;
+            }
+        }
+
+        function writeStoredMessageLastSeenId(scopeKey, messageId) {
+            try {
+                if (!window.localStorage) return;
+                const safeMessageId = Math.max(Number(messageId) || 0, 0);
+                if (!safeMessageId) return;
+                const storageKey = getMessageSeenStorageKey(scopeKey);
+                const previous = readStoredMessageLastSeenId(scopeKey);
+                const nextValue = Math.max(previous, safeMessageId);
+                window.localStorage.setItem(storageKey, String(nextValue));
+            } catch (_error) {
+                // localStorage kapalıysa sessiz devam.
+            }
+        }
+
+        function currentMessageScopeKey() {
+            return getMessageScopeKey(currentMessageAirportId());
+        }
+
+        function markCurrentScopeMessagesAsSeen(latestMessageId) {
+            const safeLatestId = Math.max(Number(latestMessageId) || 0, 0);
+            if (!safeLatestId) return;
+            writeStoredMessageLastSeenId(currentMessageScopeKey(), safeLatestId);
+            syncMessageBadge(0);
+        }
 
         const notificationToggle = document.getElementById('notificationToggle');
         const notificationPanel = document.getElementById('notificationPanel');
@@ -1252,6 +1325,18 @@ body[data-display-mode="standalone"] .logo-text-main {
                 const notificationCount = notificationToggle.querySelector('.notification-count');
                 if (notificationCount) {
                     notificationCount.remove();
+                }
+                notificationPanel.querySelectorAll('.notification-item').forEach(function (node) {
+                    node.remove();
+                });
+                if (!notificationPanel.querySelector('.notification-empty-state')) {
+                    const empty = document.createElement('div');
+                    empty.className = 'notification-empty-state';
+                    empty.style.padding = '12px';
+                    empty.style.fontSize = '12px';
+                    empty.style.color = 'var(--text3)';
+                    empty.textContent = 'Yeni bildirim yok.';
+                    notificationPanel.appendChild(empty);
                 }
             };
 
@@ -1430,6 +1515,9 @@ body[data-display-mode="standalone"] .logo-text-main {
         let qrMediaStream = null;
         let qrAnimationFrameId = 0;
         let qrDetector = null;
+        let qrDecodeMode = "none";
+        let qrCanvas = null;
+        let qrCanvasCtx = null;
         let qrScanRunning = false;
         let qrDetectBusy = false;
         let qrRedirectTimer = 0;
@@ -1580,7 +1668,15 @@ body[data-display-mode="standalone"] .logo-text-main {
         function fetchMessages() {
             if (!messagePanel || messagePanel.hidden) return Promise.resolve();
             const airportId = currentMessageAirportId();
-            const query = airportId ? ('?airport_id=' + encodeURIComponent(airportId)) : '';
+            const params = new URLSearchParams();
+            if (airportId) {
+                params.set('airport_id', airportId);
+            }
+            const lastSeenId = readStoredMessageLastSeenId(getMessageScopeKey(airportId));
+            if (lastSeenId > 0) {
+                params.set('last_seen_id', String(lastSeenId));
+            }
+            const query = params.toString() ? ('?' + params.toString()) : '';
             updateMessageStatus('Mesajlar yenileniyor.', 'info');
             return window.fetch('/api/mesajlar' + query)
                 .then(function (response) { return response.json(); })
@@ -1590,7 +1686,11 @@ body[data-display-mode="standalone"] .logo-text-main {
                     }
                     renderMessageAirports(data);
                     renderMessages(Array.isArray(data.messages) ? data.messages : []);
-                    updateMessageBadge(data.new_count);
+                    if (Number(data.latest_message_id || 0) > 0) {
+                        markCurrentScopeMessagesAsSeen(data.latest_message_id);
+                    } else {
+                        updateMessageBadge(0);
+                    }
                     updateMessageStatus('Mesajlar güncel.', 'success');
                 })
                 .catch(function () {
@@ -1605,6 +1705,10 @@ body[data-display-mode="standalone"] .logo-text-main {
             params.set('summary', '1');
             if (airportId) {
                 params.set('airport_id', airportId);
+            }
+            const lastSeenId = readStoredMessageLastSeenId(getMessageScopeKey(airportId));
+            if (lastSeenId > 0) {
+                params.set('last_seen_id', String(lastSeenId));
             }
             return window.fetch('/api/mesajlar?' + params.toString())
                 .then(function (response) { return response.json(); })
@@ -1659,6 +1763,8 @@ body[data-display-mode="standalone"] .logo-text-main {
         const stopQrStream = function () {
             qrScanRunning = false;
             qrDetectBusy = false;
+            qrDecodeMode = "none";
+            qrDetector = null;
             if (qrRedirectTimer) {
                 window.clearTimeout(qrRedirectTimer);
                 qrRedirectTimer = 0;
@@ -1687,6 +1793,52 @@ body[data-display-mode="standalone"] .logo-text-main {
             }
             toggleQrVideoState(false);
             setScanVisualState("idle");
+        };
+
+        const ensureQrCanvasContext = function () {
+            if (!qrCanvas) {
+                qrCanvas = document.createElement("canvas");
+            }
+            if (!qrCanvasCtx) {
+                try {
+                    qrCanvasCtx = qrCanvas.getContext("2d", { willReadFrequently: true });
+                } catch (_canvasError) {
+                    qrCanvasCtx = qrCanvas.getContext("2d");
+                }
+            }
+            return qrCanvasCtx;
+        };
+
+        const ensureQrDecoder = async function () {
+            qrDecodeMode = "none";
+            qrDetector = null;
+
+            if (typeof window.BarcodeDetector === "function") {
+                try {
+                    const formats = typeof window.BarcodeDetector.getSupportedFormats === "function"
+                        ? await window.BarcodeDetector.getSupportedFormats()
+                        : [];
+                    const hasExplicitQrSupport = !Array.isArray(formats) || !formats.length || formats.includes("qr_code");
+                    if (hasExplicitQrSupport) {
+                        try {
+                            qrDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+                        } catch (_detectorInitError) {
+                            qrDetector = new window.BarcodeDetector();
+                        }
+                        qrDecodeMode = "barcode";
+                        return true;
+                    }
+                } catch (_detectorSupportError) {
+                    // Destek sorgusu başarısız olursa jsQR fallback denenir.
+                }
+            }
+
+            if (typeof window.jsQR === "function") {
+                qrDecodeMode = "jsqr";
+                return true;
+            }
+
+            return false;
         };
 
         const closeQrPanel = function () {
@@ -1766,21 +1918,51 @@ body[data-display-mode="standalone"] .logo-text-main {
         };
 
         const scanFrame = async function () {
-            if (!qrScanRunning || !qrScanVideo || !qrDetector) return;
+            if (!qrScanRunning || !qrScanVideo) return;
             if (qrDetectBusy || qrScanVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
                 qrAnimationFrameId = window.requestAnimationFrame(scanFrame);
                 return;
             }
             qrDetectBusy = true;
             try {
-                const results = await qrDetector.detect(qrScanVideo);
-                if (Array.isArray(results) && results.length) {
-                    const firstMatch = results.find(function (item) {
-                        return item && typeof item.rawValue === "string" && item.rawValue.trim();
-                    });
-                    if (firstMatch) {
-                        handleQrDetection(firstMatch.rawValue);
-                        return;
+                if (qrDecodeMode === "barcode" && qrDetector) {
+                    const results = await qrDetector.detect(qrScanVideo);
+                    if (Array.isArray(results) && results.length) {
+                        const firstMatch = results.find(function (item) {
+                            return item && typeof item.rawValue === "string" && item.rawValue.trim();
+                        });
+                        if (firstMatch) {
+                            handleQrDetection(firstMatch.rawValue);
+                            return;
+                        }
+                    }
+                } else if (qrDecodeMode === "jsqr" && typeof window.jsQR === "function") {
+                    const context2d = ensureQrCanvasContext();
+                    const videoWidth = Number(qrScanVideo.videoWidth || 0);
+                    const videoHeight = Number(qrScanVideo.videoHeight || 0);
+                    if (context2d && videoWidth > 0 && videoHeight > 0) {
+                        const maxDimension = 960;
+                        let drawWidth = videoWidth;
+                        let drawHeight = videoHeight;
+                        const largestDimension = Math.max(videoWidth, videoHeight);
+                        if (largestDimension > maxDimension) {
+                            const scale = maxDimension / largestDimension;
+                            drawWidth = Math.max(Math.floor(videoWidth * scale), 1);
+                            drawHeight = Math.max(Math.floor(videoHeight * scale), 1);
+                        }
+                        if (qrCanvas.width !== drawWidth || qrCanvas.height !== drawHeight) {
+                            qrCanvas.width = drawWidth;
+                            qrCanvas.height = drawHeight;
+                        }
+                        context2d.drawImage(qrScanVideo, 0, 0, drawWidth, drawHeight);
+                        const frame = context2d.getImageData(0, 0, drawWidth, drawHeight);
+                        const decoded = window.jsQR(frame.data, drawWidth, drawHeight, {
+                            inversionAttempts: "attemptBoth",
+                        });
+                        if (decoded && typeof decoded.data === "string" && decoded.data.trim()) {
+                            handleQrDetection(decoded.data);
+                            return;
+                        }
                     }
                 }
             } catch (error) {
@@ -1815,41 +1997,27 @@ body[data-display-mode="standalone"] .logo-text-main {
                 qrScanPlaceholder.textContent = "Kamera API desteği bulunamadı.";
                 return;
             }
-            if (typeof window.BarcodeDetector !== "function") {
-                setScanVisualState("warning");
-                updateQrStatus("Bu tarayıcıda yerleşik QR tarayıcı desteği yok.", "warning");
-                qrScanPlaceholder.textContent = "Tarayıcı BarcodeDetector API desteği sunmuyor.";
-                return;
-            }
 
             try {
-                const formats = typeof window.BarcodeDetector.getSupportedFormats === "function"
-                    ? await window.BarcodeDetector.getSupportedFormats()
-                    : [];
-
-                const hasExplicitQrSupport = !Array.isArray(formats) || !formats.length || formats.includes("qr_code");
-                if (!hasExplicitQrSupport) {
-                    setScanVisualState("warning");
-                    updateQrStatus("QR format desteği sınırlı görünüyor, yine de tarama deneniyor.", "warning");
-                    qrScanPlaceholder.textContent = "QR algılama hazırlanıyor.";
-                }
-
-                try {
-                    qrDetector = hasExplicitQrSupport
-                        ? new window.BarcodeDetector({ formats: ["qr_code"] })
-                        : new window.BarcodeDetector();
-                } catch (_detectorInitError) {
-                    qrDetector = new window.BarcodeDetector();
-                }
-
                 qrMediaStream = await navigator.mediaDevices.getUserMedia({
                     video: {
-                        facingMode: "environment",
+                        facingMode: { ideal: "environment" },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
                     },
                     audio: false,
                 });
                 qrScanVideo.srcObject = qrMediaStream;
                 await qrScanVideo.play();
+                const decoderReady = await ensureQrDecoder();
+                if (!decoderReady) {
+                    stopQrStream();
+                    setScanVisualState("warning");
+                    const unsupportedMessage = "Bu tarayıcıda QR tarama çözücüsü başlatılamadı.";
+                    updateQrStatus(unsupportedMessage, "warning");
+                    qrScanPlaceholder.textContent = unsupportedMessage;
+                    return;
+                }
                 qrScanRunning = true;
                 toggleQrVideoState(true);
                 setScanVisualState("scanning");
@@ -1939,28 +2107,42 @@ body[data-display-mode="standalone"] .logo-text-main {
     })();
 </script>
 {% if passkey_enabled %}
-<button type="button" id="passkeyRegisterAutoTrigger" hidden aria-hidden="true" tabindex="-1"></button>
+<div class="passkey-onboarding-panel" id="passkeyOnboardingPanel" hidden aria-live="polite">
+    <div class="passkey-onboarding-title">Biyometrik giriş hazır</div>
+    <div class="passkey-onboarding-copy">Bu cihazda bir kez etkinleştirildiğinde sonraki girişlerde kullanıcı adı, şifre ve doğrulama kodu girmeden giriş yapabilirsiniz.</div>
+    <div class="passkey-onboarding-actions">
+        <button type="button" class="btn btn-secondary" id="passkeyOnboardingDismiss">Daha Sonra</button>
+        <button type="button" class="btn btn-primary" id="passkeyRegisterAutoTrigger">Biyometrik Girişi Etkinleştir</button>
+    </div>
+</div>
 <script src="{{ url_for('static', filename='passkey.js') }}"></script>
 <script>
+    const passkeyOnboardingPanel = document.getElementById('passkeyOnboardingPanel');
+    const passkeyOnboardingDismiss = document.getElementById('passkeyOnboardingDismiss');
+    const shouldAutoPrompt = {{ "true" if passkey_auto_prompt else "false" }};
     const passkeyRegistrationSetup = window.SARXPasskey.initRegistration({
         buttonId: 'passkeyRegisterAutoTrigger',
         beginUrl: '{{ passkey_register_begin_url }}',
         finishUrl: '{{ passkey_register_finish_url }}',
-        keepHidden: true
+        onSuccess: function () {
+            if (passkeyOnboardingPanel) {
+                passkeyOnboardingPanel.hidden = true;
+            }
+        }
     });
     (function () {
-        const shouldAutoPrompt = {{ "true" if passkey_auto_prompt else "false" }};
-        if (!shouldAutoPrompt) return;
+        if (passkeyOnboardingDismiss) {
+            passkeyOnboardingDismiss.addEventListener('click', function () {
+                if (passkeyOnboardingPanel) {
+                    passkeyOnboardingPanel.hidden = true;
+                }
+            });
+        }
+
+        if (!shouldAutoPrompt || !passkeyOnboardingPanel) return;
         Promise.resolve(passkeyRegistrationSetup).then(function (registrationReady) {
             if (!registrationReady) return;
-            const registerButton = document.getElementById('passkeyRegisterAutoTrigger');
-            if (!registerButton) return;
-            window.setTimeout(function () {
-                const confirmMessage = "Sonraki girişlerde şifre ve doğrulama kodu girmemek için bu cihazda biyometrik giriş etkinleştirilsin mi?";
-                if (window.confirm(confirmMessage)) {
-                    registerButton.click();
-                }
-            }, 480);
+            passkeyOnboardingPanel.hidden = false;
         });
     })();
 </script>

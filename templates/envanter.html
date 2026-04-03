@@ -12,13 +12,35 @@
 .inventory-table-compact td {
     padding: 12px;
 }
+.inventory-table-compact .col-select { width: 58px; text-align: center; }
 .inventory-table-compact .col-no { width: 64px; text-align: center; }
-.inventory-table-compact .col-material { width: 22%; }
-.inventory-table-compact .col-airport { width: 12%; text-align: center; }
-.inventory-table-compact .col-code { width: 18%; text-align: center; }
-.inventory-table-compact .col-status { width: 12%; text-align: center; }
-.inventory-table-compact .col-maintenance { width: 18%; text-align: center; }
-.inventory-table-compact .col-action { width: 16%; text-align: right; }
+.inventory-table-compact .col-material { width: 20%; }
+.inventory-table-compact .col-airport { width: 11%; text-align: center; }
+.inventory-table-compact .col-code { width: 16%; text-align: center; }
+.inventory-table-compact .col-status { width: 11%; text-align: center; }
+.inventory-table-compact .col-maintenance { width: 16%; text-align: center; }
+.inventory-table-compact .col-action { width: 14%; text-align: right; }
+.inventory-bulk-checkbox {
+    width: 18px;
+    height: 18px;
+    accent-color: #1d4ed8;
+    cursor: pointer;
+}
+.inventory-bulk-select-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 40px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #fff;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--text2);
+    cursor: pointer;
+}
 
 .inventory-page-actions {
     display: flex;
@@ -353,6 +375,7 @@
     .inventory-mobile-actions {
         display: grid;
         grid-template-columns: minmax(0, 1fr) 72px minmax(0, 140px);
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 8px;
         align-items: center;
     }
@@ -362,6 +385,11 @@
         width: 100%;
         margin: 0;
         font-size: 11.5px;
+    }
+    .inventory-mobile-actions .inventory-bulk-select-pill {
+        width: 100%;
+        min-height: 40px;
+        justify-content: center;
     }
     .inventory-mobile-detail-link {
         background: var(--navy);
@@ -472,6 +500,13 @@
         <a href="{{ url_for('inventory.envanter_excel') }}" class="btn btn-secondary" style="color: #1d6f42;">📊 Excel</a>
         <a href="{{ url_for('inventory.envanter_pdf') }}" class="btn btn-secondary" style="color: #c62828;">📄 PDF</a>
         {% endif %}
+        {% if has_permission('qr.generate') %}
+        <form id="inventoryBulkQrForm" method="POST" action="{{ url_for('inventory.qr_uret_toplu_envanter') }}" target="_blank" style="display:inline-flex;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div id="inventoryBulkQrSelectedInputs"></div>
+            <button type="submit" class="btn btn-secondary" id="inventoryBulkQrPrintButton" disabled>🖨️ Toplu QR Yazdır (0/18)</button>
+        </form>
+        {% endif %}
         {% if has_permission('reports.view') %}
         <a href="{{ url_for('reports.index', report='inventory') }}" class="btn btn-secondary">📈 Rapor Merkezi</a>
         {% endif %}
@@ -547,6 +582,7 @@
         <table class="data-table" id="inventoryTable">
             <thead>
                 <tr>
+                    <th class="col-select">Seç</th>
                     <th class="col-no">Sıra No</th>
                     <th class="col-material">Malzeme</th>
                     <th class="col-airport">Birim</th>
@@ -567,6 +603,13 @@
                 {% set demirbas_no = linked_asset.asset_tag if linked_asset and linked_asset.asset_tag else '-' %}
                 {% set maintenance_label = maintenance_label_tr(m.gelecek_bakim_tarihi, today=today) %}
                 <tr class="inventory-summary-row" data-search-text="{{ m.ad ~ ' ' ~ (m.seri_no or '') ~ ' ' ~ (m.havalimani.kodu if m.havalimani else '') ~ ' ' ~ (linked_asset.asset_code if linked_asset else '') }}">
+                    <td class="col-select" data-label="Seç">
+                        {% if linked_asset and has_permission('qr.generate') %}
+                        <input type="checkbox" class="inventory-bulk-checkbox" data-asset-id="{{ linked_asset.id }}" aria-label="{{ m.ad }} toplu yazdırma seçimi">
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
                     <td class="col-no" data-label="Sıra"><strong>{{ loop.index }}</strong></td>
                     <td class="col-material" data-label="Malzeme">
                         <div class="inventory-material-name">{{ m.ad }}</div>
@@ -620,6 +663,10 @@
                                     data-mobile-qr="1"
                                     aria-label="{{ m.ad }} için QR etiketini yeni sekmede aç"
                                 >QR</a>
+                                <label class="inventory-bulk-select-pill" title="Toplu yazdırma için seç">
+                                    <input type="checkbox" class="inventory-bulk-checkbox" data-asset-id="{{ linked_asset.id }}" aria-label="{{ m.ad }} toplu yazdırma seçimi">
+                                    Seç
+                                </label>
                                 {% else %}
                                 <span class="row-btn inventory-qr-btn inventory-action-disabled" aria-disabled="true" title="Bu kayıt için QR etiketi yok">QR</span>
                                 {% endif %}
@@ -661,7 +708,7 @@
                     </td>
                 </tr>
                 <tr id="{{ panel_id }}" class="inventory-detail-row" aria-hidden="true">
-                    <td colspan="7">
+                    <td colspan="8">
                         <div class="inventory-detail-panel">
                             <div class="inventory-detail-header">
                                 <div>
@@ -738,7 +785,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="7" style="padding: 60px; text-align: center; color: var(--text4);">
+                    <td colspan="8" style="padding: 60px; text-align: center; color: var(--text4);">
                         <div style="font-size: 40px; margin-bottom: 15px; opacity: 0.5;">📦</div>
                         <div style="font-weight: 700; font-size: 16px; color: var(--navy);">Listelenecek envanter kaydı bulunamadı.</div>
                         <div style="font-size: 13px; margin-top: 5px;">Filtreleri genişletin veya yeni bir malzeme ekleyin.</div>
@@ -891,6 +938,108 @@ function filterInventory() {
                 }
             }
         });
+    }
+
+    const bulkQrForm = document.getElementById('inventoryBulkQrForm');
+    const bulkQrButton = document.getElementById('inventoryBulkQrPrintButton');
+    const bulkQrInputs = document.getElementById('inventoryBulkQrSelectedInputs');
+    const bulkQrCheckboxes = Array.from(document.querySelectorAll('.inventory-bulk-checkbox[data-asset-id]'));
+    const bulkQrLimit = 18;
+
+    if (bulkQrForm && bulkQrButton && bulkQrInputs && bulkQrCheckboxes.length) {
+        const listSelectedAssetIds = function () {
+            const seen = new Set();
+            bulkQrCheckboxes.forEach(function (checkbox) {
+                if (!checkbox.checked) return;
+                const id = String(checkbox.dataset.assetId || '').trim();
+                if (id) {
+                    seen.add(id);
+                }
+            });
+            return Array.from(seen);
+        };
+
+        const syncAssetCheckboxes = function (assetId, checked, sourceCheckbox) {
+            bulkQrCheckboxes.forEach(function (checkbox) {
+                if (checkbox === sourceCheckbox) return;
+                if (String(checkbox.dataset.assetId || '') === String(assetId || '')) {
+                    checkbox.checked = Boolean(checked);
+                }
+            });
+        };
+
+        const renderBulkHiddenInputs = function (assetIds) {
+            bulkQrInputs.innerHTML = '';
+            assetIds.forEach(function (assetId) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'asset_ids';
+                input.value = assetId;
+                bulkQrInputs.appendChild(input);
+            });
+        };
+
+        const refreshBulkQrState = function () {
+            const selectedIds = listSelectedAssetIds();
+            renderBulkHiddenInputs(selectedIds);
+            bulkQrButton.disabled = !selectedIds.length;
+            bulkQrButton.textContent = '🖨️ Toplu QR Yazdır (' + selectedIds.length + '/' + bulkQrLimit + ')';
+        };
+
+        bulkQrCheckboxes.forEach(function (checkbox) {
+            checkbox.addEventListener('change', function () {
+                const assetId = String(checkbox.dataset.assetId || '').trim();
+                if (!assetId) return;
+                if (checkbox.checked) {
+                    const selectedIds = listSelectedAssetIds();
+                    if (selectedIds.length > bulkQrLimit) {
+                        checkbox.checked = false;
+                        if (typeof window.showToast === 'function') {
+                            window.showToast({
+                                type: 'warning',
+                                title: 'Seçim sınırı',
+                                message: 'Bir sayfada en fazla 18 ekipman seçebilirsiniz.',
+                                duration: 2800,
+                            });
+                        }
+                        return;
+                    }
+                }
+                syncAssetCheckboxes(assetId, checkbox.checked, checkbox);
+                refreshBulkQrState();
+            });
+        });
+
+        bulkQrForm.addEventListener('submit', function (event) {
+            const selectedIds = listSelectedAssetIds();
+            if (!selectedIds.length) {
+                event.preventDefault();
+                if (typeof window.showToast === 'function') {
+                    window.showToast({
+                        type: 'warning',
+                        title: 'Seçim gerekli',
+                        message: 'Toplu yazdırma için en az bir ekipman seçin.',
+                        duration: 2600,
+                    });
+                }
+                return;
+            }
+            if (selectedIds.length > bulkQrLimit) {
+                event.preventDefault();
+                if (typeof window.showToast === 'function') {
+                    window.showToast({
+                        type: 'warning',
+                        title: 'Seçim sınırı',
+                        message: 'Bir sayfada en fazla 18 ekipman yazdırabilirsiniz.',
+                        duration: 2800,
+                    });
+                }
+                return;
+            }
+            renderBulkHiddenInputs(selectedIds);
+        });
+
+        refreshBulkQrState();
     }
 })();
 
