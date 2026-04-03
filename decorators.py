@@ -1116,7 +1116,7 @@ def get_role_permissions(role):
         granted = set(LEGACY_ROLE_DEFAULT_PERMISSIONS.get(role_key, set()))
     else:
         granted = set(DEFAULT_ROLE_PERMISSIONS.get(canonical, set()))
-    if table_exists("role") and table_exists("permission") and table_exists("role_permission"):
+    if role_key != ROLE_MAINTENANCE and table_exists("role") and table_exists("permission") and table_exists("role_permission"):
         try:
             from models import Permission, RolePermission
 
