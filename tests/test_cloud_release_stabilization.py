@@ -115,6 +115,8 @@ def test_production_deploy_workflow_requires_centralized_rate_limit_backend(app)
     assert "RATELIMIT_STORAGE_URI: ${{ vars.RATELIMIT_STORAGE_URI }}" in workflow
     assert 'Missing production variable RATELIMIT_STORAGE_URI' in workflow
     assert 'RATELIMIT_STORAGE_URI=${RATELIMIT_STORAGE_URI}' in workflow
+    assert 'STORAGE_BACKEND=${STORAGE_BACKEND}' in workflow
+    assert 'GCS_BUCKET_NAME=${GCS_BUCKET_NAME}' in workflow
     assert "RATELIMIT_STORAGE_URI must be a centralized backend in production." in workflow
 
 
