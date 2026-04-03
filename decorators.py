@@ -1152,7 +1152,11 @@ def get_role_permissions(role):
 
     meta = _load_authorization_meta()
     matrix = meta.get("permission_matrix", {})
-    custom = matrix.get(role_key) or matrix.get(canonical) or {}
+    if role_key == ROLE_MAINTENANCE:
+        # Legacy bakım rolü request dışı bağlamda sıfır yetki profilini korur.
+        custom = matrix.get(role_key) or {}
+    else:
+        custom = matrix.get(role_key) or matrix.get(canonical) or {}
     for item in custom.get("allow", []):
         if isinstance(item, str) and item:
             granted.add(item)
