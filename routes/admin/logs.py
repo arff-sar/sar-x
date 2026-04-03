@@ -369,6 +369,7 @@ def _serialize_log_row(log):
     outcome_meta = OUTCOME_META.get(outcome_key, OUTCOME_META["info"])
     target_model = getattr(log, "target_model", None)
     target_id = getattr(log, "target_id", None)
+    event_timestamp = getattr(log, "zaman", None) or getattr(log, "created_at", None)
 
     if target_model:
         record_label = _label_target_model(target_model)
@@ -382,8 +383,8 @@ def _serialize_log_row(log):
 
     return SimpleNamespace(
         id=log.id,
-        zaman=log.zaman,
-        zaman_label=_format_timestamp_label(getattr(log, "zaman", None)),
+        zaman=event_timestamp,
+        zaman_label=_format_timestamp_label(event_timestamp, empty_label="Tarih bilgisi yok"),
         user_label=_resolve_actor_label(log),
         operation_label=_label_event_type(getattr(log, "islem_tipi", None)),
         operation_note="Önceki sistem işlemi" if outcome_key == "legacy" else "İşlem kategorisi",

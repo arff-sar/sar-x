@@ -298,8 +298,13 @@ def log_kaydet(
     for field_name, value in optional_fields.items():
         if column_exists("islem_log", field_name):
             payload[field_name] = value
+    timestamp_value = extra_fields.get("zaman") or _log_timestamp_now()
     if column_exists("islem_log", "zaman"):
-        payload["zaman"] = extra_fields.get("zaman") or _log_timestamp_now()
+        payload["zaman"] = timestamp_value
+    if column_exists("islem_log", "created_at"):
+        payload["created_at"] = extra_fields.get("created_at") or timestamp_value
+    if column_exists("islem_log", "updated_at"):
+        payload["updated_at"] = extra_fields.get("updated_at") or timestamp_value
     if column_exists("islem_log", "kullanici_id") and extra_fields.get("user_id") is not None:
         payload["kullanici_id"] = extra_fields.get("user_id")
     if column_exists("islem_log", "havalimani_id") and extra_fields.get("havalimani_id") is not None:

@@ -440,7 +440,7 @@ def test_excel_import_rejects_unauthorized_airport_row(client, app):
     assert job.failed_rows == 1
 
 
-def test_category_create_requires_system_owner(client, app):
+def test_category_create_allows_legacy_manager_alias(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
     airport = HavalimaniFactory(kodu="TST")
     manager = KullaniciFactory(rol="yetkili", havalimani=airport)
@@ -449,10 +449,9 @@ def test_category_create_requires_system_owner(client, app):
 
     manager_client = app.test_client()
     _login(manager_client, manager)
-    forbidden = manager_client.post("/envanter/kategori-ekle", data={"name": "Özel Kategori"})
-    assert forbidden.status_code == 403
-
-    assert InventoryCategory.query.filter_by(name="Özel Kategori").first() is None
+    created = manager_client.post("/envanter/kategori-ekle", data={"name": "Özel Kategori"})
+    assert created.status_code == 302
+    assert InventoryCategory.query.filter_by(name="Özel Kategori", is_deleted=False).first() is not None
 
 
 def test_central_template_create_permission(client, app):
