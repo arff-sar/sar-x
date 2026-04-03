@@ -195,6 +195,70 @@ def test_malzeme_ekle_allows_non_owner_without_template_selection(client, app):
     assert asset.equipment_template.name == "Şablonsuz Ekipman"
 
 
+def test_malzeme_ekle_allows_blank_required_like_fields_via_fallbacks(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    airport = HavalimaniFactory(kodu="BJV")
+    manager = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False)
+    db.session.add_all([airport, manager])
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(manager.id)
+        sess["_fresh"] = True
+
+    response = client.post(
+        "/malzeme-ekle",
+        data={
+            "ad": "",
+            "kategori": "",
+            "kutu_id": "",
+            "template_id": "",
+            "stok": "",
+            "seri_no": "",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Malzeme başarıyla eklendi" in response.data.decode("utf-8")
+    created_material = (
+        Malzeme.query.filter_by(havalimani_id=airport.id, is_deleted=False)
+        .order_by(Malzeme.id.desc())
+        .first()
+    )
+    assert created_material is not None
+    assert created_material.ad == "Genel Ekipman"
+    assert created_material.kutu is not None
+    assert created_material.kutu.kodu == "BJV-ATANMADI"
+    created_asset = InventoryAsset.query.filter_by(legacy_material_id=created_material.id).first()
+    assert created_asset is not None
+    assert created_asset.equipment_template is not None
+    assert created_asset.equipment_template.name == "Genel Ekipman"
+
+
+def test_envanter_kategori_ekle_allows_team_lead_role(client, app):
+    app.config["WTF_CSRF_ENABLED"] = False
+    airport = HavalimaniFactory(kodu="GZT")
+    team_lead = KullaniciFactory(rol="ekip_sorumlusu", havalimani=airport, is_deleted=False)
+    db.session.add_all([airport, team_lead])
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(team_lead.id)
+        sess["_fresh"] = True
+
+    response = client.post(
+        "/envanter/kategori-ekle",
+        data={"name": "Araç Üstü Sistemler", "description": "Ekip sorumlusu ekledi"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Kategori eklendi." in response.data.decode("utf-8")
+    created = InventoryCategory.query.filter_by(name="Araç Üstü Sistemler", is_deleted=False).first()
+    assert created is not None
+
+
 def test_merkezi_sablon_ekle_accepts_new_category_option(client, app):
     app.config["WTF_CSRF_ENABLED"] = False
     owner = KullaniciFactory(rol="sistem_sorumlusu", is_deleted=False)

@@ -1,5 +1,5 @@
 from extensions import db
-from models import Kutu, Malzeme
+from models import InventoryAsset, Kutu, Malzeme
 from tests.factories import EquipmentTemplateFactory, HavalimaniFactory, InventoryAssetFactory, KutuFactory, KullaniciFactory, MalzemeFactory
 
 
@@ -55,6 +55,40 @@ def test_box_brand_can_be_updated_from_detail(client, app):
         updated = Kutu.query.filter_by(kodu="SZF-SAR-01").first()
         assert updated is not None
         assert updated.marka == "Yeni Marka"
+
+
+def test_box_sequence_can_be_updated_from_detail_form(client, app):
+    with app.app_context():
+        airport = HavalimaniFactory(ad="Samsun Havalimanı", kodu="SZF")
+        manager = KullaniciFactory(rol="yetkili", havalimani=airport, is_deleted=False)
+        box = KutuFactory(kodu="SZF-BOX-01", havalimani=airport, marka="Eski Marka")
+        template = EquipmentTemplateFactory(name="Kurtarma Motoru", brand="ResQ", model_code="R-1")
+        material = MalzemeFactory(ad="Kurtarma Motoru", kutu=box, havalimani=airport, is_deleted=False)
+        asset = InventoryAssetFactory(equipment_template=template, airport=airport, status="aktif", legacy_material=material)
+        db.session.add_all([airport, manager, box, template, material, asset])
+        db.session.commit()
+        manager_id = manager.id
+        material_id = material.id
+
+    _login(client, manager_id)
+    response = client.post(
+        "/kutu/SZF-BOX-01/guncelle",
+        data={"marka": "Yeni Marka", "box_sequence": "7"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+
+    with app.app_context():
+        updated = Kutu.query.filter_by(kodu="SZF-BOX-07").first()
+        assert updated is not None
+        assert updated.marka == "Yeni Marka"
+        linked_asset = (
+            InventoryAsset.query.filter_by(legacy_material_id=material_id, is_deleted=False)
+            .order_by(InventoryAsset.id.desc())
+            .first()
+        )
+        assert linked_asset is not None
+        assert linked_asset.depot_location == "SZF-BOX-07"
 
 
 def test_personnel_only_sees_own_airport_boxes(client, app):

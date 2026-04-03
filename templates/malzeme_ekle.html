@@ -9,6 +9,12 @@
     .muted-help { font-size:12px; color:var(--text3); margin-top:6px; }
     .hidden-block { display:none; }
     .input-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .create-accordion { border:1px solid var(--border); border-radius:16px; background:#fff; overflow:hidden; margin-bottom:16px; }
+    .create-accordion summary { list-style:none; cursor:pointer; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; gap:12px; font-weight:800; color:var(--navy); }
+    .create-accordion summary::-webkit-details-marker { display:none; }
+    .create-accordion summary::after { content:"▾"; font-size:14px; color:var(--text3); transition:transform .2s ease, color .2s ease; }
+    .create-accordion[open] summary::after { transform:rotate(180deg); color:var(--navy); }
+    .create-accordion-body { padding:0 16px 16px; display:grid; gap:12px; border-top:1px solid var(--border); }
     @media (max-width: 980px) {
       .asset-form-grid,
       .input-row { grid-template-columns:1fr; }
@@ -52,44 +58,48 @@
         </div>
 
         {% if can_manage_template_catalog %}
-        <div class="inline-box" style="margin-bottom:16px;">
-            <div style="font-weight:800; margin-bottom:10px;">Merkezi Şablon Oluştur (Sistem Sorumlusu)</div>
-            <form method="POST" action="{{ url_for('inventory.merkezi_sablon_ekle') }}" style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="text" name="name" class="form-control" placeholder="Şablon adı" required>
-                <select name="category" id="centralTemplateCategory" class="form-control" required>
-                    <option value="">Kategori seçin</option>
-                    {% for c in categories %}
-                    {% if c != 'Diğer' %}
-                    <option value="{{ c }}">{{ c }}</option>
-                    {% endif %}
-                    {% endfor %}
-                    <option value="__new__">+ Yeni kategori ekle</option>
-                </select>
-                <div id="centralTemplateCategoryNewBlock" class="hidden-block" style="grid-column:1 / -1;">
-                    <label>Yeni kategori adı</label>
-                    <input type="text" name="new_category_name" id="centralTemplateNewCategoryInput" class="form-control" placeholder="Örn: Solunum Sistemleri">
-                </div>
-                <input type="text" name="brand" class="form-control" placeholder="Marka">
-                <input type="text" name="model_code" class="form-control" placeholder="Model">
-                <select name="maintenance_period_months" class="form-control">
-                    {% for m in maintenance_month_values %}
-                    <option value="{{ m }}" {% if m == 6 %}selected{% endif %}>{{ m }} Ay</option>
-                    {% endfor %}
-                </select>
-                <select name="default_maintenance_form_id" class="form-control">
-                    <option value="">Bakım formu atanmadı</option>
-                    {% for form in form_templates %}
-                    <option value="{{ form.id }}">{{ form.name }}</option>
-                    {% endfor %}
-                </select>
-                <textarea name="technical_specs" class="form-control" style="grid-column:1 / -1; height:70px;" placeholder="Teknik özellikler"></textarea>
-                <button class="btn btn-primary" type="submit" style="grid-column:1 / -1;">Şablonu Kaydet</button>
-            </form>
-        </div>
+        <details class="create-accordion" data-create-accordion>
+            <summary>Merkezi Şablon Oluştur (Sistem Sorumlusu)</summary>
+            <div class="create-accordion-body">
+                <form method="POST" action="{{ url_for('inventory.merkezi_sablon_ekle') }}" style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="text" name="name" class="form-control" placeholder="Şablon adı" required>
+                    <select name="category" id="centralTemplateCategory" class="form-control" required>
+                        <option value="">Kategori seçin</option>
+                        {% for c in categories %}
+                        {% if c != 'Diğer' %}
+                        <option value="{{ c }}">{{ c }}</option>
+                        {% endif %}
+                        {% endfor %}
+                        <option value="__new__">+ Yeni kategori ekle</option>
+                    </select>
+                    <div id="centralTemplateCategoryNewBlock" class="hidden-block" style="grid-column:1 / -1;">
+                        <label>Yeni kategori adı</label>
+                        <input type="text" name="new_category_name" id="centralTemplateNewCategoryInput" class="form-control" placeholder="Örn: Solunum Sistemleri">
+                    </div>
+                    <input type="text" name="brand" class="form-control" placeholder="Marka">
+                    <input type="text" name="model_code" class="form-control" placeholder="Model">
+                    <select name="maintenance_period_months" class="form-control">
+                        {% for m in maintenance_month_values %}
+                        <option value="{{ m }}" {% if m == 6 %}selected{% endif %}>{{ m }} Ay</option>
+                        {% endfor %}
+                    </select>
+                    <select name="default_maintenance_form_id" class="form-control">
+                        <option value="">Bakım formu atanmadı</option>
+                        {% for form in form_templates %}
+                        <option value="{{ form.id }}">{{ form.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <textarea name="technical_specs" class="form-control" style="grid-column:1 / -1; height:70px;" placeholder="Teknik özellikler"></textarea>
+                    <button class="btn btn-primary" type="submit" style="grid-column:1 / -1;">Şablonu Kaydet</button>
+                </form>
+            </div>
+        </details>
+        {% endif %}
 
+        {% if can_manage_category_catalog %}
         <div class="inline-box" style="margin-bottom:16px;">
-            <div style="font-weight:800; margin-bottom:10px;">Kategori Yönetimi (Sistem Sorumlusu)</div>
+            <div style="font-weight:800; margin-bottom:10px;">Kategori Yönetimi (Sistem Sorumlusu / Ekip Sorumlusu)</div>
             <form method="POST" action="{{ url_for('inventory.envanter_kategori_ekle') }}" style="display:grid; grid-template-columns:1fr 1fr auto; gap:10px;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="text" name="name" class="form-control" placeholder="Yeni kategori adı" required>
@@ -99,6 +109,9 @@
         </div>
         {% endif %}
 
+        <details class="create-accordion" data-create-accordion>
+            <summary>Yeni Malzeme / Ekipman Kaydı</summary>
+            <div class="create-accordion-body">
         <form method="POST" action="{{ url_for('inventory.malzeme_ekle') }}" enctype="multipart/form-data" id="assetCreateForm">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
@@ -144,7 +157,7 @@
                 {% if giren_user.is_sahip %}
                 <div class="form-group">
                     <label>{{ field_labels['havalimani'] }}</label>
-                    <select name="havalimani_id" id="havalimani_id" class="form-control" required>
+                    <select name="havalimani_id" id="havalimani_id" class="form-control">
                         {% for h in havalimanlari %}
                         <option value="{{ h.id }}" {% if preselected_airport_id == h.id %}selected{% endif %}>{{ h.kodu }} - {{ h.ad }}</option>
                         {% endfor %}
@@ -154,7 +167,7 @@
 
                 <div class="form-group">
                     <label>{{ field_labels['kategori'] }}</label>
-                    <select name="kategori" id="kategori" class="form-control" required>
+                    <select name="kategori" id="kategori" class="form-control">
                         <option value="">Kategori seçin</option>
                         {% for c in categories %}
                         <option value="{{ c }}">{{ c }}</option>
@@ -164,7 +177,7 @@
 
                 <div class="form-group">
                     <label>{{ field_labels['malzeme_adi'] }}</label>
-                    <input type="text" name="ad" id="ad" class="form-control" required placeholder="Örn: Termal Kamera">
+                    <input type="text" name="ad" id="ad" class="form-control" placeholder="Örn: Termal Kamera">
                 </div>
 
                 <div class="form-group">
@@ -196,7 +209,7 @@
 
                 <div class="form-group">
                     <label>{{ field_labels['stok_birim_sayisi'] }}</label>
-                    <input type="number" name="stok" value="1" min="1" step="1" class="form-control" required>
+                    <input type="number" name="stok" value="1" min="1" step="1" class="form-control">
                 </div>
 
                 <div class="form-group">
@@ -279,7 +292,7 @@
 
                 <div class="form-group">
                     <label>{{ field_labels['kutu_kodu'] }}</label>
-                    <select name="kutu_id" id="kutu_id" class="form-control" required>
+                    <select name="kutu_id" id="kutu_id" class="form-control">
                         <option value="">Kutu seçin</option>
                         {% for box in boxes %}
                         <option value="{{ box.id }}" data-airport="{{ box.havalimani_id }}">
@@ -323,6 +336,8 @@
                 </div>
             </div>
         </form>
+            </div>
+        </details>
     </div>
 </div>
 
@@ -447,6 +462,18 @@
 
     if (assetType === "spare_part" && parentSelect && !parentSelect.value) {
         parentSelect.focus();
+    }
+
+    const createAccordions = Array.from(document.querySelectorAll("[data-create-accordion]"));
+    if (createAccordions.length) {
+        createAccordions.forEach(function (accordion) {
+            accordion.addEventListener("toggle", function () {
+                if (!accordion.open) return;
+                createAccordions.forEach(function (other) {
+                    if (other !== accordion) other.open = false;
+                });
+            });
+        });
     }
 })();
 </script>

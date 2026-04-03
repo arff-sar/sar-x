@@ -73,9 +73,10 @@
             {% if has_permission('inventory.edit') and can_manage_box %}
             <form method="POST" action="{{ url_for('inventory.kutu_guncelle', kodu=kutu.kodu) }}" class="panel" style="margin:0;">
                 <div class="panel-header"><div class="panel-title">Kutu Bilgileri</div></div>
-                <div class="panel-body" style="display:grid; grid-template-columns: 1fr auto; gap:10px;">
+                <div class="panel-body" style="display:grid; grid-template-columns: 1fr 1fr auto; gap:10px;">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="text" name="marka" class="form-control" value="{{ kutu.marka or '' }}" placeholder="Marka">
+                    <input type="number" min="1" step="1" name="box_sequence" class="form-control" value="{{ current_box_sequence or '' }}" placeholder="Kutu sıra no (örn: 12)">
                     <button class="btn btn-navy" type="submit">Kaydet</button>
                 </div>
             </form>

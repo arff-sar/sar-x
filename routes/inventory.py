@@ -1679,6 +1679,8 @@ def _resolve_box_from_payload(canonical_payload, airport_id, *, allow_auto_creat
 
     box_code = guvenli_metin(canonical_payload.get("box_code") or "").strip().upper()
     if not box_code:
+        if allow_auto_create and airport_id:
+            return _ensure_fallback_box_for_airport(airport_id)
         raise ValueError("Kutu seçimi zorunludur.")
     box = Kutu.query.filter_by(kodu=box_code, havalimani_id=airport_id, is_deleted=False).first()
     if box:
@@ -1742,8 +1744,6 @@ def _normalized_asset_contract_values(canonical_payload, *, mode, current_asset=
 
 
 def _validate_asset_contract_values(values, *, mode, current_asset=None):
-    if values.get("is_demirbas") and not values.get("demirbas_no"):
-        raise ValueError("Demirbaş seçildiyse demirbaş numarası zorunludur.")
     if not _is_valid_url(values.get("manual_url")):
         raise ValueError("Kullanım kılavuzu linki geçerli bir URL olmalıdır.")
     if values.get("status") not in ASSET_STATUS_VALUES:
@@ -1771,6 +1771,20 @@ def _ensure_box(kutu_kodu, havalimani_id, marka=None):
     return kutu
 
 
+def _fallback_box_code_for_airport(airport):
+    airport_code = guvenli_metin(getattr(airport, "kodu", "") or "").strip().upper()
+    if not airport_code:
+        raise ValueError("Kutu otomatik oluşturulamadı: havalimanı kodu bulunamadı.")
+    return f"{airport_code}-ATANMADI"
+
+
+def _ensure_fallback_box_for_airport(airport_id):
+    airport = db.session.get(Havalimani, airport_id)
+    if not airport or airport.is_deleted:
+        raise ValueError("Kutu otomatik oluşturulamadı: geçerli bir havalimanı bulunamadı.")
+    return _ensure_box(_fallback_box_code_for_airport(airport), airport.id)
+
+
 def _ensure_template_from_form(form_data, selected_template_id, *, allow_create=False):
     if selected_template_id:
         template = db.session.get(EquipmentTemplate, selected_template_id)
@@ -1784,10 +1798,8 @@ def _ensure_template_from_form(form_data, selected_template_id, *, allow_create=
     template_name = guvenli_metin(_first_value(form_data, "template_name_seed", "asset_name", "ad") or "").strip()
     if not template_name:
         return None
-    category_options = _resolve_allowed_categories()
     category = guvenli_metin(_first_value(form_data, "category", "kategori") or "").strip()
-    if category and category not in category_options:
-        category = ""
+    category = category or "Diğer"
     period_months = _parse_month_period(_first_value(form_data, "maintenance_period_months", "bakim_periyodu_ay"), default=6)
 
     template = EquipmentTemplate(
@@ -1805,6 +1817,38 @@ def _ensure_template_from_form(form_data, selected_template_id, *, allow_create=
             or form_data.get("bakim_formu_id", type=int)
             or None
         ),
+        is_active=True,
+    )
+    db.session.add(template)
+    db.session.flush()
+    return template
+
+
+def _ensure_default_equipment_template():
+    fallback_name = "Genel Ekipman"
+    template = (
+        EquipmentTemplate.query.filter_by(
+            is_deleted=False,
+            is_active=True,
+            name=fallback_name,
+        )
+        .order_by(EquipmentTemplate.id.asc())
+        .first()
+    )
+    if template:
+        return template
+
+    template = EquipmentTemplate(
+        name=fallback_name,
+        category="Diğer",
+        brand="",
+        model_code="",
+        description="Formda zorunlu alanlar boş bırakıldığında kullanılan varsayılan şablon.",
+        technical_specs="",
+        maintenance_period_months=6,
+        maintenance_period_days=_months_to_days(6),
+        criticality_level="normal",
+        default_maintenance_form_id=None,
         is_active=True,
     )
     db.session.add(template)
@@ -2445,6 +2489,7 @@ def _malzeme_create_page_context():
         "preselected_asset_type": preselected_asset_type,
         "preselected_airport_id": preselected_airport_id,
         "can_manage_template_catalog": bool(current_user.is_sahip),
+        "can_manage_category_catalog": _can_manage_asset_registry(),
         "maintenance_month_values": MAINTENANCE_MONTH_VALUES,
         "field_labels": form_label_map(),
     }
@@ -2459,7 +2504,6 @@ def malzeme_ekle():
         abort(403)
 
     page_ctx = _malzeme_create_page_context()
-    category_options = page_ctx["categories"]
 
     if request.method == "POST":
         canonical_payload = _canonical_asset_payload(request.form, mode="create")
@@ -2477,13 +2521,8 @@ def malzeme_ekle():
             flash(str(exc), "danger")
             return redirect(url_for("inventory.malzeme_ekle"))
 
-        category_value = guvenli_metin(canonical_payload.get("category") or "").strip()
-        if not category_value:
-            category_value = "Diğer"
-            canonical_payload["category"] = category_value
-        if not category_value or category_value not in category_options:
-            flash("Kategori seçimi zorunludur ve listeden seçilmelidir.", "danger")
-            return redirect(url_for("inventory.malzeme_ekle"))
+        category_value = guvenli_metin(canonical_payload.get("category") or "").strip() or "Diğer"
+        canonical_payload["category"] = category_value
 
         template_id = request.form.get("template_id", type=int)
         central_catalog_flag = (canonical_payload.get("catalog_mode") or "") == "create_template_owner"
@@ -2497,8 +2536,7 @@ def malzeme_ekle():
         if not template:
             template = _ensure_template_from_form(request.form, None, allow_create=True)
         if template is None:
-            flash("Şablon bulunamadı. Şablon seçin veya malzeme adı/kategori alanlarını doldurun.", "danger")
-            return redirect(url_for("inventory.malzeme_ekle"))
+            template = _ensure_default_equipment_template()
 
         try:
             asset, legacy_material = _create_asset_and_legacy_material(
@@ -2765,7 +2803,7 @@ def _ensure_inventory_category_exists(name, *, description="", created_by_user_i
 @limiter.limit(lambda: current_app.config.get("CRITICAL_POST_RATE_LIMIT", "20 per minute"))
 @permission_required("inventory.create")
 def envanter_kategori_ekle():
-    if not _is_system_owner():
+    if not _can_manage_asset_registry():
         abort(403)
     name = guvenli_metin(request.form.get("name") or "").strip()
     if not name:
@@ -5588,6 +5626,10 @@ def kutu_detay(kodu):
     available_materials = havalimani_filtreli_sorgu(Malzeme).filter(
         Malzeme.kutu_id != kutu.id,
     ).order_by(Malzeme.ad.asc()).limit(250).all()
+    current_sequence = _extract_box_sequence(
+        kutu.kodu,
+        guvenli_metin(kutu.havalimani.kodu if kutu.havalimani else "").strip().upper(),
+    )
     return render_template(
         "kutu_detay.html",
         kutu=kutu,
@@ -5595,6 +5637,7 @@ def kutu_detay(kodu):
         available_materials=available_materials,
         qr_context=_box_qr_context(kutu),
         can_manage_box=_can_manage_box_airport(kutu.havalimani_id),
+        current_box_sequence=current_sequence,
     )
 
 
@@ -5675,9 +5718,43 @@ def kutu_guncelle(kodu):
     kutu = _box_scope().filter(Kutu.kodu == kodu).first_or_404()
     _validate_box_write_access(kutu.havalimani_id)
 
+    old_code = kutu.kodu
     kutu.marka = guvenli_metin(request.form.get("marka") or "").strip() or None
+    requested_sequence_raw = guvenli_metin(request.form.get("box_sequence") or "").strip()
+    if requested_sequence_raw:
+        try:
+            requested_sequence = int(requested_sequence_raw)
+        except (TypeError, ValueError):
+            flash("Kutu sıra numarası sadece sayı olabilir.", "danger")
+            return redirect(url_for("inventory.kutu_detay", kodu=kodu))
+
+        if requested_sequence < 1:
+            flash("Kutu sıra numarası 1 veya daha büyük olmalıdır.", "danger")
+            return redirect(url_for("inventory.kutu_detay", kodu=kodu))
+
+        airport_code = guvenli_metin(kutu.havalimani.kodu if kutu.havalimani else "").strip().upper()
+        if not airport_code:
+            flash("Havalimanı kodu bulunamadığı için kutu kodu güncellenemedi.", "danger")
+            return redirect(url_for("inventory.kutu_detay", kodu=kodu))
+
+        next_code = f"{airport_code}-BOX-{requested_sequence:02d}"
+        collision = Kutu.query.filter(
+            Kutu.kodu == next_code,
+            Kutu.id != kutu.id,
+        ).first()
+        if collision:
+            flash(f"{next_code} kodu başka bir kutu tarafından kullanılıyor.", "danger")
+            return redirect(url_for("inventory.kutu_detay", kodu=kodu))
+
+        kutu.kodu = next_code
+        if not kutu.konum or kutu.konum == old_code:
+            kutu.konum = next_code
+        for material in kutu.active_materials:
+            if material.linked_asset:
+                material.linked_asset.depot_location = next_code
+
     db.session.commit()
-    log_kaydet("Kutu", f"Kutu bilgisi güncellendi: {kutu.kodu}", event_key="box.update", target_model="Kutu", target_id=kutu.id)
+    log_kaydet("Kutu", f"Kutu bilgisi güncellendi: {old_code} -> {kutu.kodu}", event_key="box.update", target_model="Kutu", target_id=kutu.id)
     audit_log("box.update", outcome="success", box_id=kutu.id, airport_id=kutu.havalimani_id)
     flash("Kutu bilgileri güncellendi.", "success")
     return redirect(url_for("inventory.kutu_detay", kodu=kutu.kodu))
