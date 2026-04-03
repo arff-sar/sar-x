@@ -125,3 +125,9 @@ def test_cloud_run_service_template_wires_rate_limit_backend_env(app):
 
     assert '- name: RATELIMIT_STORAGE_URI' in template
     assert 'value: "${RATELIMIT_STORAGE_URI}"' in template
+
+
+def test_requirements_include_redis_dependency_for_rate_limit_storage(app):
+    requirements = (Path(app.root_path) / "requirements.txt").read_text(encoding="utf-8").lower()
+
+    assert "redis==" in requirements or "\nredis\n" in requirements
